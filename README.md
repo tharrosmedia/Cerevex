@@ -13,7 +13,7 @@ Success for Stage A: trigger SEO job for a keyword → research → draft → hu
 | Runtime            | Node.js 22+ + TypeScript                    |
 | Durability         | Inngest (durable steps + wait-for-approval) |
 | LLM / tools        | Vercel AI SDK (`ai`)                        |
-| LLM provider       | xAI (`grok-build-0.1`) via OpenAI compat    |
+| LLM provider       | xAI (`grok-4.6`) via OpenAI compat          |
 | Embeddings         | OpenAI `text-embedding-3-small` (1536)      |
 | Search (research)  | Tavily (direct fetch, no extra SDK)         |
 | HTTP               | Hono                                        |
@@ -121,4 +121,4 @@ MIT (placeholder — update as needed)
 
 ---
 
-*Last updated: 2026-08-20. Built for Shopify stores.*
+*Last updated: 2026-09-17. Built for Shopify stores.*
