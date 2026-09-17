@@ -23,6 +23,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Exclude Sentry tunnel route from auth middleware so events can always be sent
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|monitoring).*)'],
+  // Exclude Sentry tunnel route + example test pages from auth middleware
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|sentry-tunnel|sentry-example-page|api/sentry-example-api).*)'],
 };

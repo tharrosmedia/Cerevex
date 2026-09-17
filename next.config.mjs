@@ -20,8 +20,8 @@ export default withSentryConfig(nextConfig, {
   // Upload more client files for better stack traces in prod
   widenClientFileUpload: true,
 
-  // Proxy route to bypass ad blockers (creates /monitoring)
-  tunnelRoute: "/monitoring",
+  // Proxy route to bypass ad blockers (creates /sentry-tunnel)
+  tunnelRoute: "/sentry-tunnel",
 
   // Suppress Sentry build output unless in CI
   silent: !process.env.CI,
