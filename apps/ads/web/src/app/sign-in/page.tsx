@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, login } from "@/lib/api";
+import { consoleHref } from "@/lib/console-origin";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -32,7 +33,9 @@ export default function SignInPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex items-center justify-between px-6 py-5">
-        <span className="font-heading text-xl tracking-tight">Cerevex</span>
+        <a href={consoleHref("/")} className="font-heading text-xl tracking-tight">
+          Cerevex
+        </a>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-16">

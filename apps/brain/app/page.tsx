@@ -72,10 +72,11 @@ export default async function CommandCenter() {
           <div className="text-sm text-muted-foreground">Stores</div>
           <div className="text-3xl font-bold">{allStores.length}</div>
         </Link>
-        <div className="border p-4 rounded opacity-60">
-          <div className="text-sm text-muted-foreground">Ads / Inventory / Service / Fulfillment</div>
-          <div className="text-sm">Not enabled</div>
-        </div>
+        <Link href="/ads" className="border p-4 rounded block hover:bg-muted">
+          <div className="text-sm text-muted-foreground">Ads</div>
+          <div className="text-3xl font-bold">Module</div>
+          <div className="text-xs text-muted-foreground">Accounts, recommendations, pause</div>
+        </Link>
       </div>
 
       <div className="mb-4">
