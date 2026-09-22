@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tharros
+      POSTGRES_PASSWORD: tharros
+      POSTGRES_DB: tharros
+    ports:
+      - "54329:5432"
+    volumes:
+      - tharros_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tharros -d tharros"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  tharros_pg:

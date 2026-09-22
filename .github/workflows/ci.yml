@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  changes:
+    name: path filter
+    runs-on: ubuntu-latest
+    outputs:
+      brain: ${{ steps.filter.outputs.brain }}
+      os: ${{ steps.filter.outputs.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            brain:
+              - 'apps/brain/**'
+              - 'jobs/seo/**'
+              - 'packages/contracts/**'
+              - 'packages/db/**'
+              - 'packages/shared/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            os:
+              - 'apps/os/**'
+              - 'jobs/meta/**'
+              - 'jobs/google/**'
+              - 'packages/contracts/**'
+
+  brain:
+    name: apps/brain + jobs/seo
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.brain == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        if: needs.changes.outputs.brain == 'true'
+        run: npm ci
+      - name: Typecheck Brain
+        if: needs.changes.outputs.brain == 'true'
+        run: npm run typecheck --workspace=@shopify-brain/brain
+      - name: Typecheck jobs/seo
+        if: needs.changes.outputs.brain == 'true'
+        run: npm run typecheck --workspace=@shopify-brain/jobs-seo
+      - name: Typecheck contracts
+        if: needs.changes.outputs.brain == 'true'
+        run: npm run typecheck --workspace=@shopify-brain/contracts
+      - name: Test Brain
+        if: needs.changes.outputs.brain == 'true'
+        run: npm run test --workspace=@shopify-brain/brain
+      - name: Skip (no Brain / SEO changes)
+        if: needs.changes.outputs.brain != 'true'
+        run: echo "Skipped — apps/os-only change. Brain + jobs/seo stay independently green."
+
+  os:
+    name: apps/os
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.os == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        if: needs.changes.outputs.os == 'true'
+        run: npm ci
+      - name: Typecheck OS + paid jobs
+        if: needs.changes.outputs.os == 'true'
+        run: |
+          npm run typecheck --workspace=@tharros/shared
+          npm run typecheck --workspace=@tharros/api
+          npm run typecheck --workspace=@tharros/workers
+          npm run typecheck --workspace=@shopify-brain/jobs-meta-ads
+          npm run typecheck --workspace=@shopify-brain/jobs-google-ads
+          npm run typecheck --workspace=@shopify-brain/contracts
+          npm run typecheck --workspace=@tharros/web
+      - name: Skip (no apps/os / paid-job changes)
+        if: needs.changes.outputs.os != 'true'
+        run: echo "Skipped — no apps/os or paid-job changes. Brain + jobs/seo stay independently green."

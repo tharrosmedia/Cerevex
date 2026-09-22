@@ -1,0 +1,21 @@
+{
+  "name": "@shopify-brain/os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tharros OS (Origin M1/M2) — web + api umbrella. Auth and Neon isolated from Brain.",
+  "scripts": {
+    "dev": "concurrently -k -n api,web,worker,inngest -c cyan,green,magenta,yellow \"npm run dev --workspace=@tharros/api\" \"npm run dev --workspace=@tharros/web\" \"npm run dev --workspace=@tharros/workers\" \"npx --yes inngest-cli@latest dev --no-discovery --host 127.0.0.1 --port 43183 -u http://127.0.0.1:43182/api/inngest\"",
+    "dev:api": "npm run dev --workspace=@tharros/api",
+    "dev:web": "npm run dev --workspace=@tharros/web",
+    "dev:worker": "npm run dev --workspace=@tharros/workers",
+    "typecheck": "npm run typecheck --workspace=@tharros/shared && npm run typecheck --workspace=@tharros/api && npm run typecheck --workspace=@tharros/workers && npm run typecheck --workspace=@shopify-brain/jobs-meta-ads && npm run typecheck --workspace=@shopify-brain/jobs-google-ads && npm run typecheck --workspace=@tharros/web",
+    "test": "npm run test --workspace=@tharros/api",
+    "db:migrate": "npm run migrate --workspace=@tharros/shared",
+    "db:seed": "npm run seed --workspace=@tharros/shared",
+    "db:up": "docker compose -f docker-compose.yml up -d",
+    "db:down": "docker compose -f docker-compose.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
