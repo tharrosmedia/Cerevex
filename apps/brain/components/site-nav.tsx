@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import type { ModuleFlags } from '@shopify-brain/contracts';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import type { ModuleFlags } from '@shopify-brain/contracts/modules';
 import { adsSub } from '@/lib/ads-nav';
 import { navSectionFromPath, railItemsForSection } from '@/lib/nav-section';
 
@@ -106,6 +106,7 @@ function NavMenu({
       </Link>
       <button
         type="button"
+        className="site-nav-menu-toggle"
         onClick={onToggle}
         aria-expanded={open}
         aria-haspopup="true"
@@ -146,7 +147,7 @@ export default function SiteNav({
     setOpen(false);
   }, [pathname, section]);
 
-  const closeMenu = () => setOpen(false);
+  const closeMenu = useCallback(() => setOpen(false), []);
 
   return (
     <>

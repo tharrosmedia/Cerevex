@@ -205,6 +205,12 @@
   white-space: nowrap;
 }
 
+.site-nav-menu-toggle {
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0.2rem 0.4rem;
+}
+
 .site-nav-menu {
   position: absolute;
   top: 100%;

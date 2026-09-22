@@ -5,7 +5,7 @@ import {
   MODULE_COPY,
   isBusinessType,
   type BusinessType,
-} from '@shopify-brain/contracts';
+} from '@shopify-brain/contracts/modules';
 import { getWorkspaceModuleSettings, saveBusinessType, saveModuleOverrides } from '@/src/lib/db/workspace-modules';
 
 async function saveTypeAction(formData: FormData) {
@@ -67,18 +67,22 @@ export async function WorkspaceModulesSettings() {
         </div>
       </div>
 
-      <form action={saveModulesAction} className="space-y-4">
+      <form action={saveModulesAction}>
         {ADS_MODULE_IDS.map((id) => (
-          <label key={id} className="flex items-start justify-between gap-4 border-t pt-3">
-            <span>
-              <span className="block font-medium">{MODULE_COPY[id].label}</span>
-              <span className="block text-sm" style={{ color: 'var(--muted-foreground)' }}>{MODULE_COPY[id].help}</span>
-            </span>
-            <span className="text-sm flex items-center gap-2">
-              <input type="checkbox" name={id} defaultChecked={settings.modules[id]} />
-              On
-            </span>
-          </label>
+          <div key={id} style={{ borderTop: '1px solid var(--border)', padding: '0.85rem 0' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+              <span>
+                <span style={{ display: 'block', fontWeight: 600 }}>{MODULE_COPY[id].label}</span>
+                <span style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.9rem', color: 'var(--muted-foreground)' }}>
+                  {MODULE_COPY[id].help}
+                </span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" name={id} defaultChecked={settings.modules[id]} />
+                On
+              </span>
+            </label>
+          </div>
         ))}
         <button type="submit">Save modules</button>
       </form>

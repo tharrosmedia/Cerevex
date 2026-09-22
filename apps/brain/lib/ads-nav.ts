@@ -3,7 +3,7 @@ import {
   unboardedModules,
   type AdsModuleId,
   type ModuleFlags,
-} from '@shopify-brain/contracts';
+} from '@shopify-brain/contracts/modules';
 
 export type AdsNavItem = {
   href: string;

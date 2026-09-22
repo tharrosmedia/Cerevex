@@ -80,6 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Link>
                 <button
                   type="button"
+                  className="site-nav-menu-toggle"
                   onClick={() => setAdsOpen((open) => !open)}
                   aria-expanded={adsOpen}
                   aria-haspopup="true"
