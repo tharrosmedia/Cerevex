@@ -2,6 +2,7 @@ import assert from 'assert';
 import { evaluate } from '../src/lib/agents/core/evaluate.js';
 import { createBrief } from '../src/lib/agents/seo/brief.js';
 import { selectProductsForCollection } from '../src/lib/agents/seo/select-products.js';
+import { functions } from '@shopify-brain/jobs-seo';
 
 // Basic smoke tests for upgraded agents (no real LLM calls in fallback paths)
 
@@ -27,6 +28,21 @@ async function run() {
   assert.ok(sel.selected.length >= 1);
   assert.ok(sel.selected[0].shopifyId.includes('1'));
   console.log('select-products: ok');
+
+  // jobs/seo still registered with original seo-* IDs (Plan 1.5 — do not rename)
+  const ids = functions.map((fn: { id: () => string }) => fn.id());
+  for (const id of [
+    'seo-job',
+    'seo-research',
+    'seo-create-brief',
+    'seo-write-draft',
+    'seo-publish',
+    'seo-audit',
+  ]) {
+    assert.ok(ids.includes(id), `missing Inngest function id ${id}`);
+  }
+  assert.ok(ids.every((id: string) => !id.startsWith('brain-')), 'seo function IDs must not be renamed to brain-*');
+  console.log('jobs/seo ids: ok', ids.length);
 
   console.log('All light tests passed.');
 }
