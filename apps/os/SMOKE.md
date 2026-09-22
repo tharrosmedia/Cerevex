@@ -1,8 +1,13 @@
-# Shared Neon smoke (Plan 1.5 / M3 gate)
+# OS smoke: shared Neon gate + M3 mock path
 
-Copy-paste checklist for **one** existing Brain Neon project. Do **not** provision a second Neon (or Railway / Inngest org). No Meta/Google writes. No M3 product work.
+Two checklists in one file:
 
-This environment typically does **not** have Brain production `DATABASE_URL`. Run the SQL / migrate steps only after someone grants that URL from vault (or Railway Brain service env). Do not invent secrets.
+1. **Shared Neon smoke** — schema `os` on the existing Brain Neon project (no second Neon / Railway / Inngest org).
+2. **M3 product smoke (mock mode)** — audits → findings → proposed recommendations, no live ad spend.
+
+Do **not** provision a second Neon. No Meta/Google writes. Do **not** seed production.
+
+This environment typically does **not** have Brain production `DATABASE_URL`. Run the SQL / migrate steps only after someone grants that URL from vault (or Railway Brain service env). Do not invent secrets. Local M3 mock smoke uses docker Postgres (`:54329`) and does not need Brain Neon.
 
 ---
 
@@ -74,7 +79,7 @@ SEO IDs that must remain registered on **`shopify-brain`** (do not rename):
 
 OS IDs that belong only on **`tharros-os`**:
 
-`os-stub-ping`, `os-stub-sync`, `os-apply-requested`, `meta-ads-account-sync`, `google-ads-account-sync`.
+`os-stub-ping`, `os-stub-sync`, `os-audit-requested`, `os-apply-requested`, `meta-ads-account-sync`, `google-ads-account-sync`.
 
 ### Exact env vars
 
@@ -140,7 +145,7 @@ Drizzle SQL under `apps/os/shared/drizzle/` is schema-qualified to **`os`** (`CR
 - [ ] Brain production `DATABASE_URL` from vault or Railway Brain service (same Neon project).
 - [ ] Confirm you will **not** create a second Neon project.
 - [ ] Confirm no Meta/Google live writes (leave `META_APP_*` / `GOOGLE_*` empty; do not click live Sync).
-- [ ] Confirm M3 product work is still held.
+- [ ] Confirm no live Meta/Google writes. M3 product smoke stays local/mock (section below). Do not seed prod.
 
 ```bash
 # From repo root after granting DATABASE_URL (do not commit it)
@@ -269,7 +274,7 @@ JS
 ```
 
 Expected `os` tables include:  
-`workspaces`, `users`, `memberships`, `clients`, `client_memberships`, `ad_accounts`, `ad_entities`, `ad_metrics`, `oauth_credentials`, `recommendations`, `decisions`, `authorizations`, `apply_jobs`, `audit_log`, plus stubs (`audit_runs`, `findings`, `brainstorm_*`, `workflow*`).
+`workspaces`, `users`, `memberships`, `clients`, `client_memberships`, `ad_accounts`, `ad_entities`, `ad_metrics`, `oauth_credentials`, `recommendations`, `decisions`, `authorizations`, `apply_jobs`, `audit_log`, `audit_runs`, `findings`, plus stubs (`brainstorm_*`, `workflow*`).
 
 Optional API health (needs OS process + same `DATABASE_URL`; no platform writes):
 
@@ -315,7 +320,6 @@ Cloud check (dashboard, after keys exist): app **`shopify-brain`** still lists `
 - Second Neon project, second Railway project, second Inngest org
 - `npm run os:db:seed` on production Brain Neon
 - Live Meta/Google OAuth or Sync
-- M3 features
 - Renaming `seo/*` → `brain/*`
 
 ---
@@ -332,3 +336,100 @@ Recorded 2026-09-22 from a Cloud Agent on `tharrosmedia/Shopify-Brain` `main` (P
 | **`psql`** | Not installed here; use the Node `pg` snippets above (or local `psql`) after `DATABASE_URL` is granted. |
 
 Unblock: paste Brain `DATABASE_URL` into the agent/OS env (same Neon project), then re-run steps 1–4. Railway is only needed if OS must deploy onto the existing Brain project — not required for a laptop smoke against the granted URL.
+
+---
+
+# M3 product smoke (mock mode, no live ad spend)
+
+Audits read **local** `os.ad_entities` / `os.ad_metrics` only. They do not call Meta or Google. Recommendations stay `status=proposed` until a human decides. Apply is a separate step and is blocked while the workspace kill switch is on (default **ON**).
+
+Do **not** run this against production Neon. Do **not** seed prod. Local compose (`:54329`) is enough.
+
+## Prerequisites
+
+```bash
+cp apps/os/.env.example apps/os/.env
+npm install
+npm run os:db:up
+npm run os:db:migrate
+npm run os:db:seed
+```
+
+Leave `META_APP_ID` / `GOOGLE_CLIENT_ID` empty so connect + sync stay on mock tokens.
+
+## Happy path (inline, no Inngest required)
+
+```bash
+# 1. Sign in as the seeded owner
+TOKEN=$(curl -s -X POST http://127.0.0.1:43180/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"adam@tharrosmedia.com","password":"local-dev-only"}' | jq -r .token)
+
+# 2. Pick Got Ductless
+CLIENT=$(curl -s http://127.0.0.1:43180/clients -H "authorization: Bearer $TOKEN" \
+  | jq -r '.clients[] | select(.name=="Got Ductless") | .id')
+
+# 3. Mock-connect Meta (encrypted fake tokens; no Graph call)
+curl -s -X POST http://127.0.0.1:43180/oauth/mock/connect \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d "{\"clientId\":\"$CLIENT\",\"platform\":\"meta\"}" | jq .adAccount.id
+
+# 4. Pull mock entities/metrics into schema os (or POST /ad-accounts/:id/sync if Inngest is up)
+#    The unit/integration tests call runAdAccountSync() in-process the same way.
+
+# 5. Run the audit inline — worker-equivalent path, no live spend
+curl -s -X POST "http://127.0.0.1:43180/clients/$CLIENT/audits" \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"inline":true}' | jq '{status, writes, findings: (.findings|length), recs: (.recommendations|length)}'
+```
+
+Expect `writes: false`, at least one finding, at least one recommendation with `status: "proposed"` and every `proposedMutations[].execute === false`.
+
+## Authorize-to-apply boundary
+
+```bash
+REC=<recommendation id from the audit>
+
+curl -s -X POST "http://127.0.0.1:43180/recommendations/$REC/decide" \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"action":"authorize","note":"smoke"}' | jq '{status: .recommendation.status, applied, writes}'
+
+# Apply must 409 while kill switch is ON. No Meta/Google mutate either way.
+curl -s -o /tmp/apply.json -w '%{http_code}\n' -X POST \
+  "http://127.0.0.1:43180/recommendations/$REC/apply" \
+  -H "authorization: Bearer $TOKEN"
+jq . /tmp/apply.json
+```
+
+Expect HTTP 409, `blocked: "apply_kill_switch"`, `writes: false`.
+
+`GET /workspace` should show `applyKillSwitch: true`.
+
+## Inngest path (optional)
+
+`npm run os:dev` registers `os-audit-requested` on app id `tharros-os` / `OS_INNGEST_APP_ID`.
+
+```bash
+curl -s -X POST "http://127.0.0.1:43180/clients/$CLIENT/audits" \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{}' | jq '{jobId, name, status, writes}'
+```
+
+Event name is `os/audit.requested`. This does **not** clobber Brain `seo/*`.
+
+## Automated smoke
+
+```bash
+npm run os:db:migrate && npm run os:db:seed
+npm run test --workspace=@tharros/api
+```
+
+`test/audit-rules.test.ts` and `test/apply-gate.test.ts` run without Postgres. `test/audit.test.ts` needs the local OS database.
+
+## Locks (do not relax)
+
+- No `public` schema changes
+- No prod seed
+- Kill switch default ON
+- No unsupervised Meta/Google writes
+

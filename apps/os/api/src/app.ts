@@ -9,6 +9,7 @@ import { EVENTS, canMutate, oauthConfig } from "@tharros/shared";
 import { checkDatabase, getDb } from "@tharros/shared/db";
 import { checkInngest, sendStubPing } from "@tharros/shared/inngest";
 import { auditLog } from "@tharros/shared/schema";
+import { registerAuditRoutes } from "./audits";
 import { clientConnectionSummary, listPublicAdAccounts } from "./connect";
 import { registerConnectRoutes } from "./routes";
 import type { AppEnv } from "./types";
@@ -33,7 +34,14 @@ const stubJobSchema = z.object({
   clientId: z.string().uuid().optional(),
 });
 
-const JOB_AUDIT_ACTIONS = ["jobs.stub_enqueued", "jobs.stub_complete", "jobs.apply_blocked"];
+const JOB_AUDIT_ACTIONS = [
+  "jobs.stub_enqueued",
+  "jobs.stub_complete",
+  "jobs.apply_blocked",
+  "jobs.audit_enqueued",
+  "jobs.audit_complete",
+  "jobs.audit_failed",
+];
 
 export const VERSION = "0.1.0";
 
@@ -211,6 +219,7 @@ export function createApp() {
   });
 
   registerConnectRoutes(app, requireAuth);
+  registerAuditRoutes(app, requireAuth);
 
   app.post("/jobs/stub", requireAuth, async (c) => {
     const auth = c.get("auth");

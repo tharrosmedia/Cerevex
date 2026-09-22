@@ -1,12 +1,17 @@
 import type {
   AdAccountPublic,
   AdEntityPublic,
+  AuditRunPublic,
   ClientSummary,
   SessionUser,
   Membership,
   ClientMembership,
+  FindingPublic,
   OAuthPlatformConfig,
   Platform,
+  RecommendationPublic,
+  AuthorizationPublic,
+  WorkspaceSummary,
 } from "@tharros/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:43180";
@@ -133,4 +138,64 @@ export async function enqueueStubJob(note?: string, clientId?: string): Promise<
     method: "POST",
     body: JSON.stringify({ note, clientId }),
   });
+}
+
+export type AuditBundleResponse = {
+  audit: AuditRunPublic;
+  findings: FindingPublic[];
+  recommendations: RecommendationPublic[];
+  writes: false;
+  inline?: boolean;
+  name?: string;
+  status?: string;
+};
+
+export async function getWorkspace(): Promise<{ workspace: WorkspaceSummary | null; canMutate: boolean }> {
+  return api("/workspace");
+}
+
+export async function startInlineAudit(clientId: string, adAccountId?: string): Promise<AuditBundleResponse> {
+  return api(`/clients/${clientId}/audits`, {
+    method: "POST",
+    body: JSON.stringify({ inline: true, adAccountId }),
+  });
+}
+
+export async function listClientAudits(clientId: string): Promise<AuditRunPublic[]> {
+  const result = await api<{ audits: AuditRunPublic[] }>(`/clients/${clientId}/audits`);
+  return result.audits;
+}
+
+export async function getAudit(auditId: string): Promise<AuditBundleResponse> {
+  return api(`/audits/${auditId}`);
+}
+
+export async function listClientRecommendations(clientId: string): Promise<RecommendationPublic[]> {
+  const result = await api<{ recommendations: RecommendationPublic[] }>(`/clients/${clientId}/recommendations`);
+  return result.recommendations;
+}
+
+export async function decideRecommendation(
+  recommendationId: string,
+  action: "authorize" | "deny" | "snooze",
+  note?: string,
+): Promise<{
+  recommendation: RecommendationPublic;
+  authorization: AuthorizationPublic | null;
+  applied: false;
+  writes: false;
+}> {
+  return api(`/recommendations/${recommendationId}/decide`, {
+    method: "POST",
+    body: JSON.stringify({ action, note }),
+  });
+}
+
+export async function requestApply(recommendationId: string): Promise<{
+  blocked: string;
+  writes: false;
+  allowed: false;
+  note?: string;
+}> {
+  return api(`/recommendations/${recommendationId}/apply`, { method: "POST" });
 }

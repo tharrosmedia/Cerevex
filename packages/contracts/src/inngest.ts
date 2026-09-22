@@ -68,6 +68,7 @@ export const OS_EVENTS = {
   stubPing: "os/stub.ping",
   stubSync: "os/stub.sync",
   applyRequested: "os/apply.requested",
+  auditRequested: "os/audit.requested",
 } as const;
 
 export const PAID_EVENTS = {

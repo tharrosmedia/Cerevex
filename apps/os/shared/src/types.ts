@@ -103,7 +103,32 @@ export const EVENTS = {
   metaAdsAccountSync: "meta/ads/account.sync",
   googleAdsAccountSync: "google/ads/account.sync",
   applyRequested: "os/apply.requested",
+  auditRequested: "os/audit.requested",
 } as const;
+
+export const AUDIT_RUN_STATUSES = ["queued", "running", "completed", "failed"] as const;
+export type AuditRunStatus = (typeof AUDIT_RUN_STATUSES)[number];
+
+export const FINDING_SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
+export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
+
+export const RECOMMENDATION_TYPES = [
+  "review_cpa",
+  "improve_ctr",
+  "add_creative",
+  "expand_keywords",
+  "spend_concentration",
+  "pause_waste",
+] as const;
+export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
+
+export const RECOMMENDATION_RISKS = ["low", "medium", "high"] as const;
+export type RecommendationRisk = (typeof RECOMMENDATION_RISKS)[number];
+
+export const RECOMMENDATION_STATUSES = ["proposed", "authorized", "denied", "snoozed"] as const;
+export type RecommendationStatus = (typeof RECOMMENDATION_STATUSES)[number];
+
+export const RECOMMENDATION_SCHEMA_VERSION = "1" as const;
 
 export type StubPingPayload = {
   requestedBy: string;
@@ -133,4 +158,64 @@ export type ApplyRequestedPayload = {
   workspaceId: string;
   clientId: string;
   authorizationId: string;
+  applyJobId?: string;
+};
+
+export type AuditRequestedPayload = {
+  requestedBy: string;
+  workspaceId: string;
+  clientId: string;
+  auditRunId: string;
+  adAccountId?: string;
+};
+
+export type FindingPublic = {
+  id: string;
+  workspaceId: string;
+  clientId: string | null;
+  auditRunId: string | null;
+  severity: string;
+  title: string;
+  body: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type RecommendationPublic = {
+  id: string;
+  workspaceId: string;
+  clientId: string;
+  adAccountId: string;
+  type: string;
+  title: string;
+  rationale: string;
+  estimatedImpactUsd: string | null;
+  risk: string;
+  confidence: string | null;
+  evidence: Record<string, unknown>;
+  proposedMutations: unknown[];
+  status: string;
+  schemaVersion: string;
+  createdAt: string;
+};
+
+export type AuditRunPublic = {
+  id: string;
+  workspaceId: string;
+  clientId: string | null;
+  status: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  summary: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type AuthorizationPublic = {
+  id: string;
+  workspaceId: string;
+  clientId: string;
+  recommendationId: string;
+  decisionId: string;
+  scope: Record<string, unknown>;
+  expiresAt: string | null;
+  revokedAt: string | null;
 };

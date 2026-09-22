@@ -13,7 +13,11 @@
     "./oauth": "./src/oauth.ts",
     "./credentials": "./src/credentials.ts",
     "./sync": "./src/sync.ts",
-    "./worker-audit": "./src/worker-audit.ts"
+    "./worker-audit": "./src/worker-audit.ts",
+    "./audit": "./src/audit.ts",
+    "./audit-engine": "./src/audit-engine.ts",
+    "./audit-schemas": "./src/audit-schemas.ts",
+    "./apply-gate": "./src/apply-gate.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",

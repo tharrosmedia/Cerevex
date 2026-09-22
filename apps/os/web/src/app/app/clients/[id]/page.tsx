@@ -2,15 +2,28 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
-import type { AdAccountPublic, AdEntityPublic, ClientSummary, Platform } from "@tharros/shared";
+import type {
+  AdAccountPublic,
+  AdEntityPublic,
+  ClientSummary,
+  FindingPublic,
+  Platform,
+  RecommendationPublic,
+} from "@tharros/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ApiError,
+  decideRecommendation,
   getAdAccount,
+  getAudit,
   getClient,
+  listClientAudits,
+  listClientRecommendations,
   mockConnect,
+  requestApply,
+  startInlineAudit,
   startOAuth,
   syncAdAccount,
 } from "@/lib/api";
@@ -27,6 +40,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   const [canManage, setCanManage] = useState(false);
   const [oauth, setOauth] = useState<{ meta: boolean; google: boolean }>({ meta: false, google: false });
   const [entities, setEntities] = useState<Record<string, AdEntityPublic[]>>({});
+  const [findings, setFindings] = useState<FindingPublic[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationPublic[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -45,6 +60,13 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       }
     }
     setEntities(next);
+    const recs = await listClientRecommendations(id);
+    setRecommendations(recs);
+    const audits = await listClientAudits(id);
+    if (audits[0]) {
+      const bundle = await getAudit(audits[0].id);
+      setFindings(bundle.findings);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -110,6 +132,57 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         </Card>
       </div>
     );
+  }
+
+  async function runAudit() {
+    setBusy("audit");
+    setError(null);
+    try {
+      const bundle = await startInlineAudit(id);
+      setFindings(bundle.findings);
+      setRecommendations(bundle.recommendations);
+      setNotice(
+        `Mock audit complete. ${bundle.findings.length} findings, ${bundle.recommendations.length} proposed recs. No platform writes.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Audit failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function decide(recommendationId: string, action: "authorize" | "deny" | "snooze") {
+    setBusy(recommendationId);
+    setError(null);
+    try {
+      const result = await decideRecommendation(recommendationId, action);
+      setRecommendations((current) =>
+        current.map((row) => (row.id === recommendationId ? result.recommendation : row)),
+      );
+      setNotice(
+        action === "authorize"
+          ? "Authorized. Apply is a separate step and stays blocked while the kill switch is on."
+          : `Recommendation ${action === "deny" ? "denied" : "snoozed"}. Nothing was written to Meta/Google.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Decision failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function apply(recommendationId: string) {
+    setBusy(`apply-${recommendationId}`);
+    setError(null);
+    try {
+      await requestApply(recommendationId);
+      setNotice("Apply unexpectedly succeeded.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Apply blocked.";
+      setNotice(message);
+    } finally {
+      setBusy(null);
+    }
   }
 
   if (!client) {
@@ -229,6 +302,103 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           );
         })}
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>M3 audit</CardTitle>
+              <CardDescription>
+                Reads local synced tables only. Recommendations are propose-only. Apply stays behind
+                the kill switch.
+              </CardDescription>
+            </div>
+            {canManage ? (
+              <Button onClick={() => runAudit()} disabled={busy === "audit"} className="w-fit">
+                {busy === "audit" ? "Auditing…" : "Run mock audit"}
+              </Button>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 text-sm">
+          {findings.length === 0 && recommendations.length === 0 ? (
+            <p className="text-muted-foreground">
+              Sync an account, then run a mock audit. No live spend and no Meta/Google writes.
+            </p>
+          ) : null}
+          {findings.length > 0 ? (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">Findings</p>
+              <ul className="space-y-2">
+                {findings.map((finding) => (
+                  <li key={finding.id} className="rounded-md border border-border px-3 py-2">
+                    <span className="font-medium">{finding.title}</span>
+                    <span className="ml-2 text-xs uppercase text-muted-foreground">{finding.severity}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {recommendations.length > 0 ? (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                Recommendations
+              </p>
+              <ul className="space-y-3">
+                {recommendations.map((rec) => (
+                  <li key={rec.id} className="rounded-md border border-border px-3 py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-medium">{rec.title}</p>
+                        <p className="mt-1 text-muted-foreground">{rec.rationale}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {rec.type} · {rec.status} · risk {rec.risk}
+                          {rec.estimatedImpactUsd ? ` · est. $${rec.estimatedImpactUsd}` : ""}
+                        </p>
+                      </div>
+                      <Badge variant="outline">{rec.status}</Badge>
+                    </div>
+                    {canManage && rec.status === "proposed" ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => decide(rec.id, "authorize")} disabled={busy === rec.id}>
+                          Authorize
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => decide(rec.id, "deny")}
+                          disabled={busy === rec.id}
+                        >
+                          Deny
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => decide(rec.id, "snooze")}
+                          disabled={busy === rec.id}
+                        >
+                          Snooze
+                        </Button>
+                      </div>
+                    ) : null}
+                    {canManage && rec.status === "authorized" ? (
+                      <Button
+                        size="sm"
+                        className="mt-3"
+                        variant="outline"
+                        onClick={() => apply(rec.id)}
+                        disabled={busy === `apply-${rec.id}`}
+                      >
+                        Request apply (blocked)
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }
