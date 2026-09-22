@@ -3,7 +3,7 @@ import { getRequestListener } from "@hono/node-server";
 import { Hono } from "hono";
 import { serve as inngestNodeServe } from "inngest/node";
 import pino from "pino";
-import { loadEnv } from "@tharros/ads-shared";
+import { loadEnv } from "@tharros/ads-shared/env";
 import { checkDatabase } from "@tharros/ads-shared/db";
 import { checkInngest, inngest } from "@tharros/ads-shared/inngest";
 import { functions as googleAdsFunctions, FUNCTION_IDS as GOOGLE_ADS_IDS } from "@shopify-brain/jobs-google-ads";

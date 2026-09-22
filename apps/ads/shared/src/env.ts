@@ -2,6 +2,8 @@ import { config } from "dotenv";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+// Server-only: import via `@tharros/ads-shared/env`, never the package root.
+
 let loaded = false;
 
 export function loadEnv(): void {

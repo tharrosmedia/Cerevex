@@ -11,7 +11,7 @@ import {
   isMetaConfigured,
   oauthConfig,
   webOrigin,
-} from "@tharros/ads-shared";
+} from "@tharros/ads-shared/oauth";
 import { loadTokens } from "@tharros/ads-shared/credentials";
 import { getDb } from "@tharros/ads-shared/db";
 import { clients } from "@tharros/ads-shared/schema";

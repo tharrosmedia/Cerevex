@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { loadEnv } from "@tharros/ads-shared";
+import { loadEnv } from "@tharros/ads-shared/env";
 import { createApp, VERSION } from "./app";
 import { logger } from "./logger";
 

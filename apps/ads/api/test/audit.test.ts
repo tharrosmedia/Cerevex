@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadEnv } from "@tharros/ads-shared";
+import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import { applyJobs, recommendations } from "@tharros/ads-shared/schema";

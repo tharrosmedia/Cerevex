@@ -1,6 +1,6 @@
 import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
-import { loadEnv } from "@tharros/ads-shared";
+import { loadEnv } from "@tharros/ads-shared/env";
 import { getDb } from "@tharros/ads-shared/db";
 
 loadEnv();
