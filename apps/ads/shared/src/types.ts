@@ -1,3 +1,5 @@
+import type { BusinessType, ModuleFlags } from "./modules";
+
 export const ROLES = ["owner", "operator", "client_readonly"] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -82,6 +84,10 @@ export type WorkspaceSummary = {
   id: string;
   name: string;
   applyKillSwitch: boolean;
+  businessType: BusinessType | null;
+  modules: ModuleFlags;
+  onboardingComplete: boolean;
+  onboardingCompletedAt: string | null;
 };
 
 export type HealthStatus = {

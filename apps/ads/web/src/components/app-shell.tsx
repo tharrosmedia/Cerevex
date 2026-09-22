@@ -6,32 +6,36 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { KillSwitchBanner, KillSwitchPill } from "@/components/cockpit/kill-switch-banner";
 import { useWorkspace } from "@/components/cockpit/workspace-context";
+import { adsNavFor, adsRailFor } from "@/lib/ads-nav";
 import { logout } from "@/lib/api";
 import { consoleHref } from "@/lib/console-origin";
-
-const ADS_SUB = [
-  { href: "/app", label: "Overview" },
-  { href: "/app", label: "Clients", rail: "Clients", match: (path: string) => path === "/app" || path.startsWith("/app/clients") },
-  { href: "/app/brainstorm", label: "Leads", rail: "Leads" },
-  { href: "/app/workflows", label: "Workflows", rail: "Workflows" },
-];
 
 function isAdsPath(pathname: string | null) {
   return Boolean(pathname?.startsWith("/app"));
 }
 
+function isOnboardingExempt(pathname: string | null) {
+  return pathname === "/app/onboarding" || pathname === "/app/settings";
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { killSwitch, workspaceName, error } = useWorkspace();
+  const { killSwitch, workspaceName, error, modules, onboardingComplete, loading } = useWorkspace();
   const [adsOpen, setAdsOpen] = useState(false);
   const adsMenuRef = useRef<HTMLDivElement>(null);
   const adsCurrent = isAdsPath(pathname);
-  const rail = adsCurrent ? ADS_SUB.filter((item) => item.rail) : [];
+  const adsItems = adsNavFor(modules);
+  const rail = adsCurrent ? adsRailFor(modules) : [];
 
   useEffect(() => {
     setAdsOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (loading || onboardingComplete || isOnboardingExempt(pathname)) return;
+    router.replace("/app/onboarding");
+  }, [loading, onboardingComplete, pathname, router]);
 
   useEffect(() => {
     if (!adsOpen) return;
@@ -86,7 +90,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </button>
                 {adsOpen && (
                   <div className="site-nav-menu" id="ads-menu" role="menu">
-                    {ADS_SUB.map((item) => (
+                    {adsItems.map((item) => (
                       <Link key={`${item.label}-${item.href}`} href={item.href} onClick={() => setAdsOpen(false)}>
                         {item.label}
                       </Link>

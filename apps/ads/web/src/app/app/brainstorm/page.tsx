@@ -1,6 +1,16 @@
+"use client";
+
+import { MODULE_COPY } from "@tharros/ads-shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ModuleOff } from "@/components/cockpit/module-off";
+import { useWorkspace } from "@/components/cockpit/workspace-context";
 
 export default function BrainstormPlaceholderPage() {
+  const { modules, loading } = useWorkspace();
+  if (!loading && !modules.leads) {
+    return <ModuleOff title={MODULE_COPY.leads.label} help={MODULE_COPY.leads.help} />;
+  }
+
   return (
     <div className="mx-auto max-w-3xl">
       <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Coming later</p>

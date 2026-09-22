@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import type { ModuleFlags } from '@shopify-brain/contracts';
+import { adsSub } from '@/lib/ads-nav';
 import { navSectionFromPath, railItemsForSection } from '@/lib/nav-section';
 
 type NavItem = {
@@ -19,15 +21,6 @@ const SEO_SUB: NavItem[] = [
   { href: '/seo/findings', label: 'Recommendations' },
   { href: '/seo/jobs', label: 'SEO jobs' },
 ];
-
-function adsSub(adsOrigin: string): NavItem[] {
-  return [
-    { href: '/ads', label: 'Overview' },
-    { href: adsOrigin ? `${adsOrigin}/app` : '/ads', label: 'Clients', rail: 'Clients' },
-    { href: adsOrigin ? `${adsOrigin}/app/brainstorm` : '/ads', label: 'Leads', rail: 'Leads' },
-    { href: adsOrigin ? `${adsOrigin}/app/workflows` : '/ads', label: 'Workflows', rail: 'Workflows' },
-  ];
-}
 
 function isExternal(href: string) {
   return href.startsWith('http://') || href.startsWith('https://');
@@ -136,15 +129,17 @@ function NavMenu({
 
 export default function SiteNav({
   adsOrigin = '',
+  modules = null,
   railExtra,
 }: {
   adsOrigin?: string;
+  modules?: ModuleFlags | null;
   railExtra?: ReactNode;
 }) {
   const pathname = usePathname();
   const section = navSectionFromPath(pathname);
   const [open, setOpen] = useState(false);
-  const adsItems = adsSub(adsOrigin);
+  const adsItems = adsSub(adsOrigin, modules);
   const rail = railItemsForSection(section, SEO_SUB, adsItems);
 
   useEffect(() => {

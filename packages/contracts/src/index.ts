@@ -72,3 +72,21 @@ export { PLAN_15_DOC, CANONICAL_TREE, DAY1_MOVE } from "./layout";
 export type { CanonicalPath } from "./layout";
 
 export { ISOLATION } from "./isolation";
+
+export {
+  BUSINESS_TYPES,
+  BUSINESS_TYPE_LABELS,
+  BUSINESS_TYPE_HELP,
+  ADS_MODULE_IDS,
+  MODULE_COPY,
+  isBusinessType,
+  isAdsModuleId,
+  defaultModulesFor,
+  unboardedModules,
+  normalizeModules,
+  parseWorkspaceModuleSettings,
+  settingsJsonWithBusinessType,
+  settingsJsonWithModuleOverrides,
+  filterItemsByModules,
+} from "./modules";
+export type { BusinessType, AdsModuleId, ModuleFlags, WorkspaceModuleSettings } from "./modules";

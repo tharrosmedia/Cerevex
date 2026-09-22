@@ -11,9 +11,11 @@ import type {
   Platform,
   RecommendationPublic,
 } from "@tharros/ads-shared";
+import { MODULE_COPY } from "@tharros/ads-shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ModuleOff } from "@/components/cockpit/module-off";
 import { FindingCard } from "@/components/cockpit/finding-card";
 import { MetricDetails } from "@/components/cockpit/metric-details";
 import { EmptyCard, ErrorCard, LoadingLines, NoticeBanner } from "@/components/cockpit/page-state";
@@ -46,7 +48,7 @@ type RecFilter = (typeof REC_FILTERS)[number];
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { killSwitch, canMutate } = useWorkspace();
+  const { killSwitch, canMutate, modules, loading: workspaceLoading } = useWorkspace();
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [accounts, setAccounts] = useState<AdAccountPublic[]>([]);
   const [canManage, setCanManage] = useState(false);
@@ -222,12 +224,16 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
+  if (!workspaceLoading && !modules.clients) {
+    return <ModuleOff title={MODULE_COPY.clients.label} help={MODULE_COPY.clients.help} />;
+  }
+
   if (error && !client) {
     return (
       <div className="mx-auto max-w-3xl">
         <ErrorCard title="Client unavailable" message={error}>
-          <Link href="/app" className="text-sm text-foreground hover:underline">
-            Back to ads
+          <Link href="/app/clients" className="text-sm text-foreground hover:underline">
+            Back to clients
           </Link>
         </ErrorCard>
       </div>
@@ -253,8 +259,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div>
-        <Link href="/app" className="text-xs text-muted-foreground hover:text-foreground">
-          ← All ads
+        <Link href="/app/clients" className="text-xs text-muted-foreground hover:text-foreground">
+          ← All clients
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h2 className="font-heading text-3xl font-medium tracking-tight">{client.name}</h2>

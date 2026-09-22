@@ -4,26 +4,33 @@ import { cookies } from 'next/headers';
 import { listStores, getActiveStoreId } from '@/src/lib/db/stores';
 import AutoRefresh from '@/components/auto-refresh';
 import { countOpenFindings } from '@/src/lib/db/findings';
+import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CommandCenter() {
-  let storeId = await getActiveStoreId();
-  const allStores = await listStores();
-  if (!storeId && allStores.length > 0) {
-    storeId = allStores[0].id;
-    const c = await cookies();
-    if (storeId) {
-      c.set('activeStoreId', storeId, {
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-      });
+  let storeId: string | null = null;
+  let allStores: any[] = [];
+  let loadError: string | null = null;
+  try {
+    storeId = await getActiveStoreId();
+    allStores = await listStores();
+    if (!storeId && allStores.length > 0) {
+      storeId = allStores[0].id;
+      const c = await cookies();
+      if (storeId) {
+        c.set('activeStoreId', storeId, {
+          path: '/',
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+        });
+      }
     }
+  } catch (e: any) {
+    loadError = e.message || 'Failed to load data';
   }
   let jobs: any[] = [];
   let openFindings = 0;
-  let loadError: string | null = null;
   try {
     if (storeId) {
       jobs = await listJobs(storeId, 20);
@@ -32,6 +39,11 @@ export default async function CommandCenter() {
   } catch (e: any) {
     loadError = e.message || 'Failed to load data';
   }
+
+  let onboardingComplete = true;
+  try {
+    onboardingComplete = (await getWorkspaceModuleSettings()).onboardingComplete;
+  } catch {}
 
   const awaitingApproval = jobs.filter((j: any) => j.status === 'awaiting_approval').length;
   const seoAwaiting = awaitingApproval; // jobs are seo domain
@@ -42,6 +54,16 @@ export default async function CommandCenter() {
       <h1 className="text-3xl font-bold mb-2">Cerevex</h1>
       <p className="text-sm mb-8" style={{ color: 'var(--muted-foreground)' }}>Ads and SEO for your store.</p>
       <AutoRefresh interval={4000} />
+
+      {!onboardingComplete && (
+        <div className="mb-6 p-4 border rounded">
+          <p className="font-semibold mb-2">Choose your business type</p>
+          <p className="text-sm mb-3" style={{ color: 'var(--muted-foreground)' }}>
+            This sets which Ads modules you see. You can change them later in Settings.
+          </p>
+          <Link href="/onboarding" className="inline-block bg-black text-white px-4 py-2 rounded text-sm">Choose business type</Link>
+        </div>
+      )}
 
       {allStores.length === 0 && (
         <div className="mb-6 p-4 border border-blue-200 bg-blue-50 rounded">

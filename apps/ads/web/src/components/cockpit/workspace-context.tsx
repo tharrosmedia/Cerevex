@@ -2,14 +2,18 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import type { SessionUser } from "@tharros/ads-shared";
+import type { ModuleFlags, SessionUser, WorkspaceSummary } from "@tharros/ads-shared";
+import { unboardedModules } from "@tharros/ads-shared";
 import { ApiError, getWorkspace, me } from "@/lib/api";
 
 type WorkspaceState = {
   user: SessionUser | null;
+  workspace: WorkspaceSummary | null;
   killSwitch: boolean;
   canMutate: boolean;
   workspaceName: string | null;
+  modules: ModuleFlags;
+  onboardingComplete: boolean;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -20,9 +24,12 @@ const WorkspaceContext = createContext<WorkspaceState | null>(null);
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
   const [killSwitch, setKillSwitch] = useState(true);
   const [canMutate, setCanMutate] = useState(false);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [modules, setModules] = useState<ModuleFlags>(unboardedModules());
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,9 +37,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const session = await me();
     setUser(session.user);
     const result = await getWorkspace();
+    setWorkspace(result.workspace);
     setKillSwitch(result.workspace?.applyKillSwitch ?? true);
     setCanMutate(result.canMutate);
     setWorkspaceName(result.workspace?.name ?? null);
+    setModules(result.workspace?.modules ?? unboardedModules());
+    setOnboardingComplete(Boolean(result.workspace?.onboardingComplete));
     setError(null);
   }, []);
 
@@ -57,8 +67,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [refresh, router]);
 
   const value = useMemo(
-    () => ({ user, killSwitch, canMutate, workspaceName, loading, error, refresh }),
-    [user, killSwitch, canMutate, workspaceName, loading, error, refresh],
+    () => ({
+      user,
+      workspace,
+      killSwitch,
+      canMutate,
+      workspaceName,
+      modules,
+      onboardingComplete,
+      loading,
+      error,
+      refresh,
+    }),
+    [user, workspace, killSwitch, canMutate, workspaceName, modules, onboardingComplete, loading, error, refresh],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

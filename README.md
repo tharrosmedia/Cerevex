@@ -127,7 +127,7 @@ Do not provision a second Inngest / Neon / Railway app for the ads module. Do no
 ## Usage
 
 1. Visit http://localhost:3000 (login with `APP_PASSWORD`)
-2. Use the Cerevex wordmark for home. Ads is a module at `/ads` (live workspace at `app.cerevex.store` when that origin is set).
+2. Use the Cerevex wordmark for home. Ads is a module at `/ads` (live workspace at `app.cerevex.store` when that origin is set). First-run onboarding picks a business type; Settings → Modules can change which Ads modules appear in the menu.
 3. Use Dashboard to trigger SEO jobs by keyword (`/seo/create` and other `/seo/*` routes still ship).
 4. Go to Review Queue to view/approve/edit drafts.
 5. History shows all jobs.

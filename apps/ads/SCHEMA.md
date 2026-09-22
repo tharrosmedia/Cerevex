@@ -19,6 +19,18 @@ A user with `client_readonly` on the workspace and a membership on Got Ductless 
 
 The kill switch is a hard product control (default **true** / ON). M3 still does not execute Meta/Google writes even if it is flipped.
 
+`settings_json` also holds Modules & Nav IA 1.1 workspace flags (no extra table, schema `os` only):
+
+```json
+{
+  "businessType": "home_service" | "agency" | "ecommerce",
+  "modules": { "leads": true, "clients": false, "sales": false, "workflows": true },
+  "onboardingCompletedAt": "ISO-8601"
+}
+```
+
+Defaults: Leads ON for all; Clients ON only for agency; Sales ON only for ecommerce; Workflows ON for v1. Settings can override flags later. Existing keys such as `vertical` stay in the same JSON object.
+
 ### users
 `id`, `email` (unique), `name`, `password_hash`, `created_at`
 

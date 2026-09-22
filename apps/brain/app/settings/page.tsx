@@ -10,6 +10,7 @@ import { syncProductsForStore, syncCatalogForStore } from '@/src/lib/shopify/syn
 import { listProducts } from '@/src/lib/db/products';
 import { getDefaultSEORules } from '@/src/lib/seo/rules';
 import { SEORulesEditor } from '@/components/SEORulesEditor';
+import { WorkspaceModulesSettings } from '@/components/workspace-modules-settings';
 
 async function resyncInngest() {
   'use server';
@@ -434,9 +435,12 @@ async function syncCatalogAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string };
-  const store = await getActiveStore();
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string };
+  let store = null;
+  try {
+    store = await getActiveStore();
+  } catch {}
   const config = store?.config || {};
   const bv = config.brandVoice || null;
   const auto = config.autonomy || null;
@@ -448,6 +452,18 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
     <div className="p-8 max-w-6xl mx-auto">
       <Link href="/" className="underline mb-4 block">← Back to Dashboard</Link>
       <h1 className="text-3xl font-bold mb-8">Settings</h1>
+
+      {params.modules === 'saved' && (
+        <div className="mb-4 p-3 border text-sm">Modules saved. The Ads menu now shows only modules that are on.</div>
+      )}
+      {params.modules === 'type' && (
+        <div className="mb-4 p-3 border text-sm">Business type saved. Modules were reset to the defaults for that type.</div>
+      )}
+      {params.modules === 'error' && (
+        <div className="mb-4 p-3 border text-sm">Could not save modules. Try again.</div>
+      )}
+
+      <WorkspaceModulesSettings />
 
       {params.resync === 'success' && (
         <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Inngest resync successful.</div>

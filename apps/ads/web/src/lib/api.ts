@@ -2,11 +2,13 @@ import type {
   AdAccountPublic,
   AdEntityPublic,
   AuditRunPublic,
+  BusinessType,
   ClientSummary,
   SessionUser,
   Membership,
   ClientMembership,
   FindingPublic,
+  ModuleFlags,
   OAuthPlatformConfig,
   Platform,
   RecommendationPublic,
@@ -152,6 +154,16 @@ export type AuditBundleResponse = {
 
 export async function getWorkspace(): Promise<{ workspace: WorkspaceSummary | null; canMutate: boolean }> {
   return api("/workspace");
+}
+
+export async function patchWorkspace(input: {
+  businessType?: BusinessType;
+  modules?: Partial<ModuleFlags>;
+}): Promise<{ workspace: WorkspaceSummary | null; canMutate: boolean }> {
+  return api("/workspace", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function startInlineAudit(clientId: string, adAccountId?: string): Promise<AuditBundleResponse> {

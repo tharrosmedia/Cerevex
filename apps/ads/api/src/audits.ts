@@ -2,7 +2,14 @@ import type { MiddlewareHandler } from "hono";
 import type { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { EVENTS, canMutate } from "@tharros/ads-shared";
+import {
+  applyBusinessTypeSettings,
+  applyModuleOverrideSettings,
+  canMutate,
+  EVENTS,
+  isBusinessType,
+  toWorkspaceSummary,
+} from "@tharros/ads-shared";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
   createAuditRun,
@@ -281,6 +288,22 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     );
   });
 
+  const workspacePatchSchema = z
+    .object({
+      businessType: z.enum(["home_service", "agency", "ecommerce"]).optional(),
+      modules: z
+        .object({
+          leads: z.boolean().optional(),
+          clients: z.boolean().optional(),
+          sales: z.boolean().optional(),
+          workflows: z.boolean().optional(),
+        })
+        .optional(),
+    })
+    .refine((value) => Boolean(value.businessType || value.modules), {
+      message: "businessType or modules is required",
+    });
+
   app.get("/workspace", requireAuth, async (c) => {
     const auth = c.get("auth");
     const workspaceId = auth.memberships[0]?.workspaceId;
@@ -291,14 +314,57 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       where: eq(workspaces.id, workspaceId),
     });
     return c.json({
-      workspace: workspace
-        ? {
-            id: workspace.id,
-            name: workspace.name,
-            applyKillSwitch: workspace.applyKillSwitch,
-          }
-        : null,
+      workspace: workspace ? toWorkspaceSummary(workspace) : null,
       canMutate: workspace ? canMutate(auth, workspace.id) : false,
+    });
+  });
+
+  app.patch("/workspace", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    const workspaceId = auth.memberships[0]?.workspaceId;
+    if (!workspaceId) {
+      throw new HTTPException(403, { message: "No workspace membership" });
+    }
+    if (!canMutate(auth, workspaceId)) {
+      throw new HTTPException(403, { message: "Only owners and operators can change modules" });
+    }
+    const parsed = workspacePatchSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: "businessType or modules is required" });
+    }
+
+    const workspace = await getDb().query.workspaces.findFirst({
+      where: eq(workspaces.id, workspaceId),
+    });
+    if (!workspace) {
+      throw new HTTPException(404, { message: "Workspace not found" });
+    }
+
+    let next = workspace.settingsJson as unknown;
+    if (parsed.data.businessType && isBusinessType(parsed.data.businessType)) {
+      next = applyBusinessTypeSettings(next, parsed.data.businessType);
+    }
+    if (parsed.data.modules) {
+      next = applyModuleOverrideSettings(next, parsed.data.modules);
+    }
+
+    const [updated] = await getDb()
+      .update(workspaces)
+      .set({ settingsJson: next })
+      .where(eq(workspaces.id, workspaceId))
+      .returning();
+
+    childLogger(c.get("requestId")).info({
+      msg: "workspace.modules_updated",
+      workspaceId,
+      userId: auth.user.id,
+      businessType: parsed.data.businessType,
+      modules: parsed.data.modules,
+    });
+
+    return c.json({
+      workspace: updated ? toWorkspaceSummary(updated) : toWorkspaceSummary({ ...workspace, settingsJson: next }),
+      canMutate: true,
     });
   });
 }
