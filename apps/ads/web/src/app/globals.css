@@ -130,3 +130,162 @@
     @apply font-sans;
   }
 }
+
+/* Shared Cerevex one-customer shell (mirrors apps/brain header IA) */
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 1rem 1.25rem;
+}
+
+.site-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.site-wordmark {
+  font-weight: 750;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+  color: var(--foreground);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+
+.site-wordmark:hover {
+  color: var(--foreground);
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.9rem;
+  flex: 0 0 auto;
+}
+
+.site-nav a,
+.site-nav button {
+  background: transparent;
+  color: var(--foreground);
+  border: 0;
+  padding: 0;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.site-nav a:hover,
+.site-nav button:hover {
+  text-decoration: underline;
+}
+
+.site-nav-relative {
+  position: relative;
+}
+
+.site-nav-pair {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.site-nav-menu {
+  position: absolute;
+  left: 0;
+  margin-top: 0.35rem;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.35rem;
+  z-index: 10;
+  min-width: 10rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.site-nav-menu a {
+  display: block;
+  padding: 0.35rem 0.5rem;
+}
+
+.site-nav-menu a:hover {
+  background: var(--muted);
+}
+
+.site-nav-rail {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1 1 12rem;
+  min-width: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.site-nav-rail-items {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.site-nav-rail a {
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.site-nav-rail a:hover {
+  text-decoration: underline;
+}
+
+.site-nav-current {
+  font-weight: 650;
+}
+
+.site-store-switch,
+.site-workspace-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 22rem;
+  flex: 0 1 22rem;
+}
+
+.site-workspace-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 9rem;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .site-store-switch,
+  .site-workspace-switch {
+    max-width: 12rem;
+    flex-basis: 12rem;
+  }
+
+  .site-workspace-name {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .site-rail-pill {
+    display: none;
+  }
+}

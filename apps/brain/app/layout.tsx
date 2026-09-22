@@ -3,9 +3,10 @@ import './globals.css';
 import { cookies, headers } from 'next/headers';
 import { listStores } from '@/src/lib/db/stores';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
 import { redirect } from 'next/navigation';
-import SeoNav from '@/components/seo-nav';
+import SiteNav from '@/components/site-nav';
+import StoreSwitcher from '@/components/store-switcher';
+import { adsModuleOrigin } from '@/lib/module-origins';
 
 export const metadata: Metadata = {
   title: 'Cerevex',
@@ -21,7 +22,9 @@ async function setActiveStore(formData: FormData) {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
   });
-  redirect('/');
+  const headerList = await headers();
+  const pathname = headerList.get('x-pathname') || '/';
+  redirect(pathname.startsWith('/') ? pathname : '/');
 }
 
 export default async function RootLayout({
@@ -54,20 +57,25 @@ export default async function RootLayout({
           <>
             <header className="site-header">
               <div className="site-header-inner">
-                <div className="site-header-brand">
-                  <Link href="/" className="site-wordmark">Cerevex</Link>
-                  <SeoNav />
-                </div>
-                {stores.length > 0 && (
-                  <form action={setActiveStore} className="site-store-switch">
-                    <select name="storeId" defaultValue={activeStoreId}>
-                      {stores.map((s: any) => (
-                        <option key={s.id} value={s.id}>{s.name} ({s.shopify_domain})</option>
-                      ))}
-                    </select>
-                    <Button type="submit" size="sm" variant="outline">Switch</Button>
-                  </form>
-                )}
+                <Link href="/" className="site-wordmark" aria-label="Cerevex home">
+                  Cerevex
+                </Link>
+                <SiteNav
+                  adsOrigin={adsModuleOrigin()}
+                  railExtra={
+                    stores.length > 0 ? (
+                      <StoreSwitcher
+                        stores={stores.map((store: { id: string; name: string; shopify_domain?: string }) => ({
+                          id: store.id,
+                          name: store.name,
+                          shopify_domain: store.shopify_domain,
+                        }))}
+                        activeStoreId={activeStoreId}
+                        action={setActiveStore}
+                      />
+                    ) : null
+                  }
+                />
               </div>
             </header>
             <main>{children}</main>

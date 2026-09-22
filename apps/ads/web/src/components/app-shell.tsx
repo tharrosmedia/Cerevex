@@ -2,23 +2,34 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, Lightbulb, LogOut, Workflow } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { KillSwitchBanner, KillSwitchPill } from "@/components/cockpit/kill-switch-banner";
 import { useWorkspace } from "@/components/cockpit/workspace-context";
 import { logout } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { consoleHref } from "@/lib/console-origin";
 
-const NAV = [
-  { href: "/app", label: "Ads", icon: LayoutGrid, exact: true },
-  { href: "/app/brainstorm", label: "Leads", icon: Lightbulb },
-  { href: "/app/workflows", label: "Workflows", icon: Workflow },
+const ADS_SUB = [
+  { href: "/app", label: "Overview" },
+  { href: "/app", label: "Clients", rail: "Clients", match: (path: string) => path === "/app" || path.startsWith("/app/clients") },
+  { href: "/app/brainstorm", label: "Leads", rail: "Leads" },
+  { href: "/app/workflows", label: "Workflows", rail: "Workflows" },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function isAdsPath(pathname: string | null) {
+  return Boolean(pathname?.startsWith("/app"));
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, killSwitch, workspaceName, error } = useWorkspace();
+  const { killSwitch, workspaceName, error } = useWorkspace();
+  const [adsOpen, setAdsOpen] = useState(false);
+  const adsCurrent = isAdsPath(pathname);
+
+  useEffect(() => {
+    setAdsOpen(false);
+  }, [pathname]);
 
   async function onLogout() {
     await logout();
@@ -26,71 +37,84 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground md:flex-row">
-      <aside className="border-b border-sidebar-border bg-sidebar md:flex md:w-64 md:flex-col md:border-b-0 md:border-r">
-        <div className="flex items-center justify-between px-5 py-4 md:block">
-          <Link href="/app" className="flex items-baseline gap-2">
-            <span className="font-heading text-xl tracking-tight">Cerevex</span>
-          </Link>
-          <p className="hidden pt-1 text-xs text-muted-foreground md:block">Ads for home service</p>
-        </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:overflow-visible">
-          {NAV.map((item) => {
-            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="site-header">
+        <div className="site-header-inner">
+          <a href={consoleHref("/")} className="site-wordmark" aria-label="Cerevex home">
+            Cerevex
+          </a>
+          <nav className="site-nav" aria-label="Cerevex">
+            <a href={consoleHref("/seo")}>SEO</a>
+            <div className="site-nav-relative site-nav-pair">
+              <Link href="/app" className={adsCurrent ? "site-nav-current" : undefined}>
+                Ads
               </Link>
-            );
-          })}
-        </nav>
-        <div className="hidden items-center justify-between gap-2 border-t border-sidebar-border px-4 py-3 md:flex">
-          <div className="min-w-0">
-            <p className="truncate text-sm">{user?.name ?? "…"}</p>
-            <p className="truncate text-xs text-muted-foreground">{user?.email ?? ""}</p>
-          </div>
-          <Button variant="ghost" size="icon" aria-label="Sign out" onClick={onLogout}>
-            <LogOut className="size-4" />
-          </Button>
-        </div>
-      </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border px-4 py-3 md:px-8">
-          <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Workspace</p>
-            <h1 className="font-heading text-lg">{workspaceName ?? "Cerevex"}</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <KillSwitchPill on={killSwitch} />
-            <Button variant="ghost" size="sm" className="md:hidden" onClick={onLogout}>
-              Sign out
-            </Button>
-          </div>
-        </header>
-        <div className="border-b border-border px-4 py-3 md:px-8">
-          <KillSwitchBanner on={killSwitch} />
-        </div>
-        <main className="flex-1 px-4 py-6 md:px-8">
-          {error ? (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-              {error}
+              <button
+                type="button"
+                onClick={() => setAdsOpen((open) => !open)}
+                aria-expanded={adsOpen}
+                aria-haspopup="true"
+                aria-label="Ads menu"
+              >
+                {adsOpen ? "▴" : "▾"}
+              </button>
+              {adsOpen && (
+                <div className="site-nav-menu">
+                  {ADS_SUB.map((item) => (
+                    <Link key={`${item.label}-${item.href}`} href={item.href} onClick={() => setAdsOpen(false)}>
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            children
-          )}
-        </main>
+            <a href={consoleHref("/review")}>Review</a>
+            <a href={consoleHref("/stores")}>Stores</a>
+            <a href={consoleHref("/settings")}>Settings</a>
+          </nav>
+          <div className="site-nav-rail">
+            <div className="site-nav-rail-items">
+              {ADS_SUB.filter((item) => item.rail).map((item) => {
+                const current = item.match
+                  ? item.match(pathname ?? "")
+                  : Boolean(pathname?.startsWith(item.href));
+                return (
+                  <Link
+                    key={item.rail}
+                    href={item.href}
+                    className={current ? "site-nav-current" : undefined}
+                  >
+                    {item.rail}
+                  </Link>
+                );
+              })}
+            </div>
+            <div className="site-store-switch site-workspace-switch">
+              <span className="site-workspace-name" title={workspaceName ?? undefined}>
+                {workspaceName ?? "Cerevex"}
+              </span>
+              <span className="site-rail-pill">
+                <KillSwitchPill on={killSwitch} />
+              </span>
+              <Button variant="ghost" size="sm" onClick={onLogout} aria-label="Sign out">
+                Sign out
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div className="border-b border-border px-4 py-3 md:px-8">
+        <KillSwitchBanner on={killSwitch} />
       </div>
+      <main className="flex-1 px-4 py-6 md:px-8">
+        {error ? (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+            {error}
+          </div>
+        ) : (
+          children
+        )}
+      </main>
     </div>
   );
 }

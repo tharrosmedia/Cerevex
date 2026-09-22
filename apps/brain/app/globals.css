@@ -59,15 +59,9 @@ a { color: var(--foreground); }
   margin: 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-}
-
-.site-header-brand {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .site-wordmark {
@@ -76,6 +70,7 @@ a { color: var(--foreground); }
   letter-spacing: -0.03em;
   color: var(--foreground);
   text-decoration: none;
+  flex: 0 0 auto;
 }
 
 .site-wordmark:hover {
@@ -86,6 +81,20 @@ a { color: var(--foreground); }
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 14rem;
+  flex: 0 1 14rem;
+}
+
+.site-store-switch select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .site-nav {
@@ -93,6 +102,7 @@ a { color: var(--foreground); }
   align-items: center;
   gap: 0.85rem;
   font-size: 0.9rem;
+  flex: 0 0 auto;
 }
 
 .site-nav a,
@@ -109,10 +119,6 @@ a { color: var(--foreground); }
 .site-nav a:hover,
 .site-nav button:hover {
   text-decoration: underline;
-}
-
-.site-nav-muted {
-  color: var(--muted-foreground);
 }
 
 .site-nav-menu {
@@ -222,15 +228,49 @@ a { color: var(--foreground); }
   position: relative;
 }
 
-.site-nav-seo-sub {
+.site-nav-pair {
   display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.site-nav-rail {
+  display: flex;
+  align-items: center;
   gap: 0.75rem;
-  margin-left: 0.5rem;
+  flex: 1 1 12rem;
+  min-width: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.site-nav-rail-items {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
   padding-left: 0.75rem;
   border-left: 1px solid var(--border);
   font-size: 0.8rem;
 }
 
+.site-nav-rail a {
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.site-nav-rail a:hover {
+  text-decoration: underline;
+}
+
 .site-nav-current {
   font-weight: 650;
+}
+
+@media (max-width: 720px) {
+  .site-store-switch {
+    max-width: 8.5rem;
+    flex-basis: 8.5rem;
+  }
 }
