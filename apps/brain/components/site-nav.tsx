@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { navSectionFromPath, railItemsForSection } from '@/lib/nav-section';
 
 type NavItem = {
   href: string;
@@ -57,6 +58,82 @@ function NavLink({
   );
 }
 
+function useDismissibleMenu(
+  open: boolean,
+  onClose: () => void,
+  rootRef: RefObject<HTMLElement | null>,
+) {
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      onClose();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open, onClose, rootRef]);
+}
+
+function NavMenu({
+  id,
+  label,
+  href,
+  items,
+  open,
+  onToggle,
+  onClose,
+}: {
+  id: 'seo' | 'ads';
+  label: string;
+  href: string;
+  items: NavItem[];
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+}) {
+  const itemRef = useRef<HTMLDivElement>(null);
+  useDismissibleMenu(open, onClose, itemRef);
+
+  return (
+    <div
+      ref={itemRef}
+      className={open ? 'site-nav-relative site-nav-pair is-open' : 'site-nav-relative site-nav-pair'}
+    >
+      <Link href={href} className="site-nav-current">
+        {label}
+      </Link>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-controls={`${id}-menu`}
+        aria-label={`${label} menu`}
+      >
+        {open ? '▴' : '▾'}
+      </button>
+      {open && (
+        <div className="site-nav-menu" id={`${id}-menu`} role="menu">
+          {items.map((item) => (
+            <NavLink key={`${item.label}-${item.href}`} href={item.href} onClick={onClose}>
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SiteNav({
   adsOrigin = '',
   railExtra,
@@ -65,74 +142,65 @@ export default function SiteNav({
   railExtra?: ReactNode;
 }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState<'seo' | 'ads' | null>(null);
-  const isSeo = Boolean(pathname?.startsWith('/seo'));
-  const isAds = Boolean(pathname?.startsWith('/ads'));
+  const section = navSectionFromPath(pathname);
+  const [open, setOpen] = useState(false);
   const adsItems = adsSub(adsOrigin);
-  const rail = isAds
-    ? adsItems.filter((item) => item.rail)
-    : SEO_SUB.filter((item) => item.rail);
+  const rail = railItemsForSection(section, SEO_SUB, adsItems);
 
   useEffect(() => {
-    setOpen(null);
-  }, [pathname]);
+    setOpen(false);
+  }, [pathname, section]);
+
+  const closeMenu = () => setOpen(false);
 
   return (
     <>
       <nav className="site-nav" aria-label="Cerevex">
-        <div className="site-nav-relative site-nav-pair">
-          <Link href="/seo" className={isSeo ? 'site-nav-current' : undefined}>
-            SEO
-          </Link>
-          <button
-            type="button"
-            onClick={() => setOpen(open === 'seo' ? null : 'seo')}
-            aria-expanded={open === 'seo'}
-            aria-haspopup="true"
-            aria-label="SEO menu"
-          >
-            {open === 'seo' ? '▴' : '▾'}
-          </button>
-          {open === 'seo' && (
-            <div className="site-nav-menu">
-              {SEO_SUB.map((item) => (
-                <NavLink key={item.href} href={item.href} onClick={() => setOpen(null)}>
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="site-nav-relative site-nav-pair">
-          <Link href="/ads" className={isAds ? 'site-nav-current' : undefined}>
-            Ads
-          </Link>
-          <button
-            type="button"
-            onClick={() => setOpen(open === 'ads' ? null : 'ads')}
-            aria-expanded={open === 'ads'}
-            aria-haspopup="true"
-            aria-label="Ads menu"
-          >
-            {open === 'ads' ? '▴' : '▾'}
-          </button>
-          {open === 'ads' && (
-            <div className="site-nav-menu">
-              {adsItems.map((item) => (
-                <NavLink key={`${item.label}-${item.href}`} href={item.href} onClick={() => setOpen(null)}>
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-          )}
-        </div>
-        <Link href="/review" className={pathname === '/review' ? 'site-nav-current' : undefined}>
+        {section === 'seo' ? (
+          <NavMenu
+            id="seo"
+            label="SEO"
+            href="/seo"
+            items={SEO_SUB}
+            open={open}
+            onToggle={() => setOpen((current) => !current)}
+            onClose={closeMenu}
+          />
+        ) : (
+          <Link href="/seo">SEO</Link>
+        )}
+        {section === 'ads' ? (
+          <NavMenu
+            id="ads"
+            label="Ads"
+            href="/ads"
+            items={adsItems}
+            open={open}
+            onToggle={() => setOpen((current) => !current)}
+            onClose={closeMenu}
+          />
+        ) : (
+          <Link href="/ads">Ads</Link>
+        )}
+        <Link
+          href="/review"
+          className={pathname === '/review' ? 'site-nav-current' : undefined}
+          onClick={closeMenu}
+        >
           Review
         </Link>
-        <Link href="/stores" className={pathname?.startsWith('/stores') ? 'site-nav-current' : undefined}>
+        <Link
+          href="/stores"
+          className={pathname?.startsWith('/stores') ? 'site-nav-current' : undefined}
+          onClick={closeMenu}
+        >
           Stores
         </Link>
-        <Link href="/settings" className={pathname === '/settings' ? 'site-nav-current' : undefined}>
+        <Link
+          href="/settings"
+          className={pathname === '/settings' ? 'site-nav-current' : undefined}
+          onClick={closeMenu}
+        >
           Settings
         </Link>
       </nav>
