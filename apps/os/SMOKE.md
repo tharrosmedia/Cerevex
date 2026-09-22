@@ -107,6 +107,30 @@ OS IDs that belong only on **`tharros-os`**:
 - Never run Brain `npm run inngest:sync` with an OS serve URL.
 - OS has no Cloud sync script yet. If you add one, it must target app **`tharros-os`** and the **OS worker** `/api/inngest` URL only.
 
+
+## One-shot (Railway / shared Neon)
+
+Requires `DATABASE_URL`. Applies journaled OS SQL once. Does **not** seed. Does **not** deploy. Does **not** touch Brain public migrations. Never logs `DATABASE_URL`.
+
+```bash
+# Repo-canonical — reads apps/os/shared/drizzle via _journal.json
+DATABASE_URL=... bun scripts/os-neon-smoke-migrate.ts
+
+# Operator embed — sibling SQL + bundle in artifacts/
+DATABASE_URL=... bun artifacts/os-neon-migrate.ts
+```
+
+The runner:
+
+1. `CREATE SCHEMA IF NOT EXISTS os`
+2. `SET search_path TO os, public`
+3. Records each file in `os.__drizzle_migrations` (`hash` + `created_at`, same shape as Drizzle)
+4. Prints JSON: `ok`, `migrationsApplied`, `osTables[]`, `publicTableCount`, `publicUnchanged`
+
+Embeddable copies: `artifacts/0000_m1_spine.sql`, `artifacts/0001_m2_connect.sql`, `artifacts/os-migrate-bundle.json`.
+
+Drizzle SQL under `apps/os/shared/drizzle/` is schema-qualified to **`os`** (`CREATE TYPE "os".…`, `CREATE TABLE "os".…`).
+
 ---
 
 ## Copy-paste checklist
@@ -165,6 +189,17 @@ Expected public tables (Brain migrations `0001`–`0010`):
 ### 2. Create schema `os` + run OS migrations
 
 `migrate.ts` already runs `CREATE SCHEMA IF NOT EXISTS "os"` and sets `search_path` to `os, public`.
+
+Railway-safe one-shot (preferred when you only have Bun + `DATABASE_URL`; does not seed):
+
+```bash
+# Same DATABASE_URL as Brain. Do not change the Neon project.
+# Do NOT run os:db:seed against production.
+DATABASE_URL=... bun scripts/os-neon-smoke-migrate.ts
+# or: DATABASE_URL=... bun artifacts/os-neon-migrate.ts
+```
+
+`npm` path (needs workspace install):
 
 ```bash
 # Same DATABASE_URL as Brain. Do not change the Neon project.
