@@ -2,13 +2,15 @@
 
 Accepted by Adam. This repo is being reshaped **in place** (no force-push of `main`).
 
+**Current product name:** Cerevex. Ads work is the Cerevex ads module at `apps/ads` (formerly `apps/os` / Tharros OS). Neon schema **`os` stays `os`**. Inngest ads app id default is `cerevex-ads` (env key `OS_INNGEST_APP_ID` unchanged). Brain SEO Inngest app id stays `shopify-brain`. GitHub repo is now `tharrosmedia/Cerevex` (renamed outside this PR).
+
 ## Day 1–2 (this PR)
 
 Monorepo reshape of `tharrosmedia/Shopify-Brain` to the locked tree:
 
 ```
 apps/brain
-apps/os
+apps/ads
 jobs/meta/ads
 jobs/meta/organic
 jobs/google/ads
@@ -25,12 +27,12 @@ packages/shared
 - Placeholder dirs for Meta/Google jobs (prefixes only).
 - `packages/contracts` types for tenancy, authz envelopes, audit, Inngest prefixes.
 - Thin `packages/db` and `packages/shared` stubs.
-- `apps/os` placeholder for the upcoming Origin **tharros-os M1/M2** import. Do not invent product features.
-- Path-filtered CI so Brain + `jobs/seo` stay green independently of `apps/os`.
+- `apps/ads` placeholder for the upcoming Origin **tharros-os M1/M2** import. Do not invent product features.
+- Path-filtered CI so Brain + `jobs/seo` stay green independently of `apps/ads`.
 
 ## Follow-up (landed on this PR)
 
-Origin tharros-os M1/M2 is imported into `apps/os` (api/web/shared/workers). Paid sync mapped to `jobs/meta/ads` and `jobs/google/ads`.
+Origin tharros-os (now Cerevex ads module) M1/M2 is imported into `apps/ads` (api/web/shared/workers). Paid sync mapped to `jobs/meta/ads` and `jobs/google/ads`.
 
 Still held: shared Neon smoke (M3), live Meta/Google mutate, Railway/Neon provisioning.
 
@@ -52,4 +54,4 @@ Still held: shared Neon smoke (M3), live Meta/Google mutate, Railway/Neon provis
 
 - OS Neon: isolated schema.
 - OS auth: separate from Brain `APP_PASSWORD`.
-- Shared Inngest **Cloud keys** (same org). Distinct app ids so OS sync cannot clobber SEO: Brain `shopify-brain` (`seo/*` / `seo-*`), OS `tharros-os` (`os/*`, `meta/ads/*`, `google/ads/*`). Checklist: [`apps/os/SMOKE.md`](../apps/os/SMOKE.md).
+- Shared Inngest **Cloud keys** (same org). Distinct app ids so OS sync cannot clobber SEO: Brain `shopify-brain` (`seo/*` / `seo-*`), OS `cerevex-ads` (`os/*`, `meta/ads/*`, `google/ads/*`). Checklist: [`apps/ads/SMOKE.md`](../apps/ads/SMOKE.md).

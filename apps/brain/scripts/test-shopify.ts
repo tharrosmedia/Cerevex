@@ -9,7 +9,7 @@ if (!domain || !token) {
 }
 const client = createAdminClient(domain, token);
 const result = await createAndPublishCollection(client, {
-  title: 'Test Shopify Brain ' + new Date().toISOString(),
-  bodyHtml: '<p>Created by Shopify Brain test script. Safe to delete.</p>'
+  title: 'Test Cerevex ' + new Date().toISOString(),
+  bodyHtml: '<p>Created by Cerevex test script. Safe to delete.</p>'
 });
 console.dir(result, { depth: 3 });

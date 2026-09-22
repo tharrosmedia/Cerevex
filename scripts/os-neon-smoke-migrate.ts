@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
 /**
- * Repo-canonical OS Neon smoke migrator.
- * Reads apps/os/shared/drizzle (journal order). Does not seed.
+ * Repo-canonical ads-module Neon smoke migrator (schema `os` stays).
+ * Filename keeps os- prefix so existing Railway one-shot commands keep working.
+ * Reads apps/ads/shared/drizzle (journal order). Does not seed.
  */
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runOsNeonMigrate } from "../artifacts/os-neon-migrate.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const migrationsDir = resolve(here, "../apps/os/shared/drizzle");
+const migrationsDir = resolve(here, "../apps/ads/shared/drizzle");
 const journalPath = resolve(migrationsDir, "meta/_journal.json");
 
 function redact(value: string): string {

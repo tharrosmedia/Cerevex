@@ -1,6 +1,6 @@
-import { EVENTS, inngest } from "@tharros/shared/inngest";
-import { runAdAccountSync } from "@tharros/shared/sync";
-import { writeInngestAudit } from "@tharros/shared/worker-audit";
+import { EVENTS, inngest } from "@tharros/ads-shared/inngest";
+import { runAdAccountSync } from "@tharros/ads-shared/sync";
+import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
 
 /**
  * Meta ads Inngest functions. Prefix: meta/ads/*

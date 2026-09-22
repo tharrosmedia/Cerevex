@@ -3,7 +3,7 @@
   "journalTable": "os.__drizzle_migrations",
   "searchPath": "os, public",
   "seed": false,
-  "source": "apps/os/shared/drizzle",
+  "source": "apps/ads/shared/drizzle",
   "migrations": [
     {
       "filename": "0000_m1_spine.sql",

@@ -1,10 +1,10 @@
 {
   "name": "shopify-brain-monorepo",
   "private": true,
-  "description": "Shopify Brain + OS monorepo (Accelerated Merge Plan 1.5)",
+  "description": "Cerevex monorepo — console (apps/brain) + ads module (apps/ads)",
   "workspaces": [
     "apps/*",
-    "apps/os/*",
+    "apps/ads/*",
     "jobs/seo",
     "jobs/meta/*",
     "jobs/google/*",
@@ -24,13 +24,13 @@
     "inngest:sync": "npm run inngest:sync --workspace=@shopify-brain/brain",
     "test:prompt": "npm run test:prompt --workspace=@shopify-brain/brain",
     "ingest:knowledge": "npm run ingest:knowledge --workspace=@shopify-brain/brain",
-    "os:dev": "npm run dev --workspace=@shopify-brain/os",
-    "os:typecheck": "npm run typecheck --workspace=@shopify-brain/os",
-    "os:test": "npm run test --workspace=@shopify-brain/os",
-    "os:db:up": "npm run db:up --workspace=@shopify-brain/os",
-    "os:db:down": "npm run db:down --workspace=@shopify-brain/os",
-    "os:db:migrate": "npm run db:migrate --workspace=@shopify-brain/os",
-    "os:db:seed": "npm run db:seed --workspace=@shopify-brain/os"
+    "ads:dev": "npm run dev --workspace=@tharros/ads",
+    "ads:typecheck": "npm run typecheck --workspace=@tharros/ads",
+    "ads:test": "npm run test --workspace=@tharros/ads",
+    "ads:db:up": "npm run db:up --workspace=@tharros/ads",
+    "ads:db:down": "npm run db:down --workspace=@tharros/ads",
+    "ads:db:migrate": "npm run db:migrate --workspace=@tharros/ads",
+    "ads:db:seed": "npm run db:seed --workspace=@tharros/ads"
   },
   "engines": {
     "node": ">=20"

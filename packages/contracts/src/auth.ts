@@ -1,11 +1,11 @@
 /**
  * Auth isolation (v0) — Product lock.
  *
- * OS brings workspace/client users in `apps/os`.
+ * OS brings workspace/client users in `apps/ads`.
  * Do not couple OS auth to Brain `APP_PASSWORD` in week one.
  */
 
-export const OS_AUTH_HOME = "apps/os" as const;
+export const OS_AUTH_HOME = "apps/ads" as const;
 export const BRAIN_APP_PASSWORD_ENV = "APP_PASSWORD" as const;
 
 export type OsAuthSurface = {

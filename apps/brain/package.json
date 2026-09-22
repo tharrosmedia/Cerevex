@@ -2,7 +2,7 @@
   "name": "@shopify-brain/brain",
   "version": "1.0.0",
   "private": true,
-  "description": "Shopify Brain - modular AI agent system for Shopify stores",
+  "description": "Cerevex console — modular AI agent system for Shopify stores",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {

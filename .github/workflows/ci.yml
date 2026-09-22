@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       brain: ${{ steps.filter.outputs.brain }}
-      os: ${{ steps.filter.outputs.os }}
+      ads: ${{ steps.filter.outputs.ads }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -27,8 +27,8 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
-            os:
-              - 'apps/os/**'
+            ads:
+              - 'apps/ads/**'
               - 'jobs/meta/**'
               - 'jobs/google/**'
               - 'packages/contracts/**'
@@ -61,10 +61,10 @@ jobs:
         run: npm run test --workspace=@shopify-brain/brain
       - name: Skip (no Brain / SEO changes)
         if: needs.changes.outputs.brain != 'true'
-        run: echo "Skipped — apps/os-only change. Brain + jobs/seo stay independently green."
+        run: echo "Skipped — apps/ads-only change. Brain + jobs/seo stay independently green."
 
-  os:
-    name: apps/os
+  ads:
+    name: apps/ads
     needs: changes
     runs-on: ubuntu-latest
     services:
@@ -84,25 +84,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        if: needs.changes.outputs.os == 'true'
+        if: needs.changes.outputs.ads == 'true'
         with:
           node-version: "22"
           cache: npm
       - name: Install
-        if: needs.changes.outputs.os == 'true'
+        if: needs.changes.outputs.ads == 'true'
         run: npm ci
-      - name: Typecheck OS + paid jobs
-        if: needs.changes.outputs.os == 'true'
+      - name: Typecheck ads module + paid jobs
+        if: needs.changes.outputs.ads == 'true'
         run: |
-          npm run typecheck --workspace=@tharros/shared
-          npm run typecheck --workspace=@tharros/api
-          npm run typecheck --workspace=@tharros/workers
+          npm run typecheck --workspace=@tharros/ads-shared
+          npm run typecheck --workspace=@tharros/ads-api
+          npm run typecheck --workspace=@tharros/ads-workers
           npm run typecheck --workspace=@shopify-brain/jobs-meta-ads
           npm run typecheck --workspace=@shopify-brain/jobs-google-ads
           npm run typecheck --workspace=@shopify-brain/contracts
-          npm run typecheck --workspace=@tharros/web
-      - name: Migrate + seed + test OS (schema os only)
-        if: needs.changes.outputs.os == 'true'
+          npm run typecheck --workspace=@tharros/ads-web
+      - name: Migrate + seed + test ads module (schema os only)
+        if: needs.changes.outputs.ads == 'true'
         env:
           DATABASE_URL: postgres://tharros:tharros@127.0.0.1:54329/tharros?options=-csearch_path%3Dos
           JWT_SECRET: ci-jwt-secret-not-for-prod
@@ -111,9 +111,9 @@ jobs:
           SEED_OWNER_PASSWORD: local-dev-only
           NODE_ENV: test
         run: |
-          npm run os:db:migrate
-          npm run os:db:seed
-          npm run test --workspace=@tharros/api
-      - name: Skip (no apps/os / paid-job changes)
-        if: needs.changes.outputs.os != 'true'
-        run: echo "Skipped — no apps/os or paid-job changes. Brain + jobs/seo stay independently green."
+          npm run ads:db:migrate
+          npm run ads:db:seed
+          npm run test --workspace=@tharros/ads-api
+      - name: Skip (no apps/ads / paid-job changes)
+        if: needs.changes.outputs.ads != 'true'
+        run: echo "Skipped — no apps/ads or paid-job changes. Brain + jobs/seo stay independently green."

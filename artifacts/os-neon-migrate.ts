@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Railway-safe one-shot migrator for isolated schema `os`.
+ * Railway-safe one-shot migrator for isolated schema `os` (Cerevex ads module).
+ * Filename keeps os- prefix so existing Railway one-shot commands keep working.
  *
  * - Requires DATABASE_URL
  * - CREATE SCHEMA IF NOT EXISTS os
@@ -14,7 +15,7 @@
  * Operator:
  *   DATABASE_URL=... bun artifacts/os-neon-migrate.ts
  *
- * Repo smoke (reads apps/os/shared/drizzle journal):
+ * Repo smoke (reads apps/ads/shared/drizzle journal):
  *   DATABASE_URL=... bun scripts/os-neon-smoke-migrate.ts
  */
 import { createHash } from "node:crypto";

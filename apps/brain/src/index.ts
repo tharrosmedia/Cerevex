@@ -7,7 +7,7 @@ import { functions } from './inngest/index';
 
 const app = new Hono();
 
-app.get('/', (c) => c.text('Shopify Brain'));
+app.get('/', (c) => c.text('Cerevex'));
 
 const inngestHandler = inngestServe({ client: inngest, functions });
 app.get('/api/inngest', inngestHandler);
