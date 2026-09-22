@@ -437,7 +437,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string }> }) {
   const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string };
-  const store = await getActiveStore();
+  let store = null;
+  try {
+    store = await getActiveStore();
+  } catch {}
   const config = store?.config || {};
   const bv = config.brandVoice || null;
   const auto = config.autonomy || null;

@@ -9,22 +9,28 @@ import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 export const dynamic = 'force-dynamic';
 
 export default async function CommandCenter() {
-  let storeId = await getActiveStoreId();
-  const allStores = await listStores();
-  if (!storeId && allStores.length > 0) {
-    storeId = allStores[0].id;
-    const c = await cookies();
-    if (storeId) {
-      c.set('activeStoreId', storeId, {
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-      });
+  let storeId: string | null = null;
+  let allStores: any[] = [];
+  let loadError: string | null = null;
+  try {
+    storeId = await getActiveStoreId();
+    allStores = await listStores();
+    if (!storeId && allStores.length > 0) {
+      storeId = allStores[0].id;
+      const c = await cookies();
+      if (storeId) {
+        c.set('activeStoreId', storeId, {
+          path: '/',
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+        });
+      }
     }
+  } catch (e: any) {
+    loadError = e.message || 'Failed to load data';
   }
   let jobs: any[] = [];
   let openFindings = 0;
-  let loadError: string | null = null;
   try {
     if (storeId) {
       jobs = await listJobs(storeId, 20);
