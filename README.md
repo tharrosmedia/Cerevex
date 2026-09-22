@@ -106,7 +106,9 @@ See [`apps/ads/README.md`](apps/ads/README.md). Do not run `ads:db:seed` against
 
 ## Production (Railway + custom domain)
 
-Root `npm run build` / `npm start` still build and serve `apps/brain`. Railway service names/URLs are unchanged in this PR.
+Root `npm run build` / `npm start` still build and serve `apps/brain` (`Site Brain` on the `cerevex.store` Railway project). Do **not** add a repo-root `railway.toml`.
+
+Ads services on the **same** project (`cerevex-ads-api`, `cerevex-ads-workers`, `cerevex-web`) must keep the post-rename workspace commands after `apps/os` → `apps/ads`. Canonical start/build strings: [`apps/ads/README.md`](apps/ads/README.md#railway-deploy-cerevexstore). Never use `@tharros/api`, `@tharros/workers`, `@tharros/web`, or `apps/os` in Railway commands.
 
 - Set env vars on your host (no auto-detection):
   - `PUBLIC_URL=https://cerevex.store` (base only)

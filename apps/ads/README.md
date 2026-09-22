@@ -94,8 +94,31 @@ M3 mock-mode happy path (no live spend): [SMOKE.md](./SMOKE.md).
 
 Origin shipped as a pnpm monorepo. This repo uses **npm workspaces**. Do not add `pnpm-lock.yaml`. `workspace:*` was rewritten to `*`.
 
-## Railway / Neon / Inngest Cloud
+## Railway deploy (cerevex.store)
 
-Blocked until Adam grants access. Do not invent credentials. Do not provision a second Neon/Railway/Inngest product.
+Ads services live on the **existing** `cerevex.store` Railway project (same project as Site Brain). Do not provision a second Railway / Neon / Inngest product. Do not invent credentials.
+
+PR #10 renamed `apps/os` → `apps/ads` and npm workspaces `@tharros/api|workers|web` → `@tharros/ads-*`. A production hotfix already applied the new start/build commands in the Railway dashboard. **Keep those commands.** The next dashboard reset or “detect from package.json” will regress if it still uses the pre-rename names.
+
+Canonical commands (repo root is the service root — npm workspaces). Copy these exactly:
+
+| Service | Build command | Start command |
+|---|---|---|
+| `cerevex-ads-api` | `npm install` | `API_HOST=0.0.0.0 API_PORT=$PORT npm run start --workspace=@tharros/ads-api` |
+| `cerevex-ads-workers` | `npm install` | `API_HOST=0.0.0.0 WORKER_PORT=$PORT npm run start --workspace=@tharros/ads-workers` |
+| `cerevex-web` | `npm install && npm run build --workspace=@tharros/ads-web` | `cd apps/ads/web && npx next start --hostname 0.0.0.0 --port $PORT` |
+
+Never use these **stale** workspace / path names in Railway start/build commands:
+
+- `@tharros/api` → `@tharros/ads-api`
+- `@tharros/workers` → `@tharros/ads-workers`
+- `@tharros/web` → `@tharros/ads-web`
+- `apps/os` → `apps/ads` (Neon schema **`os` stays `os`**)
+
+`Site Brain` is unchanged: root `npm run build` / `npm start` still serve `apps/brain`. Do **not** add a repo-root `railway.toml` / `railway.json` — Railway Config as Code is deprecated and a root file would override Site Brain as well as the ads services.
+
+In-repo copies of the ads service commands (dashboard remains source of truth; do not set `railwayConfigFile` on these): [`railway/`](./railway/).
+
+Listen vars: API uses `API_HOST` + `API_PORT`; workers use `API_HOST` + `WORKER_PORT`. Both must bind `0.0.0.0` and `$PORT` on Railway. `OS_INNGEST_APP_ID=cerevex-ads` (key name stays). Do not sync the ads worker onto Brain `shopify-brain`.
 
 See [SCHEMA.md](./SCHEMA.md) and [Accelerated Merge Plan 1.5](../../docs/accelerated-merge-plan-1.5.md).

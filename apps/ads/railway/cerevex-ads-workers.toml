@@ -1,0 +1,10 @@
+# cerevex-ads-workers — dashboard start/build after apps/os→ads rename (PR #10).
+# Notes only. Do not set railwayConfigFile. Do not place this at repo root.
+# Stale (do not use): npm run start --workspace=@tharros/workers
+
+[build]
+builder = "RAILPACK"
+buildCommand = "npm install"
+
+[deploy]
+startCommand = "API_HOST=0.0.0.0 WORKER_PORT=$PORT npm run start --workspace=@tharros/ads-workers"
