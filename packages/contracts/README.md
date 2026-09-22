@@ -32,7 +32,7 @@ OS auth is **separate** from Brain `APP_PASSWORD` week one.
 | Prefix | Status |
 |---|---|
 | `seo/*` | **Keep.** Function IDs `seo-*`. |
-| `os/*` | Shared OS orchestration (`os/stub.*`, `os/apply.requested`) |
+| `os/*` | Shared OS orchestration (`os/stub.*`, `os/audit.requested`, `os/apply.requested`) |
 | `meta/ads/*` | `jobs/meta/ads` (read/mock sync) |
 | `google/ads/*` | `jobs/google/ads` (read/mock sync) |
 | `meta/organic/*` | Reserved stub |

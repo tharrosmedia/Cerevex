@@ -6,7 +6,8 @@
  * - No duplicate Neon / Railway / Inngest orgs for OS. Distinct Inngest app ids
  *   (Brain `shopify-brain`, OS `tharros-os`) share Cloud keys so OS sync cannot clobber seo.
  * - No Tavily requirement for OS.
- * - M3 (shared Neon smoke) is held until that smoke exists.
+ * - Shared Neon smoke (deploy) is still not done from OS agents.
+ * - Product M3 (audits → findings → recommendations) uses schema `os` only.
  */
 
 export const ISOLATION = {

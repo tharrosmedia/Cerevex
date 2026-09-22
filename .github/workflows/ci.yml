@@ -67,6 +67,20 @@ jobs:
     name: apps/os
     needs: changes
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tharros
+          POSTGRES_PASSWORD: tharros
+          POSTGRES_DB: tharros
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U tharros -d tharros"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -87,6 +101,19 @@ jobs:
           npm run typecheck --workspace=@shopify-brain/jobs-google-ads
           npm run typecheck --workspace=@shopify-brain/contracts
           npm run typecheck --workspace=@tharros/web
+      - name: Migrate + seed + test OS (schema os only)
+        if: needs.changes.outputs.os == 'true'
+        env:
+          DATABASE_URL: postgres://tharros:tharros@127.0.0.1:54329/tharros?options=-csearch_path%3Dos
+          JWT_SECRET: ci-jwt-secret-not-for-prod
+          TOKEN_ENCRYPTION_KEY: local-dev-only-token-key-32b!!
+          SEED_OWNER_EMAIL: adam@tharrosmedia.com
+          SEED_OWNER_PASSWORD: local-dev-only
+          NODE_ENV: test
+        run: |
+          npm run os:db:migrate
+          npm run os:db:seed
+          npm run test --workspace=@tharros/api
       - name: Skip (no apps/os / paid-job changes)
         if: needs.changes.outputs.os != 'true'
         run: echo "Skipped — no apps/os or paid-job changes. Brain + jobs/seo stay independently green."

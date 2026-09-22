@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { LayoutGrid, Lightbulb, LogOut, Workflow } from "lucide-react";
 import type { SessionUser } from "@tharros/shared";
 import { Button } from "@/components/ui/button";
-import { ApiError, logout, me } from "@/lib/api";
+import { ApiError, getWorkspace, logout, me } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -19,6 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [killSwitch, setKillSwitch] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,6 +27,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     me()
       .then((result) => {
         if (!cancelled) setUser(result.user);
+        return getWorkspace();
+      })
+      .then((result) => {
+        if (!cancelled && result.workspace) setKillSwitch(result.workspace.applyKillSwitch);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -94,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">
-              Apply kill switch on
+              Apply kill switch {killSwitch ? "on" : "off"}
             </span>
             <Button variant="ghost" size="sm" className="md:hidden" onClick={onLogout}>
               Sign out

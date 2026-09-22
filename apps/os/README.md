@@ -1,10 +1,10 @@
 # `apps/os`
 
-Tharros OS — Origin **M1/M2** import (Plan 1.5). Professionally managed ads spine: workspace/client auth, first-party Meta/Google OAuth (read-only), encrypted tokens, Inngest sync of entities + 7d/30d metrics.
+Tharros OS — Origin **M1/M2** import plus **M3** audit orchestration (Plan 1.5). Professionally managed ads spine: workspace/client auth, first-party Meta/Google OAuth (read-only), encrypted tokens, Inngest sync of entities + 7d/30d metrics, then audits → findings → schema-valid **proposed** recommendations.
 
 No Zapier. No Tavily. No live platform writes. No unsupervised spend. Apply stays behind a workspace kill switch (on by default) and an explicit authorization.
 
-**M3 is held until shared Neon smoke.** Copy-paste checklist: [SMOKE.md](./SMOKE.md) (same Brain `DATABASE_URL`, schema `os`, do not clobber `seo-*`).
+M3 product (audits → findings → proposed recs) does **not** deploy or seed production. Shared Neon is schema `os` only — no `public` migrations. Shared Neon smoke checklist + M3 mock path: [SMOKE.md](./SMOKE.md) (same Brain `DATABASE_URL`, do not clobber `seo-*`).
 
 ## Layout
 
@@ -26,7 +26,7 @@ No Zapier. No Tavily. No live platform writes. No unsupervised spend. Apply stay
 - **OS Neon:** schema `os`. Do not write OS tables into Brain `public` / pgvector.
 - **OS auth:** email/password + JWT in `apps/os`. Separate from Brain `APP_PASSWORD`.
 - **Inngest:** local app id `tharros-os` (override with `OS_INNGEST_APP_ID`) so Brain `seo-*` sync is not overwritten. Use the **same** Inngest Cloud keys when granted — do not provision a second org.
-- **No duplicate** Neon / Railway project for OS. Local docker Postgres (`:54329`) is for OS-only development until shared Neon smoke (M3 held).
+- **No duplicate** Neon / Railway project for OS. Local docker Postgres (`:54329`) is for OS-only development. Do not seed prod from this tree.
 - **No Tavily.**
 
 ## Local run
@@ -64,7 +64,7 @@ Health:
 
 See `apps/os/.env.example`. Never commit `.env`. Brain env stays in `apps/brain/.env`.
 
-Local compose (`:54329`) is OS-only development. Shared Neon smoke (M3 gate) reuses the **existing Brain `DATABASE_URL`** (same Neon project) and writes only to schema `os` — see [SMOKE.md](./SMOKE.md). Do not provision a second Neon project. Do not run `os:db:seed` against production Brain Neon.
+OS `DATABASE_URL` must resolve to schema `os`. Do not write OS tables into Brain `public` / pgvector. Local compose (`:54329`) is OS-only development and the default for M3 mock-mode smoke. Shared Neon smoke reuses the **existing Brain `DATABASE_URL`** (same Neon project) — see [SMOKE.md](./SMOKE.md). Do not provision a second Neon project. Do not run `os:db:seed` against production Brain Neon.
 
 ## Inngest names (locked)
 
@@ -72,6 +72,7 @@ Local compose (`:54329`) is OS-only development. Shared Neon smoke (M3 gate) reu
 |---|---|---|
 | `os/stub.ping` | `os-stub-ping` | `apps/os/workers` |
 | `os/stub.sync` | `os-stub-sync` | `apps/os/workers` |
+| `os/audit.requested` | `os-audit-requested` | `apps/os/workers` (local tables only; **no platform writes**) |
 | `os/apply.requested` | `os-apply-requested` | `apps/os/workers` (kill switch + authorize; **no writes**) |
 | `meta/ads/account.sync` | `meta-ads-account-sync` | `jobs/meta/ads` |
 | `google/ads/account.sync` | `google-ads-account-sync` | `jobs/google/ads` |
@@ -84,6 +85,8 @@ Brain `seo/*` / `seo-*` are untouched.
 npm run os:db:migrate && npm run os:db:seed
 npm run test --workspace=@tharros/api
 ```
+
+M3 mock-mode happy path (no live spend): [SMOKE.md](./SMOKE.md).
 
 ## npm vs pnpm
 

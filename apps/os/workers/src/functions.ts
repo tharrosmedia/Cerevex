@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
+import { evaluateApplyGate } from "@tharros/shared/apply-gate";
+import { runAuditRun } from "@tharros/shared/audit";
 import { EVENTS, inngest } from "@tharros/shared/inngest";
 import { getDb } from "@tharros/shared/db";
 import { runAdAccountSync } from "@tharros/shared/sync";
 import { writeInngestAudit } from "@tharros/shared/worker-audit";
-import { authorizations, workspaces } from "@tharros/shared/schema";
+import { applyJobs, authorizations, workspaces } from "@tharros/shared/schema";
 
 /**
  * Shared OS orchestration. Kill-switch + authorize stubs.
@@ -61,20 +63,29 @@ export const applyRequested = inngest.createFunction(
       const workspace = await db.query.workspaces.findFirst({
         where: eq(workspaces.id, event.data.workspaceId),
       });
-      if (!workspace) return { blocked: "workspace_not_found" as const };
-      if (workspace.applyKillSwitch) return { blocked: "apply_kill_switch" as const };
-
       const authz = await db.query.authorizations.findFirst({
         where: eq(authorizations.id, event.data.authorizationId),
       });
-      if (!authz || authz.workspaceId !== event.data.workspaceId) {
-        return { blocked: "authorization_required" as const };
-      }
-      if (authz.revokedAt) return { blocked: "authorization_revoked" as const };
-      return { blocked: "apply_not_implemented" as const };
+      return evaluateApplyGate({
+        expectedWorkspaceId: event.data.workspaceId,
+        workspace,
+        authorization: authz,
+      });
     });
 
     await step.run("audit-block", async () => {
+      const db = getDb();
+      if (event.data.applyJobId) {
+        await db
+          .update(applyJobs)
+          .set({
+            status: "blocked",
+            error: gate.blocked,
+            finishedAt: new Date(),
+            responseJson: { ...gate, writes: false },
+          })
+          .where(eq(applyJobs.id, event.data.applyJobId));
+      }
       await writeInngestAudit({
         workspaceId: event.data.workspaceId,
         actorId: event.data.requestedBy,
@@ -83,6 +94,7 @@ export const applyRequested = inngest.createFunction(
           event: EVENTS.applyRequested,
           clientId: event.data.clientId,
           authorizationId: event.data.authorizationId,
+          applyJobId: event.data.applyJobId,
           ...gate,
           note: "Authorize-to-apply is enforced. No Meta/Google writes. No Zapier.",
         },
@@ -98,5 +110,27 @@ export const applyRequested = inngest.createFunction(
   },
 );
 
-export const osFunctions = [stubPing, stubSync, applyRequested];
-export const OS_FUNCTION_IDS = ["os-stub-ping", "os-stub-sync", "os-apply-requested"] as const;
+export const auditRequested = inngest.createFunction(
+  { id: "os-audit-requested", name: "OS audit requested", triggers: [{ event: EVENTS.auditRequested }] },
+  async ({ event, step }: any) => {
+    const bundle = await step.run("evaluate-local-tables", async () => {
+      return runAuditRun(event.data.auditRunId as string);
+    });
+
+    return {
+      ok: true,
+      auditRunId: event.data.auditRunId,
+      findingCount: bundle.findings.length,
+      recommendationCount: bundle.recommendations.length,
+      writes: false,
+    };
+  },
+);
+
+export const osFunctions = [stubPing, stubSync, applyRequested, auditRequested];
+export const OS_FUNCTION_IDS = [
+  "os-stub-ping",
+  "os-stub-sync",
+  "os-apply-requested",
+  "os-audit-requested",
+] as const;

@@ -4,7 +4,7 @@
  * OS and Brain may share `DATABASE_URL`.
  * OS migrations target an isolated schema (default `os`).
  * Never write OS tables into Brain `public` or pgvector catalogs.
- * M3 held until shared Neon smoke.
+ * Product M3 writes only to schema `os`. Do not migrate `public`.
  */
 
 export const OS_DB_SCHEMA = "os" as const;

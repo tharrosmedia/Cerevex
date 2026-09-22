@@ -4,6 +4,7 @@ import {
   EVENTS,
   type AdAccountSyncPayload,
   type ApplyRequestedPayload,
+  type AuditRequestedPayload,
   type StubPingPayload,
   type StubSyncPayload,
 } from "./types";
@@ -52,6 +53,11 @@ export async function sendStubSync(data: StubSyncPayload): Promise<string[]> {
 
 export async function sendApplyRequested(data: ApplyRequestedPayload): Promise<string[]> {
   const result = await inngest.send({ name: EVENTS.applyRequested, data });
+  return result.ids;
+}
+
+export async function sendAuditRequested(data: AuditRequestedPayload): Promise<string[]> {
+  const result = await inngest.send({ name: EVENTS.auditRequested, data });
   return result.ids;
 }
 
