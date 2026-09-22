@@ -1,0 +1,16 @@
+{
+  "name": "@shopify-brain/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared TypeScript contracts for Brain + OS (tenancy, authz envelopes, audit, Inngest prefixes).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@shopify-brain/os",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Placeholder for the upcoming Origin tharros-os M1/M2 import.",
+  "scripts": {
+    "typecheck": "node -e \"console.log('apps/os is a placeholder until Origin tharros-os M1/M2 import')\"",
+    "test": "node -e \"console.log('apps/os is a placeholder until Origin tharros-os M1/M2 import')\"",
+    "build": "node -e \"console.log('apps/os is a placeholder until Origin tharros-os M1/M2 import')\""
+  }
+}
