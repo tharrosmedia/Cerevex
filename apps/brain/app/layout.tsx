@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { listStores } from '@/src/lib/db/stores';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import SeoNav from '@/components/seo-nav';
 
 export const metadata: Metadata = {
   title: 'Cerevex',
-  description: 'Cerevex console — AI agent command center for Shopify stores',
+  description: 'Cerevex — ads and SEO for home-service businesses',
 };
 
 async function setActiveStore(formData: FormData) {
@@ -29,38 +29,50 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const headerList = await headers();
+  const pathname = headerList.get('x-pathname') || '';
+  const isLogin = pathname === '/login';
+
   const cookieStore = await cookies();
   let activeStoreId = cookieStore.get('activeStoreId')?.value;
   let stores: any[] = [];
-  try {
-    stores = await listStores();
-  } catch {}
-  if (!activeStoreId && stores.length > 0) {
-    activeStoreId = stores[0].id;
+  if (!isLogin) {
+    try {
+      stores = await listStores();
+    } catch {}
+    if (!activeStoreId && stores.length > 0) {
+      activeStoreId = stores[0].id;
+    }
   }
 
   return (
     <html lang="en">
-      <body className="min-h-screen bg-background font-sans antialiased">
-        <header className="border-b p-4">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="font-bold text-xl">Cerevex</Link>
-              <SeoNav />
-            </div>
-            {stores.length > 0 && (
-              <form action={setActiveStore} className="flex items-center gap-2">
-                <select name="storeId" defaultValue={activeStoreId} className="border p-1 text-sm">
-                  {stores.map((s: any) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.shopify_domain})</option>
-                  ))}
-                </select>
-                <Button type="submit" size="sm" variant="outline">Switch</Button>
-              </form>
-            )}
-          </div>
-        </header>
-        <main>{children}</main>
+      <body>
+        {isLogin ? (
+          children
+        ) : (
+          <>
+            <header className="site-header">
+              <div className="site-header-inner">
+                <div className="site-header-brand">
+                  <Link href="/" className="site-wordmark">Cerevex</Link>
+                  <SeoNav />
+                </div>
+                {stores.length > 0 && (
+                  <form action={setActiveStore} className="site-store-switch">
+                    <select name="storeId" defaultValue={activeStoreId}>
+                      {stores.map((s: any) => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.shopify_domain})</option>
+                      ))}
+                    </select>
+                    <Button type="submit" size="sm" variant="outline">Switch</Button>
+                  </form>
+                )}
+              </div>
+            </header>
+            <main>{children}</main>
+          </>
+        )}
       </body>
     </html>
   );

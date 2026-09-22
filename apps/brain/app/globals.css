@@ -1,14 +1,236 @@
+:root {
+  --background: #ffffff;
+  --foreground: #000000;
+  /* Brand CTA color TBD — black placeholder per Design Standards 1.2 */
+  --cta: #000000;
+  --cta-foreground: #ffffff;
+  --muted: #f4f1ec;
+  --muted-foreground: #5c574e;
+  --border: #e6e1d8;
+  --ring: #000000;
+  --primary: var(--cta);
+  --primary-foreground: var(--cta-foreground);
+}
+
 body {
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, "Segoe UI", sans-serif;
   margin: 0;
   padding: 0;
-  background: #fff;
-  color: #111;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 h1 { font-size: 1.5rem; }
 table { border-collapse: collapse; width: 100%; }
-th, td { padding: 8px; border: 1px solid #ddd; text-align: left; }
-input, textarea, select, button { padding: 8px; border: 1px solid #ccc; }
-button { background: #000; color: #fff; cursor: pointer; }
-a { color: #0066cc; }
+th, td { padding: 8px; border: 1px solid var(--border); text-align: left; }
+input, textarea, select, button { padding: 8px; border: 1px solid var(--border); }
+button {
+  background: var(--cta);
+  color: var(--cta-foreground);
+  cursor: pointer;
+}
+a { color: var(--foreground); }
+
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cta);
+  color: var(--cta-foreground);
+  border: 1px solid var(--cta);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-cta:hover,
+.btn-cta:focus-visible {
+  opacity: 0.88;
+}
+
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 1rem 1.25rem;
+}
+
+.site-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.site-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.site-wordmark {
+  font-weight: 750;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.site-wordmark:hover {
+  color: var(--foreground);
+}
+
+.site-store-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.9rem;
+}
+
+.site-nav a,
+.site-nav button {
+  background: transparent;
+  color: var(--foreground);
+  border: 0;
+  padding: 0;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.site-nav a:hover,
+.site-nav button:hover {
+  text-decoration: underline;
+}
+
+.site-nav-muted {
+  color: var(--muted-foreground);
+}
+
+.site-nav-menu {
+  position: absolute;
+  left: 0;
+  margin-top: 0.35rem;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.35rem;
+  z-index: 10;
+  min-width: 10rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.site-nav-menu a {
+  display: block;
+  padding: 0.35rem 0.5rem;
+}
+
+.site-nav-menu a:hover {
+  background: var(--muted);
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 26rem;
+}
+
+.login-eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.login-lede {
+  margin: 0.85rem 0 1.75rem;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.login-card input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 0.75rem 0.85rem;
+  font-size: 1rem;
+}
+
+.login-card input:focus {
+  outline: 2px solid var(--cta);
+  outline-offset: 1px;
+}
+
+.login-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 0.9rem;
+}
+
+.login-submit {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.site-nav-relative {
+  position: relative;
+}
+
+.site-nav-seo-sub {
+  display: flex;
+  gap: 0.75rem;
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.site-nav-current {
+  font-weight: 650;
+}

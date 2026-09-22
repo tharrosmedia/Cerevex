@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FindingCard } from "@/components/cockpit/finding-card";
+import { MetricDetails } from "@/components/cockpit/metric-details";
 import { EmptyCard, ErrorCard, LoadingLines, NoticeBanner } from "@/components/cockpit/page-state";
 import { RecommendationCard } from "@/components/cockpit/recommendation-card";
 import { ConnectionBadge } from "@/components/cockpit/status-badge";
@@ -197,7 +198,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       );
       setNotice(
         action === "authorize"
-          ? "Authorized. Apply is a separate step and stays blocked while the kill switch is on."
+          ? "Authorized. Apply is a separate step and stays blocked while ads are paused."
           : `Recommendation ${action === "deny" ? "denied" : "snoozed"}. Nothing was written to Meta/Google.`,
       );
     } catch (err) {
@@ -225,8 +226,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     return (
       <div className="mx-auto max-w-3xl">
         <ErrorCard title="Client unavailable" message={error}>
-          <Link href="/app" className="text-sm text-primary hover:underline">
-            Back to pilots
+          <Link href="/app" className="text-sm text-foreground hover:underline">
+            Back to ads
           </Link>
         </ErrorCard>
       </div>
@@ -253,7 +254,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div>
         <Link href="/app" className="text-xs text-muted-foreground hover:text-foreground">
-          ← All pilots
+          ← All ads
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h2 className="font-heading text-3xl font-medium tracking-tight">{client.name}</h2>
@@ -263,7 +264,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           </Badge>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
-          Read path only. Mock OAuth is fine until live secrets. Authorize ≠ apply.
+          Connect ads, review recommendations, and pause ads from here. Spend details stay under Details.
         </p>
       </div>
 
@@ -285,7 +286,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   <div>
                     <CardTitle>{platform.label}</CardTitle>
                     <CardDescription>
-                      Tokens are encrypted in the spine and never sent to the browser.
+                      Account tokens stay on the server. They are never sent to the browser.
                     </CardDescription>
                   </div>
                   {account ? (
@@ -305,18 +306,20 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       <NoticeBanner tone="error">{account.lastError}</NoticeBanner>
                     ) : null}
                     {entities[account.id]?.length ? (
-                      <ul className="space-y-1 text-muted-foreground">
+                      <ul className="space-y-2 text-muted-foreground">
                         {entities[account.id].slice(0, 6).map((entity) => (
                           <li key={entity.id}>
                             <span className="font-medium text-foreground">{entity.entityType}</span> · {entity.name}
-                            {entity.metrics[0]
-                              ? ` · ${entity.metrics[0].window} spend $${entity.metrics[0].spendUsd}`
-                              : ""}
+                            {entity.metrics[0] ? (
+                              <MetricDetails>
+                                {entity.metrics[0].window} spend ${entity.metrics[0].spendUsd}
+                              </MetricDetails>
+                            ) : null}
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-muted-foreground">No entities yet. Run a sync to pull campaigns and metrics.</p>
+                      <p className="text-muted-foreground">No campaigns yet. Sync to pull them in.</p>
                     )}
                     {canManage ? (
                       <Button onClick={() => sync(account.id)} disabled={busy === account.id} className="w-fit">
@@ -436,7 +439,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           <CardTitle>Proposed recommendations</CardTitle>
           <CardDescription>
             Authorize, deny, or snooze. Apply remains a separate step
-            {killSwitch ? " and is blocked while the kill switch is on." : "."}
+            {killSwitch ? " and is blocked while ads are paused." : "."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">

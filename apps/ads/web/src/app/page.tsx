@@ -13,7 +13,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
-      Opening Cerevex ads…
+      Opening Cerevex…
     </div>
   );
 }

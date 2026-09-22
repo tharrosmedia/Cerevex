@@ -3,19 +3,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export default function BrainstormPlaceholderPage() {
   return (
     <div className="mx-auto max-w-3xl">
-      <p className="text-xs uppercase tracking-[0.16em] text-primary">Coming later</p>
-      <h2 className="mt-2 font-heading text-3xl font-medium tracking-tight">Brainstorm</h2>
+      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Coming later</p>
+      <h2 className="mt-2 font-heading text-3xl font-medium tracking-tight">Leads</h2>
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>Placeholder</CardTitle>
+          <CardTitle>Not open yet</CardTitle>
           <CardDescription>
-            Tables exist (`brainstorm_sessions`, `brainstorm_ideas`) so later work can land without
-            another schema pass. The UI stays empty in M1.
+            This space is reserved for lead ideas. Nothing here changes ads today.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm leading-6 text-muted-foreground">
-          When this ships, operators will sketch campaigns here. No Zapier, no unsupervised spend,
-          and no live platform writes from this surface.
+          When this ships, you can sketch campaign ideas here. Ads stay paused until you say otherwise.
         </CardContent>
       </Card>
     </div>

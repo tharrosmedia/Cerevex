@@ -30,27 +30,22 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,oklch(0.24_0.03_55),transparent_42%)]">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex items-center justify-between px-6 py-5">
-        <div className="flex items-baseline gap-2">
-          <span className="font-heading text-xl tracking-tight">Cerevex</span>
-          <span className="font-mono text-xs text-primary">ads</span>
-        </div>
-        <p className="hidden text-xs text-muted-foreground sm:block">M4 cockpit · mock OK</p>
+        <span className="font-heading text-xl tracking-tight">Cerevex</span>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-16">
-        <Card className="w-full max-w-md border-border/80 shadow-xl">
+        <Card className="w-full max-w-md border-border shadow-none">
           <CardHeader className="space-y-3">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
-              Operator console
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
+              Cerevex
             </p>
             <CardTitle className="font-heading text-3xl font-medium tracking-tight">
-              Sign in to Cerevex
+              Sign in
             </CardTitle>
             <CardDescription className="text-sm leading-6">
-              Professionally managed ads for HVAC and home-service businesses. Advertising is not
-              the growth limiter.
+              Ads for HVAC and home-service businesses. Simple tools. Plain language.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -593,7 +593,7 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
         <form action={syncCatalogAction} className="inline">
           <Button type="submit" variant="outline">Sync Live Catalog</Button>
         </form>
-        <span className="ml-2 text-xs text-muted-foreground">Used by SEO command center for GSC mapping + findings. First blog only for articles (v1 limitation). Link to /seo/live for snapshot view.</span>
+        <span className="ml-2 text-xs text-muted-foreground">Used by SEO for Search Console mapping and recommendations. First blog only for articles (v1 limitation). Link to /seo/live for snapshot view.</span>
       </div>
 
       <div className="mb-8 border p-4 rounded">

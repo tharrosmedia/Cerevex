@@ -16,27 +16,35 @@ export default function Login() {
     if (res.ok) {
       window.location.href = '/';
     } else {
-      setError('Invalid password');
+      setError('That password did not match. Try again.');
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 rounded border p-6">
-        <h1 className="text-2xl font-bold">Cerevex Login</h1>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          className="w-full border p-2"
-          required
-        />
-        {error && <p className="text-red-500">{error}</p>}
-        <button type="submit" className="w-full bg-black p-2 text-white">
-          Login
-        </button>
-      </form>
+    <div className="login-page">
+      <div className="login-card">
+        <p className="login-eyebrow">Cerevex</p>
+        <h1>Sign in</h1>
+        <p className="login-lede">
+          Ads and SEO for home-service businesses. One place to run the store.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="password" className="visually-hidden">Password</label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            autoComplete="current-password"
+            required
+          />
+          {error && <p className="login-error">{error}</p>}
+          <button type="submit" className="btn-cta login-submit">
+            Sign in
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

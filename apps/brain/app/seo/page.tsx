@@ -22,7 +22,7 @@ export default async function SeoOverview() {
   } catch {}
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">SEO Command Center</h1>
+      <h1 className="text-3xl font-bold mb-2">SEO</h1>
       <p className="text-sm text-muted-foreground mb-6">Active store: {stores.find((s:any)=>s.id===storeId)?.name || 'none'}</p>
       <AutoRefresh interval={5000} />
 

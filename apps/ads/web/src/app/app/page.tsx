@@ -6,6 +6,7 @@ import type { AdAccountPublic, AuditRunPublic, ClientSummary, RecommendationPubl
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyCard, ErrorCard, LoadingGrid } from "@/components/cockpit/page-state";
+import { MetricDetails } from "@/components/cockpit/metric-details";
 import { ConnectionBadge } from "@/components/cockpit/status-badge";
 import { ApiError, getClient, listClientAudits, listClientRecommendations, listClients } from "@/lib/api";
 import { formatWhen, platformLabel } from "@/lib/format";
@@ -53,29 +54,29 @@ export default function ClientsPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-primary">HVAC pilots</p>
-          <h2 className="font-heading text-3xl font-medium tracking-tight">Clients & ad accounts</h2>
+          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ads</p>
+          <h2 className="font-heading text-3xl font-medium tracking-tight">Clients</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            Got Ductless, KC Prestige, and Elmar HVAC. Read-only accounts, mock OAuth until live secrets,
-            audits that only propose. Authorize is not apply.
+            Your ad accounts in one place. Open a client to connect ads, review recommendations, or
+            pause ads.
           </p>
         </div>
       </div>
 
       {error ? (
-        <ErrorCard title="Could not load pilots" message={error} />
+        <ErrorCard title="Could not load clients" message={error} />
       ) : cards === null ? (
         <LoadingGrid />
       ) : cards.length === 0 ? (
         <EmptyCard
-          title="No clients in scope"
+          title="No clients yet"
           description="This account is signed in but is not a member of any client. Ask an owner to grant access, or sign in as the seeded owner."
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-3">
           {cards.map(({ client, accounts, latestAudit, proposedCount }) => (
             <Link key={client.id} href={`/app/clients/${client.id}`} className="group">
-              <Card className="h-full transition-colors group-hover:border-primary/50">
+              <Card className="h-full transition-colors group-hover:border-foreground/30">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="font-heading text-xl">{client.name}</CardTitle>
@@ -96,13 +97,11 @@ export default function ClientsPage() {
                       ))}
                     </ul>
                   )}
-                  <p>
+                  <MetricDetails>
                     Last sync {formatWhen(client.lastSyncAt, "never")}
-                    {latestAudit
-                      ? ` · last audit ${latestAudit.status}`
-                      : " · no audits yet"}
+                    {latestAudit ? ` · last audit ${latestAudit.status}` : " · no audits yet"}
                     {proposedCount > 0 ? ` · ${proposedCount} proposed` : ""}
-                  </p>
+                  </MetricDetails>
                 </CardContent>
               </Card>
             </Link>

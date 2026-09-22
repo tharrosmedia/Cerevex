@@ -39,7 +39,8 @@ export default async function CommandCenter() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">Cerevex</h1>
+      <h1 className="text-3xl font-bold mb-2">Cerevex</h1>
+      <p className="text-sm mb-8" style={{ color: 'var(--muted-foreground)' }}>Ads and SEO for your store.</p>
       <AutoRefresh interval={4000} />
 
       {allStores.length === 0 && (
@@ -115,7 +116,7 @@ export default async function CommandCenter() {
       </div>
 
       <div className="mt-8 text-sm">
-        <Link href="/seo" className="underline mr-4">SEO Command Center</Link>
+        <Link href="/seo" className="underline mr-4">SEO</Link>
         <Link href="/review" className="underline mr-4">Review Queue</Link>
         <Link href="/history" className="underline">Full History</Link>
       </div>
