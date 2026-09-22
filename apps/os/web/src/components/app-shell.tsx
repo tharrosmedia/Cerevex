@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import { LayoutGrid, Lightbulb, LogOut, Workflow } from "lucide-react";
-import type { SessionUser } from "@tharros/shared";
 import { Button } from "@/components/ui/button";
-import { ApiError, getWorkspace, logout, me } from "@/lib/api";
+import { KillSwitchBanner, KillSwitchPill } from "@/components/cockpit/kill-switch-banner";
+import { useWorkspace } from "@/components/cockpit/workspace-context";
+import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -18,32 +18,7 @@ const NAV = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [killSwitch, setKillSwitch] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    me()
-      .then((result) => {
-        if (!cancelled) setUser(result.user);
-        return getWorkspace();
-      })
-      .then((result) => {
-        if (!cancelled && result.workspace) setKillSwitch(result.workspace.applyKillSwitch);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.status === 401) {
-          router.replace("/sign-in");
-          return;
-        }
-        setError(err instanceof Error ? err.message : "Could not load session");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+  const { user, killSwitch, workspaceName, error } = useWorkspace();
 
   async function onLogout() {
     await logout();
@@ -58,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="font-heading text-xl tracking-tight">Tharros</span>
             <span className="font-mono text-xs text-primary">OS</span>
           </Link>
-          <p className="hidden pt-1 text-xs text-muted-foreground md:block">Tharros Media</p>
+          <p className="hidden pt-1 text-xs text-muted-foreground md:block">Operator cockpit</p>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:overflow-visible">
           {NAV.map((item) => {
@@ -95,17 +70,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="flex items-center justify-between border-b border-border px-4 py-3 md:px-8">
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-primary">Workspace</p>
-            <h1 className="font-heading text-lg">Tharros Media</h1>
+            <h1 className="font-heading text-lg">{workspaceName ?? "Tharros Media"}</h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">
-              Apply kill switch {killSwitch ? "on" : "off"}
-            </span>
+            <KillSwitchPill on={killSwitch} />
             <Button variant="ghost" size="sm" className="md:hidden" onClick={onLogout}>
               Sign out
             </Button>
           </div>
         </header>
+        <div className="border-b border-border px-4 py-3 md:px-8">
+          <KillSwitchBanner on={killSwitch} />
+        </div>
         <main className="flex-1 px-4 py-6 md:px-8">
           {error ? (
             <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">

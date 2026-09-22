@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AdAccountPublic,
   AdEntityPublic,
+  AuditRunPublic,
   ClientSummary,
   FindingPublic,
   Platform,
@@ -13,6 +14,11 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FindingCard } from "@/components/cockpit/finding-card";
+import { EmptyCard, ErrorCard, LoadingLines, NoticeBanner } from "@/components/cockpit/page-state";
+import { RecommendationCard } from "@/components/cockpit/recommendation-card";
+import { ConnectionBadge } from "@/components/cockpit/status-badge";
+import { useWorkspace } from "@/components/cockpit/workspace-context";
 import {
   ApiError,
   decideRecommendation,
@@ -27,24 +33,35 @@ import {
   startOAuth,
   syncAdAccount,
 } from "@/lib/api";
+import { formatWhen } from "@/lib/format";
 
 const PLATFORMS: { id: Platform; label: string }[] = [
   { id: "meta", label: "Meta" },
   { id: "google", label: "Google Ads" },
 ];
 
+const REC_FILTERS = ["all", "proposed", "authorized", "denied", "snoozed"] as const;
+type RecFilter = (typeof REC_FILTERS)[number];
+
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { killSwitch, canMutate } = useWorkspace();
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [accounts, setAccounts] = useState<AdAccountPublic[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [oauth, setOauth] = useState<{ meta: boolean; google: boolean }>({ meta: false, google: false });
   const [entities, setEntities] = useState<Record<string, AdEntityPublic[]>>({});
+  const [audits, setAudits] = useState<AuditRunPublic[]>([]);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [findings, setFindings] = useState<FindingPublic[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendationPublic[]>([]);
+  const [recFilter, setRecFilter] = useState<RecFilter>("all");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const selectedAuditIdRef = useRef<string | null>(null);
+  selectedAuditIdRef.current = selectedAuditId;
 
   const refresh = useCallback(async () => {
     const result = await getClient(id);
@@ -53,26 +70,36 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     setCanManage(result.canManage);
     setOauth({ meta: result.oauth.meta.configured, google: result.oauth.google.configured });
     const next: Record<string, AdEntityPublic[]> = {};
-    for (const account of result.adAccounts) {
-      if (account.connectionStatus === "connected" || account.connectionStatus === "error") {
-        const detail = await getAdAccount(account.id);
-        next[account.id] = detail.entities;
-      }
-    }
+    await Promise.all(
+      result.adAccounts
+        .filter((account) => account.connectionStatus === "connected" || account.connectionStatus === "error")
+        .map(async (account) => {
+          const detail = await getAdAccount(account.id);
+          next[account.id] = detail.entities;
+        }),
+    );
     setEntities(next);
-    const recs = await listClientRecommendations(id);
+    const [recs, runs] = await Promise.all([listClientRecommendations(id), listClientAudits(id)]);
     setRecommendations(recs);
-    const audits = await listClientAudits(id);
-    if (audits[0]) {
-      const bundle = await getAudit(audits[0].id);
+    setAudits(runs);
+    const current = selectedAuditIdRef.current;
+    const preferred = current && runs.some((run) => run.id === current) ? current : runs[0]?.id;
+    setSelectedAuditId(preferred ?? null);
+    if (preferred) {
+      const bundle = await getAudit(preferred);
       setFindings(bundle.findings);
+    } else {
+      setFindings([]);
     }
   }, [id]);
 
   useEffect(() => {
-    refresh().catch((err) => {
-      setError(err instanceof ApiError ? err.message : "Could not load this client.");
-    });
+    setLoading(true);
+    refresh()
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : "Could not load this client.");
+      })
+      .finally(() => setLoading(false));
   }, [refresh]);
 
   useEffect(() => {
@@ -82,6 +109,31 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     if (connected) setNotice(`${connected === "meta" ? "Meta" : "Google Ads"} connected. Tokens stay in the spine.`);
     if (oauthError) setError(`OAuth did not finish (${oauthError}).`);
   }, []);
+
+  const selectedAudit = useMemo(
+    () => audits.find((run) => run.id === selectedAuditId) ?? null,
+    [audits, selectedAuditId],
+  );
+
+  const visibleRecs = useMemo(
+    () =>
+      recFilter === "all" ? recommendations : recommendations.filter((row) => row.status === recFilter),
+    [recommendations, recFilter],
+  );
+
+  async function selectAudit(auditId: string) {
+    setSelectedAuditId(auditId);
+    setBusy(`audit-${auditId}`);
+    setError(null);
+    try {
+      const bundle = await getAudit(auditId);
+      setFindings(bundle.findings);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load that audit.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function connect(platform: Platform) {
     setBusy(platform);
@@ -116,24 +168,6 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  if (error && !client) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <Card className="border-destructive/40">
-          <CardHeader>
-            <CardTitle>Client unavailable</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link href="/app" className="text-sm text-primary hover:underline">
-              Back to pilots
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   async function runAudit() {
     setBusy("audit");
     setError(null);
@@ -141,6 +175,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       const bundle = await startInlineAudit(id);
       setFindings(bundle.findings);
       setRecommendations(bundle.recommendations);
+      setSelectedAuditId(bundle.audit.id);
+      setAudits((current) => [bundle.audit, ...current.filter((row) => row.id !== bundle.audit.id)]);
       setNotice(
         `Mock audit complete. ${bundle.findings.length} findings, ${bundle.recommendations.length} proposed recs. No platform writes.`,
       );
@@ -185,8 +221,32 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
+  if (error && !client) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <ErrorCard title="Client unavailable" message={error}>
+          <Link href="/app" className="text-sm text-primary hover:underline">
+            Back to pilots
+          </Link>
+        </ErrorCard>
+      </div>
+    );
+  }
+
+  if (loading && !client) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <LoadingLines label="Loading client, ad accounts, and audits…" />
+      </div>
+    );
+  }
+
   if (!client) {
-    return <div className="text-sm text-muted-foreground">Loading client…</div>;
+    return (
+      <div className="mx-auto max-w-3xl">
+        <EmptyCard title="Client not found" description="This client is not in your membership scope." />
+      </div>
+    );
   }
 
   return (
@@ -202,18 +262,19 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             {client.status}
           </Badge>
         </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Read path only. Mock OAuth is fine until live secrets. Authorize ≠ apply.
+        </p>
       </div>
 
-      {notice ? (
-        <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm">{notice}</p>
-      ) : null}
-      {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      {notice ? <NoticeBanner>{notice}</NoticeBanner> : null}
+      {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
 
-      <div className="grid gap-4">
+      <section className="grid gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ad accounts</p>
+          <h3 className="mt-1 font-heading text-xl">Read-only connections</h3>
+        </div>
         {PLATFORMS.map((platform) => {
           const account = accounts.find((row) => row.platform === platform.id);
           const configured = oauth[platform.id];
@@ -224,14 +285,11 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   <div>
                     <CardTitle>{platform.label}</CardTitle>
                     <CardDescription>
-                      Read-only. Tokens are encrypted in the spine and never sent to the browser.
+                      Tokens are encrypted in the spine and never sent to the browser.
                     </CardDescription>
                   </div>
                   {account ? (
-                    <Badge variant={account.connectionStatus === "error" ? "destructive" : "secondary"}>
-                      {account.connectionStatus}
-                      {account.mock ? " · mock" : ""}
-                    </Badge>
+                    <ConnectionBadge status={account.connectionStatus} mock={account.mock} />
                   ) : (
                     <Badge variant="outline">{configured ? "Not connected" : "App not configured"}</Badge>
                   )}
@@ -241,13 +299,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 {account ? (
                   <>
                     <p className="text-muted-foreground">
-                      Account {account.externalId}
-                      {account.lastSyncAt ? ` · last sync ${new Date(account.lastSyncAt).toLocaleString()}` : " · never synced"}
+                      Account {account.externalId} · last sync {formatWhen(account.lastSyncAt)}
                     </p>
                     {account.lastError ? (
-                      <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
-                        {account.lastError}
-                      </p>
+                      <NoticeBanner tone="error">{account.lastError}</NoticeBanner>
                     ) : null}
                     {entities[account.id]?.length ? (
                       <ul className="space-y-1 text-muted-foreground">
@@ -264,16 +319,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       <p className="text-muted-foreground">No entities yet. Run a sync to pull campaigns and metrics.</p>
                     )}
                     {canManage ? (
-                      <Button
-                        onClick={() => sync(account.id)}
-                        disabled={busy === account.id}
-                        className="w-fit"
-                      >
-                        {busy === account.id
-                          ? "Queueing…"
-                          : account.lastError
-                            ? "Retry sync"
-                            : "Sync now"}
+                      <Button onClick={() => sync(account.id)} disabled={busy === account.id} className="w-fit">
+                        {busy === account.id ? "Queueing…" : account.lastError ? "Retry sync" : "Sync now"}
                       </Button>
                     ) : null}
                   </>
@@ -301,16 +348,15 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             </Card>
           );
         })}
-      </div>
+      </section>
 
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>M3 audit</CardTitle>
+              <CardTitle>Audits</CardTitle>
               <CardDescription>
-                Reads local synced tables only. Recommendations are propose-only. Apply stays behind
-                the kill switch.
+                Reads local synced tables only. Recommendations stay proposed until a human decides.
               </CardDescription>
             </div>
             {canManage ? (
@@ -321,82 +367,116 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">
-          {findings.length === 0 && recommendations.length === 0 ? (
+          {audits.length === 0 ? (
             <p className="text-muted-foreground">
-              Sync an account, then run a mock audit. No live spend and no Meta/Google writes.
+              {accounts.length === 0
+                ? "Mock-connect an account, sync, then run a mock audit."
+                : "No audits yet. Run a mock audit to generate findings and proposed recommendations."}
             </p>
-          ) : null}
-          {findings.length > 0 ? (
+          ) : (
             <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">Findings</p>
+              <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">History</p>
               <ul className="space-y-2">
-                {findings.map((finding) => (
-                  <li key={finding.id} className="rounded-md border border-border px-3 py-2">
-                    <span className="font-medium">{finding.title}</span>
-                    <span className="ml-2 text-xs uppercase text-muted-foreground">{finding.severity}</span>
-                  </li>
-                ))}
+                {audits.map((run) => {
+                  const summary = run.summary as {
+                    findingCount?: number;
+                    recommendationCount?: number;
+                    mode?: string;
+                  };
+                  const active = run.id === selectedAuditId;
+                  return (
+                    <li key={run.id}>
+                      <button
+                        type="button"
+                        onClick={() => selectAudit(run.id)}
+                        disabled={busy === `audit-${run.id}`}
+                        className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
+                          active
+                            ? "border-primary/50 bg-primary/10"
+                            : "border-border hover:border-primary/30"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium capitalize">{run.status}</span>
+                          <span className="text-xs text-muted-foreground">{formatWhen(run.createdAt)}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {summary.findingCount ?? 0} findings · {summary.recommendationCount ?? 0} recs
+                          {summary.mode ? ` · ${summary.mode}` : ""} · writes false
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
-          ) : null}
-          {recommendations.length > 0 ? (
+          )}
+
+          {selectedAudit ? (
             <div>
               <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                Recommendations
+                Findings · {selectedAudit.status}
               </p>
-              <ul className="space-y-3">
-                {recommendations.map((rec) => (
-                  <li key={rec.id} className="rounded-md border border-border px-3 py-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="font-medium">{rec.title}</p>
-                        <p className="mt-1 text-muted-foreground">{rec.rationale}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {rec.type} · {rec.status} · risk {rec.risk}
-                          {rec.estimatedImpactUsd ? ` · est. $${rec.estimatedImpactUsd}` : ""}
-                        </p>
-                      </div>
-                      <Badge variant="outline">{rec.status}</Badge>
-                    </div>
-                    {canManage && rec.status === "proposed" ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button size="sm" onClick={() => decide(rec.id, "authorize")} disabled={busy === rec.id}>
-                          Authorize
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => decide(rec.id, "deny")}
-                          disabled={busy === rec.id}
-                        >
-                          Deny
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => decide(rec.id, "snooze")}
-                          disabled={busy === rec.id}
-                        >
-                          Snooze
-                        </Button>
-                      </div>
-                    ) : null}
-                    {canManage && rec.status === "authorized" ? (
-                      <Button
-                        size="sm"
-                        className="mt-3"
-                        variant="outline"
-                        onClick={() => apply(rec.id)}
-                        disabled={busy === `apply-${rec.id}`}
-                      >
-                        Request apply (blocked)
-                      </Button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
+              {findings.length === 0 ? (
+                <p className="text-muted-foreground">This audit has no findings.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {findings.map((finding) => (
+                    <FindingCard key={finding.id} finding={finding} />
+                  ))}
+                </ul>
+              )}
             </div>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Proposed recommendations</CardTitle>
+          <CardDescription>
+            Authorize, deny, or snooze. Apply remains a separate step
+            {killSwitch ? " and is blocked while the kill switch is on." : "."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 text-sm">
+          <div className="flex flex-wrap gap-1.5">
+            {REC_FILTERS.map((filter) => (
+              <Button
+                key={filter}
+                size="sm"
+                variant={recFilter === filter ? "secondary" : "ghost"}
+                onClick={() => setRecFilter(filter)}
+                className="capitalize"
+              >
+                {filter}
+                {filter === "all"
+                  ? ` (${recommendations.length})`
+                  : ` (${recommendations.filter((row) => row.status === filter).length})`}
+              </Button>
+            ))}
+          </div>
+          {visibleRecs.length === 0 ? (
+            <p className="text-muted-foreground">
+              {recommendations.length === 0
+                ? "No recommendations yet. Run a mock audit after a sync."
+                : `No ${recFilter} recommendations.`}
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {visibleRecs.map((rec) => (
+                <RecommendationCard
+                  key={rec.id}
+                  recommendation={rec}
+                  canManage={canManage && canMutate}
+                  killSwitchOn={killSwitch}
+                  busy={busy}
+                  onDecide={decide}
+                  onApply={apply}
+                />
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
     </div>
