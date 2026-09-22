@@ -96,6 +96,18 @@ Origin shipped as a pnpm monorepo. This repo uses **npm workspaces**. Do not add
 
 ## Railway / Neon / Inngest Cloud
 
-Blocked until Adam grants access. Do not invent credentials. Do not provision a second Neon/Railway/Inngest product.
+Do not invent credentials. Do not provision a second Neon/Railway/Inngest product.
+
+Production ads services live on the existing **cerevex.store** Railway project. After the `apps/os` → `apps/ads` rename (PR #10), start commands that still used `@tharros/api` / `@tharros/workers` failed. Use the post-rename workspaces only.
+
+| Railway service | Start (production) |
+|---|---|
+| cerevex-ads-api | `API_HOST=0.0.0.0 API_PORT=$PORT npm run start --workspace=@tharros/ads-api` |
+| cerevex-ads-workers | `API_HOST=0.0.0.0 WORKER_PORT=$PORT npm run start --workspace=@tharros/ads-workers` |
+| cerevex-web | `cd apps/ads/web && npx next start --hostname 0.0.0.0 --port $PORT` |
+
+cerevex-web **build**: `npm install && npm run build --workspace=@tharros/ads-web`.
+
+Full incident notes, stale-name table, and why web does not use `npm run start --workspace=@tharros/ads-web`: [`docs/railway-ads.md`](../../docs/railway-ads.md).
 
 See [SCHEMA.md](./SCHEMA.md) and [Accelerated Merge Plan 1.5](../../docs/accelerated-merge-plan-1.5.md).

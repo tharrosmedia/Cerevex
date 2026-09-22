@@ -114,6 +114,7 @@ Root `npm run build` / `npm start` still build and serve `apps/brain`. Railway s
   - `INNGEST_API_KEY` (management key for resync)
   - Optionally `INNGEST_APP_ID` (Brain SEO default remains `shopify-brain`)
   - Ads worker: set `OS_INNGEST_APP_ID=cerevex-ads` (key name stays; value/docs are `cerevex-ads`)
+- Ads Railway start/build commands must use `@tharros/ads-api`, `@tharros/ads-workers`, `@tharros/ads-web` — never the pre-rename `@tharros/api` / `@tharros/workers`. Locked commands: [`docs/railway-ads.md`](docs/railway-ads.md).
 - Redeploy/restart after changing vars.
 - Use `/settings` → "Resync Inngest" button (temporary; will be removed).
 - Or run: `npm run inngest:sync` (with env loaded).
