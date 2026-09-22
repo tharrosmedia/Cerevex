@@ -23,7 +23,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 rounded border p-6">
-        <h1 className="text-2xl font-bold">Shopify Brain Login</h1>
+        <h1 className="text-2xl font-bold">Cerevex Login</h1>
         <input
           type="password"
           value={password}

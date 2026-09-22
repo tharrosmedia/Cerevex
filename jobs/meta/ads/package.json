@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tharros/shared": "*",
+    "@tharros/ads-shared": "*",
     "drizzle-orm": "^0.44.7",
     "inngest": "^4.20.0"
   },

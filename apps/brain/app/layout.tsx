@@ -8,8 +8,8 @@ import { redirect } from 'next/navigation';
 import SeoNav from '@/components/seo-nav';
 
 export const metadata: Metadata = {
-  title: 'Shopify Brain',
-  description: 'AI agent command center for Shopify stores',
+  title: 'Cerevex',
+  description: 'Cerevex console — AI agent command center for Shopify stores',
 };
 
 async function setActiveStore(formData: FormData) {
@@ -45,7 +45,7 @@ export default async function RootLayout({
         <header className="border-b p-4">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Link href="/" className="font-bold text-xl">Shopify Brain</Link>
+              <Link href="/" className="font-bold text-xl">Cerevex</Link>
               <SeoNav />
             </div>
             {stores.length > 0 && (

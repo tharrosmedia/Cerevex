@@ -5,7 +5,7 @@ Thin stub (Plan 1.5 Day 1–2). No shared code yet.
 ## Where data lives today
 
 - **Brain** keeps its own Neon access in `apps/brain/src/lib/db` and migrations in `apps/brain/db/migrations` (public schema + pgvector).
-- **OS** Drizzle lives in `apps/os/shared` and targets isolated schema **`os`**. Do not merge OS tables into Brain `public` / pgvector.
+- **Ads module** Drizzle lives in `apps/ads/shared` and targets isolated schema **`os`** (name stays). Do not merge ads tables into Brain `public` / pgvector.
 
 ## What this package is for
 

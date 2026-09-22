@@ -8,4 +8,4 @@ Origin M2 Meta account sync, remapped to Plan 1.5 prefix **`meta/ads/*`**.
 
 Read / mock pull only. **No Meta mutate.** AdAccounts hang off Client, not `store_id`.
 
-Registered by `apps/os/workers` `/api/inngest` (same serve URL as OS orchestration).
+Registered by `apps/ads/workers` `/api/inngest` (same serve URL as ads-module orchestration).

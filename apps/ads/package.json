@@ -1,0 +1,21 @@
+{
+  "name": "@tharros/ads",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cerevex ads module — web + api umbrella. Auth and Neon schema os isolated from Brain.",
+  "scripts": {
+    "dev": "concurrently -k -n api,web,worker,inngest -c cyan,green,magenta,yellow \"npm run dev --workspace=@tharros/ads-api\" \"npm run dev --workspace=@tharros/ads-web\" \"npm run dev --workspace=@tharros/ads-workers\" \"npx --yes inngest-cli@latest dev --no-discovery --host 127.0.0.1 --port 43183 -u http://127.0.0.1:43182/api/inngest\"",
+    "dev:api": "npm run dev --workspace=@tharros/ads-api",
+    "dev:web": "npm run dev --workspace=@tharros/ads-web",
+    "dev:worker": "npm run dev --workspace=@tharros/ads-workers",
+    "typecheck": "npm run typecheck --workspace=@tharros/ads-shared && npm run typecheck --workspace=@tharros/ads-api && npm run typecheck --workspace=@tharros/ads-workers && npm run typecheck --workspace=@shopify-brain/jobs-meta-ads && npm run typecheck --workspace=@shopify-brain/jobs-google-ads && npm run typecheck --workspace=@tharros/ads-web",
+    "test": "npm run test --workspace=@tharros/ads-api",
+    "db:migrate": "npm run migrate --workspace=@tharros/ads-shared",
+    "db:seed": "npm run seed --workspace=@tharros/ads-shared",
+    "db:up": "docker compose -f docker-compose.yml up -d",
+    "db:down": "docker compose -f docker-compose.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

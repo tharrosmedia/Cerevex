@@ -1,6 +1,6 @@
 # `@shopify-brain/contracts`
 
-Shared TypeScript contracts for Brain + OS. Merged from Plan 1.5 plus Origin tharros-os M1/M2 (richer tenancy / decision / grant / Neon notes). One package — do not fork `@tharros/contracts`.
+Shared TypeScript contracts for the Cerevex console (Brain) + ads module. Merged from Plan 1.5 plus Origin tharros-os (now Cerevex ads module) M1/M2 (richer tenancy / decision / grant / Neon notes). One package — do not fork `@tharros/contracts`.
 
 Import from `@shopify-brain/contracts`.
 
@@ -39,7 +39,7 @@ OS auth is **separate** from Brain `APP_PASSWORD` week one.
 
 ## Isolation
 
-- OS Neon schema = `os` (`OS_DB_SCHEMA`). Brain = `public` + pgvector.
-- Shared `DATABASE_URL` is allowed. **M3 held until shared Neon smoke.** Checklist: `apps/os/SMOKE.md`.
-- No duplicate Neon / Railway / Inngest org for OS. Distinct Inngest app ids: Brain `shopify-brain`, OS `tharros-os` (share Cloud keys; do not sync OS onto `shopify-brain`).
-- No Tavily for OS.
+- Ads Neon schema = `os` (`OS_DB_SCHEMA` — name stays). Brain = `public` + pgvector.
+- Shared `DATABASE_URL` is allowed. **M3 held until shared Neon smoke.** Checklist: `apps/ads/SMOKE.md`.
+- No duplicate Neon / Railway / Inngest org for the ads module. Distinct Inngest app ids: Brain `shopify-brain`, ads module `cerevex-ads` (share Cloud keys; do not sync ads onto `shopify-brain`). Env key remains `OS_INNGEST_APP_ID`.
+- No Tavily for the ads module.
