@@ -122,6 +122,7 @@ All Brain operations are scoped by `storeId`. Audit events are written for every
 - **[Accelerated Merge Plan 1.5](docs/accelerated-merge-plan-1.5.md)** — accepted monorepo reshape (this tree).
 - Brain Stage A details: `apps/brain/store-brain-implementation-plan.md`
 - OS local run: `apps/os/README.md`
+- Shared Neon smoke checklist (M3 gate): [`apps/os/SMOKE.md`](apps/os/SMOKE.md)
 - **M3 held until shared Neon smoke.**
 
 ## Contributing

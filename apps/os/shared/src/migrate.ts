@@ -10,12 +10,20 @@ const here = dirname(fileURLToPath(import.meta.url));
 async function main(): Promise<void> {
   loadEnv();
   const pool = getPool();
-  await pool.query('CREATE SCHEMA IF NOT EXISTS "os"');
-  const migrationsFolder = resolve(here, "../drizzle");
-  const db = drizzle(pool);
-  await migrate(db, { migrationsFolder });
-  console.log(`Applied OS migrations from ${migrationsFolder} into schema os`);
-  await closeDb();
+  const client = await pool.connect();
+  try {
+    // Isolated schema. Drizzle SQL creates types as "os"."platform" but columns
+    // reference unprefixed "platform" — search_path must include os on this client.
+    await client.query('CREATE SCHEMA IF NOT EXISTS "os"');
+    await client.query("SET search_path TO os, public");
+    const migrationsFolder = resolve(here, "../drizzle");
+    const db = drizzle(client);
+    await migrate(db, { migrationsFolder });
+    console.log(`Applied OS migrations from ${migrationsFolder} into schema os`);
+  } finally {
+    client.release();
+    await closeDb();
+  }
 }
 
 main().catch((error) => {

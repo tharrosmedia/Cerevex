@@ -52,4 +52,4 @@ Still held: shared Neon smoke (M3), live Meta/Google mutate, Railway/Neon provis
 
 - OS Neon: isolated schema.
 - OS auth: separate from Brain `APP_PASSWORD`.
-- Shared Inngest app id remains `shopify-brain` (or `INNGEST_APP_ID`).
+- Shared Inngest **Cloud keys** (same org). Distinct app ids so OS sync cannot clobber SEO: Brain `shopify-brain` (`seo/*` / `seo-*`), OS `tharros-os` (`os/*`, `meta/ads/*`, `google/ads/*`). Checklist: [`apps/os/SMOKE.md`](../apps/os/SMOKE.md).
