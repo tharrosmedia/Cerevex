@@ -4,7 +4,7 @@
 
 Ads work is the **Cerevex ads module** at `apps/ads` (formerly Tharros OS). The Cerevex console (SEO command center) still lives at `apps/brain` in this PR — a same-day follow-up can move it to `apps/web` after Railway dashboard paths are updated outside this repo.
 
-This repository is an **npm workspace monorepo** per [Accelerated Merge Plan 1.5](docs/accelerated-merge-plan-1.5.md). The GitHub repo name remains `tharrosmedia/Shopify-Brain` until Eng/Adam renames it.
+This repository is an **npm workspace monorepo** per [Accelerated Merge Plan 1.5](docs/accelerated-merge-plan-1.5.md). The GitHub repo is now `tharrosmedia/Cerevex` (Eng/Adam renamed it separately from this PR).
 
 **No unsupervised ad spend.** Authorize-to-apply and workspace kill switches are unchanged (kill switch ON by default). No Meta/Google mutate from this tree.
 
@@ -71,8 +71,8 @@ Success for Stage A: trigger SEO job for a keyword → research → draft → hu
 
 ```bash
 # 1. Clone
-git clone https://github.com/tharrosmedia/Shopify-Brain.git
-cd Shopify-Brain
+git clone https://github.com/tharrosmedia/Cerevex.git
+cd Cerevex
 
 # 2. Install (workspace root)
 npm install

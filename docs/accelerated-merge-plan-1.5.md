@@ -2,7 +2,7 @@
 
 Accepted by Adam. This repo is being reshaped **in place** (no force-push of `main`).
 
-**Current product name:** Cerevex. Ads work is the Cerevex ads module at `apps/ads` (formerly `apps/os` / Tharros OS). Neon schema **`os` stays `os`**. Inngest ads app id default is `cerevex-ads` (env key `OS_INNGEST_APP_ID` unchanged). Brain SEO Inngest app id stays `shopify-brain`. GitHub repo rename is out of scope.
+**Current product name:** Cerevex. Ads work is the Cerevex ads module at `apps/ads` (formerly `apps/os` / Tharros OS). Neon schema **`os` stays `os`**. Inngest ads app id default is `cerevex-ads` (env key `OS_INNGEST_APP_ID` unchanged). Brain SEO Inngest app id stays `shopify-brain`. GitHub repo is now `tharrosmedia/Cerevex` (renamed outside this PR).
 
 ## Day 1–2 (this PR)
 
