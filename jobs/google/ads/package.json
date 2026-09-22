@@ -2,5 +2,21 @@
   "name": "@shopify-brain/jobs-google-ads",
   "version": "0.0.0",
   "private": true,
-  "description": "Placeholder. Inngest prefix google/ads/*. No mutate."
+  "type": "module",
+  "description": "Google ads Inngest functions. Prefix google/ads/*. Read/mock sync only.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tharros/shared": "*",
+    "drizzle-orm": "^0.44.7",
+    "inngest": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
 }

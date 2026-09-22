@@ -29,6 +29,9 @@ jobs:
               - '.github/workflows/ci.yml'
             os:
               - 'apps/os/**'
+              - 'jobs/meta/**'
+              - 'jobs/google/**'
+              - 'packages/contracts/**'
 
   brain:
     name: apps/brain + jobs/seo
@@ -74,9 +77,16 @@ jobs:
       - name: Install
         if: needs.changes.outputs.os == 'true'
         run: npm ci
-      - name: OS placeholder check
+      - name: Typecheck OS + paid jobs
         if: needs.changes.outputs.os == 'true'
-        run: npm run typecheck --workspace=@shopify-brain/os && npm run test --workspace=@shopify-brain/os
-      - name: Skip (no apps/os changes)
+        run: |
+          npm run typecheck --workspace=@tharros/shared
+          npm run typecheck --workspace=@tharros/api
+          npm run typecheck --workspace=@tharros/workers
+          npm run typecheck --workspace=@shopify-brain/jobs-meta-ads
+          npm run typecheck --workspace=@shopify-brain/jobs-google-ads
+          npm run typecheck --workspace=@shopify-brain/contracts
+          npm run typecheck --workspace=@tharros/web
+      - name: Skip (no apps/os / paid-job changes)
         if: needs.changes.outputs.os != 'true'
-        run: echo "Skipped — no apps/os changes. OS import is still a stub."
+        run: echo "Skipped — no apps/os or paid-job changes. Brain + jobs/seo stay independently green."

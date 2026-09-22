@@ -1,11 +1,12 @@
 /**
- * Audit event envelope (Plan 1.5).
+ * Audit event envelopes.
  *
  * Brain today writes store-scoped rows to its own `events` table (public + pgvector Neon).
- * OS audit events will live on the isolated OS Neon schema — do not merge those tables.
+ * OS audit events live on the isolated OS Neon schema — do not merge those tables.
+ * OS `audit_log` is append-only (insert allowed; update/delete blocked).
  */
 
-export type AuditActorType = "system" | "user" | "agent";
+export type AuditActorType = "system" | "user" | "agent" | "worker" | "brain";
 export type AuditSource = "brain" | "os";
 
 export interface AuditActor {
@@ -13,13 +14,10 @@ export interface AuditActor {
   id: string;
 }
 
-/**
- * Scope is either store-scoped (Brain SEO path) or client-scoped (OS).
- * Do not require store_id on OS events; do not require client_id on existing Brain events.
- */
 export interface AuditScope {
   clientId?: string;
   storeId?: string;
+  workspaceId?: string;
 }
 
 export interface AuditEventEnvelope {
@@ -32,3 +30,17 @@ export interface AuditEventEnvelope {
   payload: Record<string, unknown>;
   jobId?: string;
 }
+
+/** Origin OS audit row (workspace-scoped). */
+export type AuditEvent = {
+  id: string;
+  workspaceId: string;
+  clientId?: string | null;
+  actorType: AuditActorType;
+  actorId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  payloadJson: Record<string, unknown>;
+  createdAt: string;
+};

@@ -4,6 +4,7 @@
   "description": "Shopify Brain + OS monorepo (Accelerated Merge Plan 1.5)",
   "workspaces": [
     "apps/*",
+    "apps/os/*",
     "jobs/seo",
     "jobs/meta/*",
     "jobs/google/*",
@@ -22,7 +23,14 @@
     "test:shopify": "npm run test:shopify --workspace=@shopify-brain/brain",
     "inngest:sync": "npm run inngest:sync --workspace=@shopify-brain/brain",
     "test:prompt": "npm run test:prompt --workspace=@shopify-brain/brain",
-    "ingest:knowledge": "npm run ingest:knowledge --workspace=@shopify-brain/brain"
+    "ingest:knowledge": "npm run ingest:knowledge --workspace=@shopify-brain/brain",
+    "os:dev": "npm run dev --workspace=@shopify-brain/os",
+    "os:typecheck": "npm run typecheck --workspace=@shopify-brain/os",
+    "os:test": "npm run test --workspace=@shopify-brain/os",
+    "os:db:up": "npm run db:up --workspace=@shopify-brain/os",
+    "os:db:down": "npm run db:down --workspace=@shopify-brain/os",
+    "os:db:migrate": "npm run db:migrate --workspace=@shopify-brain/os",
+    "os:db:seed": "npm run db:seed --workspace=@shopify-brain/os"
   },
   "engines": {
     "node": ">=20"

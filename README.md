@@ -10,10 +10,10 @@ This repository is now an **npm workspace monorepo** per [Accelerated Merge Plan
 
 ```
 apps/brain                 # Next.js Brain (SEO command center + App Router)
-apps/os                    # Placeholder — Origin tharros-os M1/M2 import is a follow-up
-jobs/meta/ads              # Stub. Inngest prefix: meta/ads/*
+apps/os                    # Tharros OS (Origin M1/M2): api, web, shared, workers
+jobs/meta/ads              # meta/ads/* read/mock sync
 jobs/meta/organic          # Stub. Inngest prefix: meta/organic/*
-jobs/google/ads            # Stub. Inngest prefix: google/ads/*
+jobs/google/ads            # google/ads/* read/mock sync
 jobs/seo                   # Existing SEO Inngest functions (seo/* / seo-*)
 packages/contracts         # Shared TypeScript contracts
 packages/db                # Stub. Brain Neon stays in apps/brain
@@ -121,8 +121,8 @@ All Brain operations are scoped by `storeId`. Audit events are written for every
 
 - **[Accelerated Merge Plan 1.5](docs/accelerated-merge-plan-1.5.md)** — accepted monorepo reshape (this tree).
 - Brain Stage A details: `apps/brain/store-brain-implementation-plan.md`
+- OS local run: `apps/os/README.md`
 - **M3 held until shared Neon smoke.**
-- Follow-up: import Origin tharros-os M1/M2 into `apps/os`.
 
 ## Contributing
 

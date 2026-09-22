@@ -48,4 +48,6 @@ export interface ApproveToPublishEnvelope {
   createdAt: string;
 }
 
-export type DecisionEnvelope = AuthorizeToApplyEnvelope | ApproveToPublishEnvelope;
+export type AuthorizationKindEnvelope = AuthorizeToApplyEnvelope | ApproveToPublishEnvelope;
+/** @deprecated Use AuthorizationKindEnvelope. */
+export type DecisionKindEnvelope = AuthorizationKindEnvelope;

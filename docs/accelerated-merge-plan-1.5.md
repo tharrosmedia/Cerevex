@@ -28,9 +28,11 @@ packages/shared
 - `apps/os` placeholder for the upcoming Origin **tharros-os M1/M2** import. Do not invent product features.
 - Path-filtered CI so Brain + `jobs/seo` stay green independently of `apps/os`.
 
-## Follow-up
+## Follow-up (landed on this PR)
 
-Import Origin tharros-os M1/M2 source into `apps/os`.
+Origin tharros-os M1/M2 is imported into `apps/os` (api/web/shared/workers). Paid sync mapped to `jobs/meta/ads` and `jobs/google/ads`.
+
+Still held: shared Neon smoke (M3), live Meta/Google mutate, Railway/Neon provisioning.
 
 ## Held
 

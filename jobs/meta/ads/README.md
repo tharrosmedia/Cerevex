@@ -1,15 +1,11 @@
 # `jobs/meta/ads`
 
-Placeholder (Plan 1.5 Day 1–2). No functions yet.
+Origin M2 Meta account sync, remapped to Plan 1.5 prefix **`meta/ads/*`**.
 
-## Inngest prefix
+| Event | Function ID |
+|---|---|
+| `meta/ads/account.sync` | `meta-ads-account-sync` |
 
-Reserved: **`meta/ads/*`**
+Read / mock pull only. **No Meta mutate.** AdAccounts hang off Client, not `store_id`.
 
-## Constraints
-
-- No unsupervised ad writes.
-- No Meta mutate in this reshape.
-- AdAccounts hang off **Client**, not `store_id` (see `packages/contracts`).
-
-A follow-up will add read-only / draft jobs here. Do not invent product features in this stub.
+Registered by `apps/os/workers` `/api/inngest` (same serve URL as OS orchestration).

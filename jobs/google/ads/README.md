@@ -1,15 +1,11 @@
 # `jobs/google/ads`
 
-Placeholder (Plan 1.5 Day 1–2). No functions yet.
+Origin M2 Google account sync, remapped to Plan 1.5 prefix **`google/ads/*`**.
 
-## Inngest prefix
+| Event | Function ID |
+|---|---|
+| `google/ads/account.sync` | `google-ads-account-sync` |
 
-Reserved: **`google/ads/*`**
+Read / mock pull only. **No Google Ads mutate.** AdAccounts hang off Client, not `store_id`.
 
-## Constraints
-
-- No unsupervised ad writes.
-- No Google Ads mutate in this reshape.
-- AdAccounts hang off **Client**, not `store_id` (see `packages/contracts`).
-
-A follow-up will add read-only / draft jobs here. Do not invent product features in this stub.
+Registered by `apps/os/workers` `/api/inngest`.
