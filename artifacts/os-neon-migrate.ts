@@ -146,9 +146,14 @@ export function loadOsMigrations(options: OsMigrateOptions = {}): OsMigration[] 
 }
 
 async function openClient(databaseUrl: string): Promise<SqlClient> {
-  const BunGlobal = (globalThis as { Bun?: { SQL?: new (url: string) => BunSqlLike } }).Bun;
+  const BunGlobal = (
+    globalThis as {
+      Bun?: { SQL?: new (options: string | { url: string; max?: number }) => BunSqlLike };
+    }
+  ).Bun;
   if (BunGlobal?.SQL) {
-    const sql = new BunGlobal.SQL(databaseUrl);
+    // Single connection so SET search_path and BEGIN/COMMIT stay on the same session.
+    const sql = new BunGlobal.SQL({ url: databaseUrl, max: 1 });
     return {
       async query(text, params) {
         const result = params?.length ? await sql.unsafe(text, params) : await sql.unsafe(text);
