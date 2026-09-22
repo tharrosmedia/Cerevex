@@ -137,6 +137,7 @@
   background: var(--background);
   color: var(--foreground);
   padding: 1rem 1.25rem;
+  overflow: visible;
 }
 
 .site-header-inner {
@@ -147,6 +148,7 @@
   gap: 1rem;
   min-width: 0;
   flex-wrap: wrap;
+  overflow: visible;
 }
 
 .site-wordmark {
@@ -168,6 +170,7 @@
   gap: 0.85rem;
   font-size: 0.9rem;
   flex: 0 0 auto;
+  overflow: visible;
 }
 
 .site-nav a,
@@ -186,25 +189,34 @@
   text-decoration: underline;
 }
 
-.site-nav-relative {
+.site-nav-relative,
+.site-nav-item {
   position: relative;
+  flex: 0 0 auto;
+}
+
+.site-nav-item.is-open {
+  z-index: 30;
 }
 
 .site-nav-pair {
   display: flex;
   align-items: center;
   gap: 0.15rem;
+  white-space: nowrap;
 }
 
 .site-nav-menu {
   position: absolute;
+  top: 100%;
   left: 0;
+  right: auto;
   margin-top: 0.35rem;
   background: var(--background);
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   padding: 0.35rem;
-  z-index: 10;
+  z-index: 40;
   min-width: 10rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
 }

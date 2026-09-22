@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { KillSwitchBanner, KillSwitchPill } from "@/components/cockpit/kill-switch-banner";
 import { useWorkspace } from "@/components/cockpit/workspace-context";
@@ -25,11 +25,32 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { killSwitch, workspaceName, error } = useWorkspace();
   const [adsOpen, setAdsOpen] = useState(false);
+  const adsMenuRef = useRef<HTMLDivElement>(null);
   const adsCurrent = isAdsPath(pathname);
+  const rail = adsCurrent ? ADS_SUB.filter((item) => item.rail) : [];
 
   useEffect(() => {
     setAdsOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!adsOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (adsMenuRef.current?.contains(event.target as Node)) return;
+      setAdsOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAdsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [adsOpen]);
 
   async function onLogout() {
     await logout();
@@ -45,21 +66,27 @@ export function AppShell({ children }: { children: ReactNode }) {
           </a>
           <nav className="site-nav" aria-label="Cerevex">
             <a href={consoleHref("/seo")}>SEO</a>
-            <div className="site-nav-relative site-nav-pair">
-              <Link href="/app" className={adsCurrent ? "site-nav-current" : undefined}>
-                Ads
-              </Link>
-              <button
-                type="button"
-                onClick={() => setAdsOpen((open) => !open)}
-                aria-expanded={adsOpen}
-                aria-haspopup="true"
-                aria-label="Ads menu"
-              >
-                {adsOpen ? "▴" : "▾"}
-              </button>
+            <div
+              ref={adsMenuRef}
+              className={adsOpen ? "site-nav-item is-open" : "site-nav-item"}
+            >
+              <div className="site-nav-pair">
+                <Link href="/app" className={adsCurrent ? "site-nav-current" : undefined}>
+                  Ads
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setAdsOpen((open) => !open)}
+                  aria-expanded={adsOpen}
+                  aria-haspopup="true"
+                  aria-controls="ads-menu"
+                  aria-label="Ads menu"
+                >
+                  {adsOpen ? "▴" : "▾"}
+                </button>
+              </div>
               {adsOpen && (
-                <div className="site-nav-menu">
+                <div className="site-nav-menu" id="ads-menu" role="menu">
                   {ADS_SUB.map((item) => (
                     <Link key={`${item.label}-${item.href}`} href={item.href} onClick={() => setAdsOpen(false)}>
                       {item.label}
@@ -68,27 +95,29 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               )}
             </div>
-            <a href={consoleHref("/review")}>Review</a>
-            <a href={consoleHref("/stores")}>Stores</a>
-            <a href={consoleHref("/settings")}>Settings</a>
+            <a href={consoleHref("/review")} onClick={() => setAdsOpen(false)}>Review</a>
+            <a href={consoleHref("/stores")} onClick={() => setAdsOpen(false)}>Stores</a>
+            <a href={consoleHref("/settings")} onClick={() => setAdsOpen(false)}>Settings</a>
           </nav>
           <div className="site-nav-rail">
-            <div className="site-nav-rail-items">
-              {ADS_SUB.filter((item) => item.rail).map((item) => {
-                const current = item.match
-                  ? item.match(pathname ?? "")
-                  : Boolean(pathname?.startsWith(item.href));
-                return (
-                  <Link
-                    key={item.rail}
-                    href={item.href}
-                    className={current ? "site-nav-current" : undefined}
-                  >
-                    {item.rail}
-                  </Link>
-                );
-              })}
-            </div>
+            {rail.length > 0 && (
+              <div className="site-nav-rail-items">
+                {rail.map((item) => {
+                  const current = item.match
+                    ? item.match(pathname ?? "")
+                    : Boolean(pathname?.startsWith(item.href));
+                  return (
+                    <Link
+                      key={item.rail}
+                      href={item.href}
+                      className={current ? "site-nav-current" : undefined}
+                    >
+                      {item.rail}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
             <div className="site-store-switch site-workspace-switch">
               <span className="site-workspace-name" title={workspaceName ?? undefined}>
                 {workspaceName ?? "Cerevex"}
