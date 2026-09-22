@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { compare } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import { SignJWT, jwtVerify } from "jose";
@@ -85,6 +86,31 @@ export function extractBearer(header: string | undefined): string | null {
   const [scheme, token] = header.split(" ");
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
   return token;
+}
+
+export function extractInternalKey(header: string | undefined): string | null {
+  const value = header?.trim();
+  return value ? value : null;
+}
+
+export function internalKeyMatches(provided: string | undefined | null): boolean {
+  const expected = process.env.ADS_INTERNAL_KEY;
+  if (!expected || !provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+export async function loadInternalOperatorAuth(): Promise<AuthContext | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({ userId: memberships.userId })
+    .from(memberships)
+    .where(eq(memberships.role, "owner"))
+    .limit(1);
+  if (!row) return null;
+  return loadAuthContext(row.userId);
 }
 
 export { and, eq };

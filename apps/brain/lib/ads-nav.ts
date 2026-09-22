@@ -12,13 +12,15 @@ export type AdsNavItem = {
   module?: AdsModuleId;
 };
 
-export function adsSub(adsOrigin: string, modules?: ModuleFlags | null): AdsNavItem[] {
+export function adsSub(_adsOrigin: string, modules?: ModuleFlags | null): AdsNavItem[] {
   const items: AdsNavItem[] = [
     { href: '/ads', label: 'Overview' },
-    { href: adsOrigin ? `${adsOrigin}/app/clients` : '/ads', label: 'Clients', rail: 'Clients', module: 'clients' },
-    { href: adsOrigin ? `${adsOrigin}/app/brainstorm` : '/ads', label: 'Leads', rail: 'Leads', module: 'leads' },
-    { href: adsOrigin ? `${adsOrigin}/app/sales` : '/ads', label: 'Sales', rail: 'Sales', module: 'sales' },
-    { href: adsOrigin ? `${adsOrigin}/app/workflows` : '/ads', label: 'Workflows', rail: 'Workflows', module: 'workflows' },
+    { href: '/ads/audits', label: 'Audits', rail: 'Audits' },
+    { href: '/ads/suggestions', label: 'Suggestions', rail: 'Suggestions' },
+    { href: '/ads/clients', label: 'Clients', rail: 'Clients', module: 'clients' },
+    { href: '/ads/leads', label: 'Leads', rail: 'Leads', module: 'leads' },
+    { href: '/ads/sales', label: 'Sales', rail: 'Sales', module: 'sales' },
+    { href: '/ads/workflows', label: 'Workflows', rail: 'Workflows', module: 'workflows' },
     { href: '/settings', label: 'Modules' },
   ];
   return filterItemsByModules(items, modules ?? unboardedModules());

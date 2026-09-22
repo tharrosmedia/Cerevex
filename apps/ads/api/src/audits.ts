@@ -15,12 +15,16 @@ import {
   createAuditRun,
   decideRecommendation,
   getAuditBundle,
+  getFinding,
   getRecommendation,
   latestAuthorization,
   listAuditRuns,
+  listAuditRunsForClients,
   listRecommendations,
+  listRecommendationsForClients,
   runAuditRun,
   toAuthorizationPublic,
+  toFindingPublic,
   toRecommendationPublic,
 } from "@tharros/ads-shared/audit";
 import { getDb } from "@tharros/ads-shared/db";
@@ -29,7 +33,7 @@ import { applyJobs, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
 import { requireMutableClient, requireVisibleAccount } from "./connect";
 import { childLogger } from "./logger";
-import { getVisibleClient } from "./tenancy";
+import { getVisibleClient, listVisibleClients } from "./tenancy";
 import type { AppEnv } from "./types";
 
 const startAuditSchema = z.object({
@@ -131,6 +135,21 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     return c.json({ audits: await listAuditRuns(client.id), writes: false });
   });
 
+  app.get("/audits", requireAuth, async (c) => {
+    const visible = await listVisibleClients(c.get("auth"));
+    const clientId = c.req.query("clientId");
+    const status = c.req.query("status");
+    const scoped = clientId ? visible.filter((row) => row.id === clientId) : visible;
+    if (clientId && scoped.length === 0) {
+      throw new HTTPException(404, { message: "Client not found" });
+    }
+    let audits = await listAuditRunsForClients(scoped.map((row) => row.id));
+    if (status) {
+      audits = audits.filter((row) => row.status === status);
+    }
+    return c.json({ audits, writes: false });
+  });
+
   app.get("/audits/:id", requireAuth, async (c) => {
     try {
       const bundle = await getAuditBundle(c.req.param("id"));
@@ -148,12 +167,42 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
   });
 
+  app.get("/recommendations", requireAuth, async (c) => {
+    const visible = await listVisibleClients(c.get("auth"));
+    const clientId = c.req.query("clientId");
+    const status = c.req.query("status");
+    const scoped = clientId ? visible.filter((row) => row.id === clientId) : visible;
+    if (clientId && scoped.length === 0) {
+      throw new HTTPException(404, { message: "Client not found" });
+    }
+    let recommendations = await listRecommendationsForClients(scoped.map((row) => row.id));
+    if (status) {
+      recommendations = recommendations.filter((row) => row.status === status);
+    }
+    return c.json({ recommendations, writes: false });
+  });
+
   app.get("/clients/:id/recommendations", requireAuth, async (c) => {
     const client = await getVisibleClient(c.get("auth"), c.req.param("id"));
     if (!client) {
       throw new HTTPException(404, { message: "Client not found" });
     }
     return c.json({ recommendations: await listRecommendations(client.id), writes: false });
+  });
+
+  app.get("/findings/:id", requireAuth, async (c) => {
+    const row = await getFinding(c.req.param("id"));
+    if (!row) {
+      throw new HTTPException(404, { message: "Finding not found" });
+    }
+    if (!row.clientId) {
+      throw new HTTPException(404, { message: "Finding not found" });
+    }
+    const client = await getVisibleClient(c.get("auth"), row.clientId);
+    if (!client) {
+      throw new HTTPException(404, { message: "Finding not found" });
+    }
+    return c.json({ finding: toFindingPublic(row), writes: false });
   });
 
   app.get("/recommendations/:id", requireAuth, async (c) => {

@@ -10,9 +10,11 @@ const seoItems = [
 
 const adsItems = [
   { href: '/ads', label: 'Overview' },
-  { href: '/app', label: 'Clients', rail: 'Clients' },
-  { href: '/app/brainstorm', label: 'Leads', rail: 'Leads' },
-  { href: '/app/workflows', label: 'Workflows', rail: 'Workflows' },
+  { href: '/ads/audits', label: 'Audits', rail: 'Audits' },
+  { href: '/ads/suggestions', label: 'Suggestions', rail: 'Suggestions' },
+  { href: '/ads/clients', label: 'Clients', rail: 'Clients' },
+  { href: '/ads/leads', label: 'Leads', rail: 'Leads' },
+  { href: '/ads/workflows', label: 'Workflows', rail: 'Workflows' },
 ];
 
 function rails(pathname: string | null) {
@@ -29,7 +31,7 @@ assert.equal(navSectionFromPath('/'), null);
 
 assert.deepEqual(rails('/seo'), ['New', 'Catalog', 'GSC']);
 assert.deepEqual(rails('/seo/live'), ['New', 'Catalog', 'GSC']);
-assert.deepEqual(rails('/ads'), ['Clients', 'Leads', 'Workflows']);
+assert.deepEqual(rails('/ads'), ['Audits', 'Suggestions', 'Clients', 'Leads', 'Workflows']);
 assert.deepEqual(rails('/review'), []);
 assert.deepEqual(rails('/'), []);
 assert.ok(!rails('/seo').includes('Clients'));

@@ -41,6 +41,16 @@ function configured(platform: Platform): boolean {
   return platform === "meta" ? isMetaConfigured() : isGoogleConfigured();
 }
 
+function consoleOrigin(): string {
+  return (process.env.CONSOLE_ORIGIN ?? process.env.NEXT_PUBLIC_CONSOLE_ORIGIN ?? "").replace(/\/$/, "");
+}
+
+function postConnectDest(): URL {
+  const origin = consoleOrigin();
+  if (origin) return new URL("/ads", origin);
+  return new URL(`${webOrigin()}/app`);
+}
+
 export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHandler<AppEnv>) {
   app.get("/oauth/config", requireAuth, (c) => {
     return c.json({
@@ -75,9 +85,8 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     const error = c.req.query("error");
     const code = c.req.query("code");
     const state = c.req.query("state");
-    const dest = new URL(`${webOrigin()}/app`);
+    const dest = postConnectDest();
     if (error || !code || !state) {
-      dest.pathname = "/app";
       dest.searchParams.set("oauth_error", error ?? "missing_code");
       return c.redirect(dest.toString());
     }
@@ -102,8 +111,9 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
         tokens: exchanged.tokens,
         label: "live",
       });
-      dest.pathname = `/app/clients/${visible.id}`;
+      dest.searchParams.set("client", visible.id);
       dest.searchParams.set("connected", platform);
+      if (!consoleOrigin()) dest.pathname = `/app/clients/${visible.id}`;
       return c.redirect(dest.toString());
     } catch (err) {
       childLogger(c.get("requestId") ?? "oauth").error({

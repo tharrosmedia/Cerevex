@@ -16,7 +16,10 @@ import type { AppEnv } from "./types";
 import {
   authenticate,
   extractBearer,
+  extractInternalKey,
+  internalKeyMatches,
   loadAuthContext,
+  loadInternalOperatorAuth,
   sessionCookieName,
   signSession,
   verifySession,
@@ -46,6 +49,17 @@ const JOB_AUDIT_ACTIONS = [
 export const VERSION = "0.1.0";
 
 const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
+  const internalKey = extractInternalKey(c.req.header("x-cerevex-internal-key"));
+  if (internalKeyMatches(internalKey)) {
+    const auth = await loadInternalOperatorAuth();
+    if (!auth) {
+      throw new HTTPException(401, { message: "Internal key is valid but no operator exists" });
+    }
+    c.set("auth", auth);
+    await next();
+    return;
+  }
+
   const token = extractBearer(c.req.header("authorization")) ?? getCookie(c, sessionCookieName());
   if (!token) {
     throw new HTTPException(401, { message: "Sign in required" });
@@ -67,14 +81,16 @@ const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
 export function createApp() {
   const app = new Hono<AppEnv>();
   const webOrigin = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43181";
+  const consoleOrigin = (process.env.CONSOLE_ORIGIN ?? process.env.NEXT_PUBLIC_CONSOLE_ORIGIN ?? "").replace(/\/$/, "");
+  const allowedOrigins = [webOrigin, consoleOrigin].filter(Boolean);
 
   app.use(
     "*",
     cors({
-      origin: webOrigin,
+      origin: allowedOrigins,
       credentials: true,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization", "X-Request-Id"],
+      allowHeaders: ["Content-Type", "Authorization", "X-Request-Id", "X-Cerevex-Internal-Key"],
       exposeHeaders: ["X-Request-Id"],
     }),
   );

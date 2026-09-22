@@ -1,0 +1,168 @@
+export type AdsPlatform = "meta" | "google";
+
+const FINDING_LABELS: Record<string, string> = {
+  account_snapshot: "Account snapshot",
+  no_entities: "Nothing synced yet",
+  no_ad_accounts: "No ad accounts",
+  zero_conversion_spend: "Spend with no leads",
+  high_cpa: "Leads cost more than usual",
+  low_ctr: "Ads not getting clicks",
+  single_ad: "Only one ad",
+  thin_keywords: "Thin keyword coverage",
+  spend_concentration: "Spend on one campaign",
+};
+
+const SUGGESTION_LABELS: Record<string, string> = {
+  pause_waste: "Stop wasted spend",
+  review_cpa: "Review costly ads",
+  improve_ctr: "Refresh the ad",
+  add_creative: "Add another ad",
+  expand_keywords: "Cover more search terms",
+  spend_concentration: "Watch spend concentration",
+};
+
+const SUGGESTION_WHY: Record<string, string> = {
+  pause_waste: "This campaign spent money without bringing in leads.",
+  review_cpa: "Leads from this campaign cost more than usual.",
+  improve_ctr: "People are seeing the ad but not clicking it.",
+  add_creative: "One ad is carrying the campaign.",
+  expand_keywords: "The search terms are too thin.",
+  spend_concentration: "Almost all spend sits on one campaign.",
+};
+
+const AUDIT_STATUS_LABELS: Record<string, string> = {
+  queued: "Queued",
+  running: "Running",
+  completed: "Done",
+  failed: "Failed",
+  stub: "Queued",
+};
+
+const SUGGESTION_STATUS_LABELS: Record<string, string> = {
+  proposed: "Open",
+  authorized: "Noted",
+  denied: "Dismissed",
+  snoozed: "Later",
+};
+
+const RISK_LABELS: Record<string, string> = {
+  low: "Low risk",
+  medium: "Medium risk",
+  high: "High risk",
+};
+
+export function findingLabel(ruleId: string | null | undefined, fallbackTitle?: string): string {
+  if (ruleId && FINDING_LABELS[ruleId]) return FINDING_LABELS[ruleId];
+  return fallbackTitle?.trim() || "Finding";
+}
+
+export function suggestionLabel(type: string | null | undefined, fallbackTitle?: string): string {
+  if (type && SUGGESTION_LABELS[type]) return SUGGESTION_LABELS[type];
+  return fallbackTitle?.trim() || "Suggestion";
+}
+
+export function suggestionWhy(type: string | null | undefined, fallback?: string): string {
+  if (type && SUGGESTION_WHY[type]) return SUGGESTION_WHY[type];
+  return fallback?.trim() || "Cerevex flagged this during a check.";
+}
+
+export function auditStatusLabel(status: string | null | undefined): string {
+  if (!status) return "Unknown";
+  return AUDIT_STATUS_LABELS[status] ?? titleCase(status);
+}
+
+export function suggestionStatusLabel(status: string | null | undefined): string {
+  if (!status) return "Open";
+  return SUGGESTION_STATUS_LABELS[status] ?? titleCase(status);
+}
+
+export function riskLabel(risk: string | null | undefined): string {
+  if (!risk) return "";
+  return RISK_LABELS[risk] ?? titleCase(risk);
+}
+
+export function platformLabel(platform: string | null | undefined): string {
+  if (platform === "google") return "Google";
+  if (platform === "meta") return "Meta";
+  return platform ? titleCase(platform) : "";
+}
+
+export function formatMoney(value: string | number | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const amount = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(amount)) return null;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: amount >= 100 ? 0 : 2,
+  }).format(amount);
+}
+
+export function titleCase(value: string): string {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export function shortWhen(value: string | null | undefined): string {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Never";
+  return date.toLocaleString();
+}
+
+export function rankSuggestions<T extends { estimatedImpactUsd?: string | null; confidence?: string | null }>(
+  items: T[],
+): T[] {
+  return [...items].sort((a, b) => suggestionScore(b) - suggestionScore(a));
+}
+
+export function suggestionScore(item: { estimatedImpactUsd?: string | null; confidence?: string | null }): number {
+  const impact = Number(item.estimatedImpactUsd ?? 0);
+  const confidence = Number(item.confidence ?? 0.5);
+  const safeImpact = Number.isFinite(impact) ? impact : 0;
+  const safeConfidence = Number.isFinite(confidence) ? confidence : 0.5;
+  return safeImpact * safeConfidence;
+}
+
+export function ruleIdFromBody(body: Record<string, unknown> | null | undefined): string | null {
+  return typeof body?.ruleId === "string" ? body.ruleId : null;
+}
+
+export function platformFromRecord(
+  record: Record<string, unknown> | null | undefined,
+): AdsPlatform | null {
+  const value = record?.platform;
+  if (value === "meta" || value === "google") return value;
+  return null;
+}
+
+export function metricLines(record: Record<string, unknown> | null | undefined): string[] {
+  if (!record) return [];
+  const lines: string[] = [];
+  if (typeof record.spend30dUsd === "string" || typeof record.spend30dUsd === "number") {
+    const spend = formatMoney(record.spend30dUsd);
+    if (spend) lines.push(`Spend (30 days): ${spend}`);
+  }
+  if (typeof record.spend7dUsd === "string" || typeof record.spend7dUsd === "number") {
+    const spend = formatMoney(record.spend7dUsd);
+    if (spend) lines.push(`Spend (7 days): ${spend}`);
+  }
+  if (typeof record.conversions === "string" || typeof record.conversions === "number") {
+    lines.push(`Leads: ${record.conversions}`);
+  }
+  if (typeof record.cpa30dUsd === "string" || typeof record.cpa30dUsd === "number") {
+    const cost = formatMoney(record.cpa30dUsd);
+    if (cost) lines.push(`Cost per lead: ${cost}`);
+  }
+  if (typeof record.entityCount === "number") lines.push(`Items checked: ${record.entityCount}`);
+  if (typeof record.campaignCount === "number") lines.push(`Campaigns: ${record.campaignCount}`);
+  if (typeof record.adCount === "number") lines.push(`Ads: ${record.adCount}`);
+  if (typeof record.keywordCount === "number") lines.push(`Keywords: ${record.keywordCount}`);
+  if (typeof record.impressions === "number") lines.push(`Impressions: ${record.impressions}`);
+  if (typeof record.clicks === "number") lines.push(`Clicks: ${record.clicks}`);
+  if (typeof record.ctr === "number") lines.push(`Click rate: ${(record.ctr * 100).toFixed(2)}%`);
+  if (typeof record.hint === "string") lines.push(record.hint);
+  if (typeof record.entityExternalId === "string") lines.push(`Entity: ${record.entityExternalId}`);
+  if (typeof record.adAccountId === "string") lines.push(`Account: ${record.adAccountId}`);
+  if (typeof record.auditRunId === "string") lines.push(`Audit: ${record.auditRunId}`);
+  return lines;
+}
