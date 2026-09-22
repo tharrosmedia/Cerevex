@@ -1,8 +1,8 @@
 import { titleCase } from "./ads-copy";
 
 const TYPE_LABELS: Record<string, string> = {
-  "seo.generate": "New SEO page",
-  "seo.create": "New SEO page",
+  "seo.generate": "SEO create",
+  "seo.create": "SEO create",
   "seo.optimize": "SEO refresh",
   "seo.refresh": "SEO refresh",
   "seo.publish": "Publish SEO page",
@@ -45,17 +45,15 @@ export function jobStatusLabel(status: string | null | undefined): string {
   return STATUS_LABELS[status] ?? titleCase(status);
 }
 
-export function jobInputLabel(input: unknown): string {
+export function jobInputLabel(input: unknown, type?: string | null): string {
   const record = asRecord(input);
   if (!record) return "No details";
 
   const keyword = firstString(record, ["keyword", "query", "topic", "title", "name", "url"]);
-  const platform = firstString(record, ["platform"]);
-  const mode = firstString(record, ["mode", "brandVoice"]);
-
+  const mode = firstString(record, ["mode"]);
   if (keyword) {
-    const extras = [platform, mode].filter((value) => value && value !== keyword);
-    return extras.length ? `${keyword} · ${extras.map((value) => titleCase(value!)).join(" · ")}` : keyword;
+    const kind = type ? jobTypeLabel(type) : mode ? `SEO ${mode}` : "SEO";
+    return `${kind} — ${keyword}`;
   }
 
   const keys = Object.keys(record).filter((key) => {
@@ -70,4 +68,12 @@ export function jobInputLabel(input: unknown): string {
       return `${titleCase(key)}: ${String(value)}`;
     })
     .join(" · ");
+}
+
+export function jobInputDetails(input: unknown): string[] {
+  const record = asRecord(input);
+  if (!record) return [];
+  return Object.entries(record)
+    .filter(([, value]) => value != null && value !== "" && typeof value !== "object")
+    .map(([key, value]) => `${titleCase(key)}: ${String(value)}`);
 }
