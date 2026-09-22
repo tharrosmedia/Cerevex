@@ -92,12 +92,12 @@ export function RecommendationCard({
             {applying
               ? "Checking apply gate…"
               : killSwitchOn
-                ? "Apply blocked (kill switch ON)"
+                ? "Apply blocked (ads paused)"
                 : "Request apply"}
           </Button>
           <p className="text-xs text-muted-foreground">
             Authorization is recorded only. Apply is a separate step
-            {killSwitchOn ? " and stays blocked while the kill switch is on." : "."} No Meta/Google writes.
+            {killSwitchOn ? " and stays blocked while ads are paused." : "."} Nothing is written to the ad platforms.
           </p>
         </div>
       ) : null}

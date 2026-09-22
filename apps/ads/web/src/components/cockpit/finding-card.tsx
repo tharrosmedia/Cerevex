@@ -1,5 +1,6 @@
 import type { FindingPublic } from "@tharros/ads-shared";
 import { findingDetail } from "@/lib/format";
+import { MetricDetails } from "./metric-details";
 import { SeverityBadge } from "./status-badge";
 
 export function FindingCard({ finding }: { finding: FindingPublic }) {
@@ -10,7 +11,7 @@ export function FindingCard({ finding }: { finding: FindingPublic }) {
         <p className="font-medium">{finding.title}</p>
         <SeverityBadge severity={finding.severity} />
       </div>
-      {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
+      {detail ? <MetricDetails>{detail}</MetricDetails> : null}
     </li>
   );
 }

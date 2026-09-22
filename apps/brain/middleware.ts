@@ -3,19 +3,28 @@ import type { NextRequest } from 'next/server';
 
 const PASSWORD = process.env.APP_PASSWORD;
 
+function withPathname(request: NextRequest, response: NextResponse) {
+  response.headers.set('x-pathname', request.nextUrl.pathname);
+  return response;
+}
+
 export function middleware(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-pathname', request.nextUrl.pathname);
+  const next = NextResponse.next({ request: { headers: requestHeaders } });
+
   if (!PASSWORD) {
-    return NextResponse.next();
+    return withPathname(request, next);
   }
 
   const authCookie = request.cookies.get('auth')?.value;
 
   if (authCookie === PASSWORD) {
-    return NextResponse.next();
+    return withPathname(request, next);
   }
 
   if (request.nextUrl.pathname === '/login') {
-    return NextResponse.next();
+    return withPathname(request, next);
   }
 
   const loginUrl = new URL('/login', request.url);

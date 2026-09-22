@@ -10,8 +10,8 @@ import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/app", label: "Clients", icon: LayoutGrid, exact: true },
-  { href: "/app/brainstorm", label: "Brainstorm", icon: Lightbulb },
+  { href: "/app", label: "Ads", icon: LayoutGrid, exact: true },
+  { href: "/app/brainstorm", label: "Leads", icon: Lightbulb },
   { href: "/app/workflows", label: "Workflows", icon: Workflow },
 ];
 
@@ -26,14 +26,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    <div className="flex min-h-screen flex-col bg-background text-foreground md:flex-row">
       <aside className="border-b border-sidebar-border bg-sidebar md:flex md:w-64 md:flex-col md:border-b-0 md:border-r">
         <div className="flex items-center justify-between px-5 py-4 md:block">
           <Link href="/app" className="flex items-baseline gap-2">
             <span className="font-heading text-xl tracking-tight">Cerevex</span>
-            <span className="font-mono text-xs text-primary">ads</span>
           </Link>
-          <p className="hidden pt-1 text-xs text-muted-foreground md:block">Operator cockpit</p>
+          <p className="hidden pt-1 text-xs text-muted-foreground md:block">Ads for home service</p>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:overflow-visible">
           {NAV.map((item) => {
@@ -69,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-border px-4 py-3 md:px-8">
           <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-primary">Workspace</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Workspace</p>
             <h1 className="font-heading text-lg">{workspaceName ?? "Cerevex"}</h1>
           </div>
           <div className="flex items-center gap-3">

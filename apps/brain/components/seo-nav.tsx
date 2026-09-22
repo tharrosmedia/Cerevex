@@ -17,37 +17,34 @@ export default function SeoNav() {
     { href: '/seo/jobs', label: 'SEO jobs' },
   ];
   return (
-    <div className="flex items-center gap-4 text-sm">
-      <Link href="/" className="underline">Home</Link>
-      <div className="relative">
+    <div className="site-nav">
+      <Link href="/">Home</Link>
+      <div className="site-nav-relative">
         <button
           onClick={() => setOpen(!open)}
-          className="underline flex items-center gap-1"
           aria-expanded={open}
+          aria-haspopup="true"
         >
           SEO {open ? '▴' : '▾'}
         </button>
         {open && (
-          <div className="absolute left-0 mt-1 bg-background border rounded shadow p-1 z-10 min-w-[140px]">
+          <div className="site-nav-menu">
             {sub.map(s => (
-              <Link key={s.href} href={s.href} className="block px-2 py-1 hover:bg-muted" onClick={() => setOpen(false)}>
+              <Link key={s.href} href={s.href} onClick={() => setOpen(false)}>
                 {s.label}
               </Link>
             ))}
           </div>
         )}
       </div>
-      <Link href="/review" className="underline">Review</Link>
-      <Link href="/stores" className="underline">Stores</Link>
-      <Link href="/settings" className="underline">Settings</Link>
-      <span className="text-muted-foreground">Ads</span>
-      <span className="text-muted-foreground">Inventory</span>
-      <span className="text-muted-foreground">Service</span>
-      <span className="text-muted-foreground">Fulfillment</span>
+      <Link href="/review">Review</Link>
+      <Link href="/stores">Stores</Link>
+      <Link href="/settings">Settings</Link>
+      <span className="site-nav-muted">Ads</span>
       {isSeo && (
-        <div className="ml-2 flex gap-3 text-xs border-l pl-3">
+        <div className="site-nav-seo-sub">
           {sub.map(s => (
-            <Link key={s.href} href={s.href} className={pathname === s.href ? 'font-semibold underline' : 'underline'}>{s.label}</Link>
+            <Link key={s.href} href={s.href} className={pathname === s.href ? 'site-nav-current' : undefined}>{s.label}</Link>
           ))}
         </div>
       )}
