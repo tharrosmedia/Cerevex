@@ -173,5 +173,6 @@ describe("M3 audit → findings → recommendations", () => {
     const body = await json(res);
     expect(res.status).toBe(200);
     expect((body.workspace as { applyKillSwitch: boolean }).applyKillSwitch).toBe(true);
+    expect((body.workspace as { modules: { leads: boolean } }).modules.leads).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import { closeDb, getDb } from "./db";
 import { loadEnv } from "./env";
+import { applyBusinessTypeSettings, asSettingsRecord, readWorkspaceModules } from "./modules";
 import { auditLog, clients, memberships, users, workspaces } from "./schema";
 
 const PILOT_CLIENTS = ["Got Ductless", "KC Prestige", "Elmar HVAC"] as const;
@@ -24,7 +25,10 @@ async function main(): Promise<void> {
         .insert(workspaces)
         .values({
           name: "Tharros Media",
-          settingsJson: { vertical: "hvac", stage: "m1-spine" },
+          settingsJson: applyBusinessTypeSettings(
+            { vertical: "hvac", stage: "m1-spine" },
+            "agency",
+          ),
           applyKillSwitch: true,
         })
         .returning();
@@ -33,6 +37,16 @@ async function main(): Promise<void> {
 
   if (!existingWorkspace) {
     throw new Error("Failed to create or load workspace Tharros Media");
+  }
+
+  const currentSettings = asSettingsRecord(existingWorkspace.settingsJson);
+  if (!readWorkspaceModules(currentSettings).businessType) {
+    const merged = applyBusinessTypeSettings(
+      { ...currentSettings, vertical: currentSettings.vertical ?? "hvac", stage: currentSettings.stage ?? "m1-spine" },
+      "agency",
+    );
+    await db.update(workspaces).set({ settingsJson: merged }).where(eq(workspaces.id, existingWorkspace.id));
+    existingWorkspace.settingsJson = merged;
   }
 
   const passwordHash = await hash(ownerPassword, 12);

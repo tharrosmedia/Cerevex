@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import SiteNav from '@/components/site-nav';
 import StoreSwitcher from '@/components/store-switcher';
 import { adsModuleOrigin } from '@/lib/module-origins';
+import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 
 export const metadata: Metadata = {
   title: 'Cerevex',
@@ -39,6 +40,7 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   let activeStoreId = cookieStore.get('activeStoreId')?.value;
   let stores: any[] = [];
+  let modules = null;
   if (!isLogin) {
     try {
       stores = await listStores();
@@ -46,6 +48,9 @@ export default async function RootLayout({
     if (!activeStoreId && stores.length > 0) {
       activeStoreId = stores[0].id;
     }
+    try {
+      modules = (await getWorkspaceModuleSettings()).modules;
+    } catch {}
   }
 
   return (
@@ -62,6 +67,7 @@ export default async function RootLayout({
                 </Link>
                 <SiteNav
                   adsOrigin={adsModuleOrigin()}
+                  modules={modules}
                   railExtra={
                     stores.length > 0 ? (
                       <StoreSwitcher

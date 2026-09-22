@@ -2,6 +2,8 @@
 
 **Cerevex ads module** — Origin M1/M2 import plus M3 audit orchestration and M4 operator cockpit (Plan 1.5). Professionally managed ads spine: workspace/client auth, first-party Meta/Google OAuth (read-only), encrypted tokens, Inngest sync of entities + 7d/30d metrics, then audits → findings → schema-valid **proposed** recommendations. The Next.js cockpit is the read/decide surface: clients, ad accounts, audits, authorize/deny/snooze. It uses the shared Cerevex top shell (Ads as a module) — not a second sidebar chrome. SEO / Review / Stores / Settings link back to the console.
 
+Modules & Nav IA 1.1: first-run onboarding picks a business type (home-service operator / agency / ecommerce). Defaults are Leads ON for all, Clients ON only for agency, Sales ON only for ecommerce, Workflows ON. Flags live in `os.workspaces.settings_json`. Settings → Modules can override; the Ads rail shows only ON modules.
+
 **No unsupervised ad spend.** Apply stays behind a workspace kill switch (on by default) and an explicit authorize-to-apply step. Those controls are unchanged.
 
 No Zapier. No Tavily. No live platform writes. No unsupervised spend. Apply stays behind a workspace kill switch (on by default) and an explicit authorization.
