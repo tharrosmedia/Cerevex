@@ -426,6 +426,26 @@ npm run test --workspace=@tharros/api
 
 `test/audit-rules.test.ts` and `test/apply-gate.test.ts` run without Postgres. `test/audit.test.ts` needs the local OS database.
 
+## M4 cockpit UI smoke (local mock)
+
+Operator shell: `http://127.0.0.1:43181` after `npm run os:dev` (API `:43180`). Sign in as the seeded owner. Leave Meta/Google app IDs empty.
+
+1. **Clients / ad accounts (read path)** — `/app` lists the three pilots with platform chips and last-sync / last-audit copy. Open **Got Ductless**.
+2. **Mock connect + sync** — Mock-connect Meta (and Google if you want). **Sync now** if Inngest Dev is up; otherwise the API audit still reads whatever is already in `os.ad_*`.
+3. **Run / browse audits** — **Run mock audit**. Expect findings + proposed recs, `writes` false in the audit history row. Click an older audit (if any) to browse its findings.
+4. **Decide without apply** — Authorize / Deny / Snooze a proposed rec. Status badges update. Nothing is written to Meta/Google.
+5. **Kill switch** — Banner in the shell header/strip says **ON**. On an authorized rec the apply control stays disabled (`Apply blocked (kill switch ON)`). Optional API check still 409s:
+
+```bash
+curl -s -o /tmp/apply.json -w '%{http_code}\n' -X POST \
+  "http://127.0.0.1:43180/recommendations/$REC/apply" \
+  -H "authorization: Bearer $TOKEN"
+```
+
+Empty / loading / error: sign-out then hit `/app` (redirects), stop the API and reload a client page (error card), or open a client with no accounts/audits (empty copy).
+
+Do **not** seed prod. Do **not** turn the kill switch off for this smoke.
+
 ## Locks (do not relax)
 
 - No `public` schema changes

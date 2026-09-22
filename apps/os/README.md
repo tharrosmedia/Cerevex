@@ -1,6 +1,6 @@
 # `apps/os`
 
-Tharros OS — Origin **M1/M2** import plus **M3** audit orchestration (Plan 1.5). Professionally managed ads spine: workspace/client auth, first-party Meta/Google OAuth (read-only), encrypted tokens, Inngest sync of entities + 7d/30d metrics, then audits → findings → schema-valid **proposed** recommendations.
+Tharros OS — Origin **M1/M2** import plus **M3** audit orchestration and **M4** operator cockpit (Plan 1.5). Professionally managed ads spine: workspace/client auth, first-party Meta/Google OAuth (read-only), encrypted tokens, Inngest sync of entities + 7d/30d metrics, then audits → findings → schema-valid **proposed** recommendations. The Next.js cockpit is the read/decide surface: clients, ad accounts, audits, authorize/deny/snooze. Apply stays blocked while the workspace kill switch is on.
 
 No Zapier. No Tavily. No live platform writes. No unsupervised spend. Apply stays behind a workspace kill switch (on by default) and an explicit authorization.
 
@@ -52,7 +52,7 @@ Sign in at http://127.0.0.1:43181 as the seeded owner:
 - email: `SEED_OWNER_EMAIL` (default `adam@tharrosmedia.com`)
 - password: `SEED_OWNER_PASSWORD` (default `local-dev-only`)
 
-Pilots: **Got Ductless**, **KC Prestige**, **Elmar HVAC**. Mock-connect Meta/Google when app IDs are empty, then **Sync now**.
+Pilots: **Got Ductless**, **KC Prestige**, **Elmar HVAC**. Mock-connect Meta/Google when app IDs are empty, then **Sync now**, then **Run mock audit**. Authorize/deny/snooze on the client page — do not expect apply to succeed while the kill switch is ON.
 
 Health:
 

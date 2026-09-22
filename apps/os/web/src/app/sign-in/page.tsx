@@ -36,7 +36,7 @@ export default function SignInPage() {
           <span className="font-heading text-xl tracking-tight">Tharros</span>
           <span className="font-mono text-xs text-primary">OS</span>
         </div>
-        <p className="hidden text-xs text-muted-foreground sm:block">M1 spine · local</p>
+        <p className="hidden text-xs text-muted-foreground sm:block">M4 cockpit · mock OK</p>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-16">

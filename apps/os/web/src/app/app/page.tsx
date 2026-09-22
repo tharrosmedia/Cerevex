@@ -2,21 +2,51 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { ClientSummary } from "@tharros/shared";
+import type { AdAccountPublic, AuditRunPublic, ClientSummary, RecommendationPublic } from "@tharros/shared";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ApiError, listClients } from "@/lib/api";
+import { EmptyCard, ErrorCard, LoadingGrid } from "@/components/cockpit/page-state";
+import { ConnectionBadge } from "@/components/cockpit/status-badge";
+import { ApiError, getClient, listClientAudits, listClientRecommendations, listClients } from "@/lib/api";
+import { formatWhen, platformLabel } from "@/lib/format";
+
+type ClientCard = {
+  client: ClientSummary;
+  accounts: AdAccountPublic[];
+  latestAudit: AuditRunPublic | null;
+  proposedCount: number;
+};
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<ClientSummary[] | null>(null);
+  const [cards, setCards] = useState<ClientCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listClients()
-      .then(setClients)
-      .catch((err) => {
-        setError(err instanceof ApiError ? err.message : "Could not load clients.");
-      });
+    let cancelled = false;
+    (async () => {
+      const clients = await listClients();
+      const rows = await Promise.all(
+        clients.map(async (client) => {
+          const [detail, audits, recommendations] = await Promise.all([
+            getClient(client.id),
+            listClientAudits(client.id),
+            listClientRecommendations(client.id),
+          ]);
+          return {
+            client,
+            accounts: detail.adAccounts,
+            latestAudit: audits[0] ?? null,
+            proposedCount: recommendations.filter((row: RecommendationPublic) => row.status === "proposed").length,
+          };
+        }),
+      );
+      if (!cancelled) setCards(rows);
+    })().catch((err) => {
+      if (!cancelled) setError(err instanceof ApiError ? err.message : "Could not load clients.");
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -24,40 +54,26 @@ export default function ClientsPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-primary">HVAC pilots</p>
-          <h2 className="font-heading text-3xl font-medium tracking-tight">Three shops. One spine.</h2>
+          <h2 className="font-heading text-3xl font-medium tracking-tight">Clients & ad accounts</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            Got Ductless, KC Prestige, and Elmar HVAC are seeded as M1 pilots. You only see clients
-            your membership allows — owner and operator see the workspace; client users stay scoped.
+            Got Ductless, KC Prestige, and Elmar HVAC. Read-only accounts, mock OAuth until live secrets,
+            audits that only propose. Authorize is not apply.
           </p>
         </div>
       </div>
 
       {error ? (
-        <Card className="border-destructive/40">
-          <CardHeader>
-            <CardTitle>Could not load pilots</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : clients === null ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          {[0, 1, 2].map((key) => (
-            <Card key={key} className="h-44 animate-pulse bg-muted/40" />
-          ))}
-        </div>
-      ) : clients.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No clients in scope</CardTitle>
-            <CardDescription>
-              This account is signed in but is not a member of any client. Ask an owner to grant
-              access, or sign in as the seeded owner.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <ErrorCard title="Could not load pilots" message={error} />
+      ) : cards === null ? (
+        <LoadingGrid />
+      ) : cards.length === 0 ? (
+        <EmptyCard
+          title="No clients in scope"
+          description="This account is signed in but is not a member of any client. Ask an owner to grant access, or sign in as the seeded owner."
+        />
       ) : (
         <div className="grid gap-4 md:grid-cols-3">
-          {clients.map((client) => (
+          {cards.map(({ client, accounts, latestAudit, proposedCount }) => (
             <Link key={client.id} href={`/app/clients/${client.id}`} className="group">
               <Card className="h-full transition-colors group-hover:border-primary/50">
                 <CardHeader>
@@ -67,11 +83,26 @@ export default function ClientsPage() {
                   </div>
                   <CardDescription className="capitalize">{client.status}</CardDescription>
                 </CardHeader>
-                <CardContent className="text-xs text-muted-foreground">
-                  {client.connectedPlatforms && client.connectedPlatforms.length > 0
-                    ? `Connected: ${client.connectedPlatforms.join(", ")}`
-                    : "No ad accounts connected yet."}
-                  {client.lastSyncAt ? ` · synced ${new Date(client.lastSyncAt).toLocaleDateString()}` : ""}
+                <CardContent className="flex flex-col gap-3 text-xs text-muted-foreground">
+                  {accounts.length === 0 ? (
+                    <p>No ad accounts connected yet.</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {accounts.map((account) => (
+                        <li key={account.id} className="flex items-center justify-between gap-2">
+                          <span>{platformLabel(account.platform)}</span>
+                          <ConnectionBadge status={account.connectionStatus} mock={account.mock} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p>
+                    Last sync {formatWhen(client.lastSyncAt, "never")}
+                    {latestAudit
+                      ? ` · last audit ${latestAudit.status}`
+                      : " · no audits yet"}
+                    {proposedCount > 0 ? ` · ${proposedCount} proposed` : ""}
+                  </p>
                 </CardContent>
               </Card>
             </Link>
