@@ -1,6 +1,6 @@
 /**
- * Cross-app origins for the one-customer Cerevex shell.
- * Ads stays a separate service (auth isolation). The console links to it as a module.
+ * Cross-app origins for leftover ads-web links.
+ * M4 cockpit lives in-shell under /ads. Prefer ADS_API_URL + BFF instead of this hostname.
  */
 export function adsModuleOrigin(): string {
   const fromEnv = process.env.NEXT_PUBLIC_ADS_ORIGIN?.replace(/\/$/, '');

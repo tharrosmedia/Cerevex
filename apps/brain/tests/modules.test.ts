@@ -30,11 +30,14 @@ const unboarded = parseWorkspaceModuleSettings({});
 assert.equal(unboarded.onboardingComplete, false);
 assert.deepEqual(unboarded.modules, unboardedModules());
 
-const homeItems = adsSub('', defaultModulesFor('home_service'));
+const homeItems = adsSub('https://app.cerevex.store', defaultModulesFor('home_service'));
+assert.ok(homeItems.every((item) => item.href.startsWith('/')));
 assert.deepEqual(
   homeItems.filter((item) => item.rail).map((item) => item.rail),
-  ['Leads', 'Workflows'],
+  ['Audits', 'Suggestions', 'Leads', 'Workflows'],
 );
+assert.ok(homeItems.some((item) => item.label === 'Audits' && item.href === '/ads/audits'));
+assert.ok(homeItems.some((item) => item.label === 'Suggestions' && item.href === '/ads/suggestions'));
 assert.ok(!homeItems.some((item) => item.label === 'Clients'));
 assert.ok(!homeItems.some((item) => item.label === 'Sales'));
 

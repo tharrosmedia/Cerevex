@@ -303,6 +303,17 @@ export async function listAuditRuns(clientId: string): Promise<AuditRunPublic[]>
   return rows.map(toAuditRunPublic);
 }
 
+export async function listAuditRunsForClients(clientIds: string[], limit = 50): Promise<AuditRunPublic[]> {
+  if (clientIds.length === 0) return [];
+  const rows = await getDb()
+    .select()
+    .from(auditRuns)
+    .where(inArray(auditRuns.clientId, clientIds))
+    .orderBy(desc(auditRuns.createdAt))
+    .limit(limit);
+  return rows.map(toAuditRunPublic);
+}
+
 export async function getAuditBundle(auditRunId: string): Promise<AuditBundle> {
   const db = getDb();
   const run = await db.query.auditRuns.findFirst({
@@ -349,9 +360,29 @@ export async function listRecommendations(clientId: string): Promise<Recommendat
   return rows.map(toRecommendationPublic);
 }
 
+export async function listRecommendationsForClients(
+  clientIds: string[],
+  limit = 100,
+): Promise<RecommendationPublic[]> {
+  if (clientIds.length === 0) return [];
+  const rows = await getDb()
+    .select()
+    .from(recommendations)
+    .where(inArray(recommendations.clientId, clientIds))
+    .orderBy(desc(recommendations.createdAt))
+    .limit(limit);
+  return rows.map(toRecommendationPublic);
+}
+
 export async function getRecommendation(id: string) {
   return getDb().query.recommendations.findFirst({
     where: eq(recommendations.id, id),
+  });
+}
+
+export async function getFinding(id: string) {
+  return getDb().query.findings.findFirst({
+    where: eq(findings.id, id),
   });
 }
 

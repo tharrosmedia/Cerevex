@@ -28,25 +28,23 @@ export default async function OnboardingPage({
   const params = await (searchParams || Promise.resolve({})) as { error?: string };
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
-      <p className="text-sm mb-2" style={{ color: 'var(--muted-foreground)' }}>Get started</p>
-      <h1 className="text-3xl font-bold mb-2">What kind of business is this?</h1>
-      <p className="text-sm mb-8" style={{ color: 'var(--muted-foreground)' }}>
+    <div className="cx-page">
+      <p className="cx-kicker">Get started</p>
+      <h1>What kind of business is this?</h1>
+      <p className="cx-lede">
         This sets which Ads modules you see. Leads stay on for everyone. You can change modules later in Settings.
       </p>
 
       {params.error && (
-        <div className="mb-4 p-3 border text-sm">Could not save that choice. Try again.</div>
+        <p className="cx-banner cx-banner-warn">Could not save that choice. Try again.</p>
       )}
 
-      <div className="space-y-4">
+      <div className="cx-card-grid">
         {BUSINESS_TYPES.map((type) => (
-          <form key={type} action={chooseBusinessType} className="border p-4">
+          <form key={type} action={chooseBusinessType} className="cx-card">
             <input type="hidden" name="businessType" value={type} />
-            <div className="text-xl font-bold">{BUSINESS_TYPE_LABELS[type]}</div>
-            <p className="text-sm mt-2 mb-4" style={{ color: 'var(--muted-foreground)' }}>
-              {BUSINESS_TYPE_HELP[type]}
-            </p>
+            <h2 className="cx-card-title">{BUSINESS_TYPE_LABELS[type]}</h2>
+            <p className="cx-help">{BUSINESS_TYPE_HELP[type]}</p>
             <button type="submit" className="btn-cta">Use {BUSINESS_TYPE_LABELS[type]}</button>
           </form>
         ))}

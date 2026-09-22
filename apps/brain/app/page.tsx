@@ -1,14 +1,40 @@
 import { listJobs } from '@/src/lib/db/jobs';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { listStores, getActiveStoreId } from '@/src/lib/db/stores';
 import AutoRefresh from '@/components/auto-refresh';
 import { countOpenFindings } from '@/src/lib/db/findings';
-import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
+import { getWorkspaceModuleSettings, saveBusinessType } from '@/src/lib/db/workspace-modules';
+import { jobInputDetails, jobInputLabel, jobStatusLabel, jobTypeLabel } from '@/lib/job-labels';
+import {
+  ADS_MODULE_IDS,
+  BUSINESS_TYPE_HELP,
+  BUSINESS_TYPE_LABELS,
+  BUSINESS_TYPES,
+  MODULE_COPY,
+  isBusinessType,
+  type BusinessType,
+} from '@shopify-brain/contracts';
 
 export const dynamic = 'force-dynamic';
 
-export default async function CommandCenter() {
+async function chooseBusinessType(formData: FormData) {
+  'use server';
+  const value = formData.get('businessType');
+  if (!isBusinessType(value)) {
+    redirect('/?error=1');
+  }
+  await saveBusinessType(value as BusinessType);
+  redirect('/');
+}
+
+export default async function CommandCenter({
+  searchParams,
+}: {
+  searchParams?: Promise<{ error?: string }>;
+}) {
+  const params = (await (searchParams ?? Promise.resolve({}))) as { error?: string };
   let storeId: string | null = null;
   let allStores: any[] = [];
   let loadError: string | null = null;
@@ -41,108 +67,150 @@ export default async function CommandCenter() {
   }
 
   let onboardingComplete = true;
+  let modules = {
+    leads: true,
+    clients: false,
+    sales: false,
+    workflows: true,
+  };
   try {
-    onboardingComplete = (await getWorkspaceModuleSettings()).onboardingComplete;
+    const settings = await getWorkspaceModuleSettings();
+    onboardingComplete = settings.onboardingComplete;
+    modules = settings.modules;
   } catch {}
 
   const awaitingApproval = jobs.filter((j: any) => j.status === 'awaiting_approval').length;
-  const seoAwaiting = awaitingApproval; // jobs are seo domain
-  const completed = jobs.filter((j: any) => j.status === 'completed').length;
+  const seoAwaiting = awaitingApproval;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">Cerevex</h1>
-      <p className="text-sm mb-8" style={{ color: 'var(--muted-foreground)' }}>Ads and SEO for your store.</p>
+    <div className="cx-page">
+      <h1>Cerevex</h1>
+      <p className="cx-lede">Ads and SEO for your store.</p>
       <AutoRefresh interval={4000} />
 
+      {params.error ? (
+        <p className="cx-banner cx-banner-warn">Could not save that choice. Try again.</p>
+      ) : null}
+
       {!onboardingComplete && (
-        <div className="mb-6 p-4 border rounded">
-          <p className="font-semibold mb-2">Choose your business type</p>
-          <p className="text-sm mb-3" style={{ color: 'var(--muted-foreground)' }}>
-            This sets which Ads modules you see. You can change them later in Settings.
-          </p>
-          <Link href="/onboarding" className="inline-block bg-black text-white px-4 py-2 rounded text-sm">Choose business type</Link>
-        </div>
+        <section>
+          <h2>Choose your business type</h2>
+          <p className="cx-help">This sets which Ads modules you see. You can change them later in Settings.</p>
+          <div className="cx-card-grid home-types">
+            {BUSINESS_TYPES.map((type) => (
+              <form key={type} action={chooseBusinessType} className="cx-card">
+                <input type="hidden" name="businessType" value={type} />
+                <h3 className="cx-card-title">{BUSINESS_TYPE_LABELS[type]}</h3>
+                <p className="cx-help">{BUSINESS_TYPE_HELP[type]}</p>
+                <button type="submit" className="btn-cta">Use {BUSINESS_TYPE_LABELS[type]}</button>
+              </form>
+            ))}
+          </div>
+        </section>
       )}
 
       {allStores.length === 0 && (
-        <div className="mb-6 p-4 border border-blue-200 bg-blue-50 rounded">
-          <p className="font-semibold mb-2">Welcome! Get started by adding your Shopify store.</p>
-          <Link href="/stores" className="inline-block bg-black text-white px-4 py-2 rounded text-sm">Go to Store Management →</Link>
-          <p className="text-sm mt-2 text-muted-foreground">Once added, it will be auto-selected.</p>
-        </div>
+        <section className="cx-panel">
+          <h2>Add your store</h2>
+          <p className="cx-help">Once a Shopify store is added, it is selected automatically.</p>
+          <Link href="/stores" className="btn-cta">Go to stores</Link>
+        </section>
       )}
 
       {loadError && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error loading data: {loadError}. Make sure DATABASE_URL is set and migration has run.
-        </div>
+        <p className="cx-banner cx-banner-warn">
+          Could not load store data. Check the database connection, then refresh.
+        </p>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <Link href="/seo" className="border p-4 rounded block hover:bg-muted">
-          <div className="text-sm text-muted-foreground">SEO</div>
-          <div className="text-3xl font-bold">{seoAwaiting} awaiting</div>
-          <div className="text-xs text-muted-foreground">{openFindings} findings</div>
+      <section className="cx-card-grid home-modules" aria-label="Cerevex modules">
+        <Link href="/seo" className="cx-card cx-card-linkable">
+          <div className="cx-card-kicker">SEO</div>
+          <p className="cx-stat">{seoAwaiting}</p>
+          <p className="cx-help">{seoAwaiting === 1 ? 'page awaiting review' : 'pages awaiting review'}</p>
+          <p className="cx-help">{openFindings} findings</p>
         </Link>
-        <Link href="/review" className="border p-4 rounded block hover:bg-muted">
-          <div className="text-sm text-muted-foreground">Review</div>
-          <div className="text-3xl font-bold">{awaitingApproval}</div>
-          <div className="text-xs">global approval queue</div>
+        <Link href="/seo/create" className="cx-card cx-card-linkable">
+          <div className="cx-card-kicker">SEO</div>
+          <p className="cx-stat cx-stat-text">New content</p>
+          <p className="cx-help">Write a new page or post</p>
         </Link>
-        <Link href="/stores" className="border p-4 rounded block hover:bg-muted">
-          <div className="text-sm text-muted-foreground">Stores</div>
-          <div className="text-3xl font-bold">{allStores.length}</div>
+        <Link href="/review" className="cx-card cx-card-linkable">
+          <div className="cx-card-kicker">Review</div>
+          <p className="cx-stat">{awaitingApproval}</p>
+          <p className="cx-help">items in the review queue</p>
         </Link>
-        <Link href="/ads" className="border p-4 rounded block hover:bg-muted">
-          <div className="text-sm text-muted-foreground">Ads</div>
-          <div className="text-3xl font-bold">Module</div>
-          <div className="text-xs text-muted-foreground">Accounts, recommendations, pause</div>
+        <Link href="/stores" className="cx-card cx-card-linkable">
+          <div className="cx-card-kicker">Stores</div>
+          <p className="cx-stat">{allStores.length}</p>
+          <p className="cx-help">{allStores.length === 1 ? 'store connected' : 'stores connected'}</p>
         </Link>
-      </div>
+        <Link href="/ads" className="cx-card cx-card-linkable">
+          <div className="cx-card-kicker">Ads</div>
+          <p className="cx-stat cx-stat-text">Check ads</p>
+          <p className="cx-help">Audits, findings, and suggestions</p>
+        </Link>
+        {ADS_MODULE_IDS.filter((id) => modules[id]).map((id) => (
+          <Link key={id} href={`/ads/${id}`} className="cx-card cx-card-linkable">
+            <div className="cx-card-kicker">Ads</div>
+            <p className="cx-stat cx-stat-text">{MODULE_COPY[id].label}</p>
+            <p className="cx-help">{MODULE_COPY[id].help}</p>
+          </Link>
+        ))}
+      </section>
 
-      <div className="mb-4">
-        <Link href="/seo/create" className="underline">Trigger job → /seo/create</Link>
-      </div>
-
-      <div>
-        <h2 className="font-semibold mb-4">Recent Jobs</h2>
-        <table className="w-full border">
-          <thead>
-            <tr className="bg-muted">
-              <th className="p-2 text-left">ID</th>
-              <th className="p-2 text-left">Type</th>
-              <th className="p-2 text-left">Input</th>
-              <th className="p-2 text-left">Status</th>
-              <th className="p-2 text-left">Created</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.length === 0 && !loadError && (
-              <tr><td colSpan={6} className="p-4 text-center text-muted-foreground">No jobs yet for this store.</td></tr>
-            )}
-            {jobs.map((job: any) => (
-              <tr key={job.id} className="border-t">
-                <td className="p-2 font-mono text-xs">{job.id.slice(0, 8)}</td>
-                <td className="p-2">{job.type}</td>
-                <td className="p-2 text-xs">{JSON.stringify(job.input).slice(0,120)}</td>
-                <td className="p-2">{job.status}</td>
-                <td className="p-2 text-sm">{new Date(job.createdAt).toLocaleString()}</td>
-                <td className="p-2">
-                  <Link href={`/jobs/${job.id}`} className="underline">View</Link>
-                </td>
+      <section>
+        <div className="cx-section-head">
+          <h2>Recent jobs</h2>
+          <Link href="/history" className="btn-secondary">Full history</Link>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Input</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-8 text-sm">
-        <Link href="/seo" className="underline mr-4">SEO</Link>
-        <Link href="/review" className="underline mr-4">Review Queue</Link>
-        <Link href="/history" className="underline">Full History</Link>
-      </div>
+            </thead>
+            <tbody>
+              {jobs.length === 0 && !loadError && (
+                <tr>
+                  <td colSpan={5}>No jobs yet for this store.</td>
+                </tr>
+              )}
+              {jobs.map((job: any) => {
+                const details = jobInputDetails(job.input);
+                return (
+                  <tr key={job.id}>
+                    <td data-label="Type">{jobTypeLabel(job.type)}</td>
+                    <td data-label="Input">
+                      <div>{jobInputLabel(job.input, job.type)}</div>
+                      {details.length > 0 ? (
+                        <details className="cx-details">
+                          <summary>Details</summary>
+                          <ul>
+                            {details.map((line) => (
+                              <li key={line}>{line}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
+                    </td>
+                    <td data-label="Status">{jobStatusLabel(job.status)}</td>
+                    <td data-label="Created">{new Date(job.createdAt).toLocaleString()}</td>
+                    <td data-label="Open">
+                      <Link href={`/jobs/${job.id}`}>View</Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }
