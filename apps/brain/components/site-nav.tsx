@@ -3,14 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { navSectionFromPath, railItemsForSection } from '@/lib/nav-section';
 
 type NavItem = {
   href: string;
   label: string;
   rail?: string;
 };
-
-type MenuId = 'seo' | 'ads';
 
 const SEO_SUB: NavItem[] = [
   { href: '/seo', label: 'Overview' },
@@ -88,18 +87,16 @@ function NavMenu({
   id,
   label,
   href,
-  current,
-  open,
   items,
+  open,
   onToggle,
   onClose,
 }: {
-  id: MenuId;
+  id: 'seo' | 'ads';
   label: string;
   href: string;
-  current: boolean;
-  open: boolean;
   items: NavItem[];
+  open: boolean;
   onToggle: () => void;
   onClose: () => void;
 }) {
@@ -107,22 +104,23 @@ function NavMenu({
   useDismissibleMenu(open, onClose, itemRef);
 
   return (
-    <div className={open ? 'site-nav-item is-open' : 'site-nav-item'} ref={itemRef}>
-      <div className="site-nav-pair">
-        <Link href={href} className={current ? 'site-nav-current' : undefined}>
-          {label}
-        </Link>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={open}
-          aria-haspopup="true"
-          aria-controls={`${id}-menu`}
-          aria-label={`${label} menu`}
-        >
-          {open ? '▴' : '▾'}
-        </button>
-      </div>
+    <div
+      ref={itemRef}
+      className={open ? 'site-nav-relative site-nav-pair is-open' : 'site-nav-relative site-nav-pair'}
+    >
+      <Link href={href} className="site-nav-current">
+        {label}
+      </Link>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-controls={`${id}-menu`}
+        aria-label={`${label} menu`}
+      >
+        {open ? '▴' : '▾'}
+      </button>
       {open && (
         <div className="site-nav-menu" id={`${id}-menu`} role="menu">
           {items.map((item) => (
@@ -144,45 +142,46 @@ export default function SiteNav({
   railExtra?: ReactNode;
 }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState<MenuId | null>(null);
-  const isSeo = Boolean(pathname?.startsWith('/seo'));
-  const isAds = Boolean(pathname?.startsWith('/ads'));
+  const section = navSectionFromPath(pathname);
+  const [open, setOpen] = useState(false);
   const adsItems = adsSub(adsOrigin);
-  const rail = isSeo
-    ? SEO_SUB.filter((item) => item.rail)
-    : isAds
-      ? adsItems.filter((item) => item.rail)
-      : [];
+  const rail = railItemsForSection(section, SEO_SUB, adsItems);
 
   useEffect(() => {
-    setOpen(null);
-  }, [pathname]);
+    setOpen(false);
+  }, [pathname, section]);
 
-  const closeMenu = () => setOpen(null);
+  const closeMenu = () => setOpen(false);
 
   return (
     <>
       <nav className="site-nav" aria-label="Cerevex">
-        <NavMenu
-          id="seo"
-          label="SEO"
-          href="/seo"
-          current={isSeo}
-          open={open === 'seo'}
-          items={SEO_SUB}
-          onToggle={() => setOpen((current) => (current === 'seo' ? null : 'seo'))}
-          onClose={closeMenu}
-        />
-        <NavMenu
-          id="ads"
-          label="Ads"
-          href="/ads"
-          current={isAds}
-          open={open === 'ads'}
-          items={adsItems}
-          onToggle={() => setOpen((current) => (current === 'ads' ? null : 'ads'))}
-          onClose={closeMenu}
-        />
+        {section === 'seo' ? (
+          <NavMenu
+            id="seo"
+            label="SEO"
+            href="/seo"
+            items={SEO_SUB}
+            open={open}
+            onToggle={() => setOpen((current) => !current)}
+            onClose={closeMenu}
+          />
+        ) : (
+          <Link href="/seo">SEO</Link>
+        )}
+        {section === 'ads' ? (
+          <NavMenu
+            id="ads"
+            label="Ads"
+            href="/ads"
+            items={adsItems}
+            open={open}
+            onToggle={() => setOpen((current) => !current)}
+            onClose={closeMenu}
+          />
+        ) : (
+          <Link href="/ads">Ads</Link>
+        )}
         <Link
           href="/review"
           className={pathname === '/review' ? 'site-nav-current' : undefined}

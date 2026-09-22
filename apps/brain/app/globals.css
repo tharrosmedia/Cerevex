@@ -229,13 +229,12 @@ a { color: var(--foreground); }
   border: 0;
 }
 
-.site-nav-relative,
-.site-nav-item {
+.site-nav-relative {
   position: relative;
   flex: 0 0 auto;
 }
 
-.site-nav-item.is-open {
+.site-nav-relative.is-open {
   z-index: 30;
 }
 

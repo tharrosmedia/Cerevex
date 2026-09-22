@@ -66,12 +66,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </a>
           <nav className="site-nav" aria-label="Cerevex">
             <a href={consoleHref("/seo")}>SEO</a>
-            <div
-              ref={adsMenuRef}
-              className={adsOpen ? "site-nav-item is-open" : "site-nav-item"}
-            >
-              <div className="site-nav-pair">
-                <Link href="/app" className={adsCurrent ? "site-nav-current" : undefined}>
+            {adsCurrent ? (
+              <div
+                ref={adsMenuRef}
+                className={adsOpen ? "site-nav-relative site-nav-pair is-open" : "site-nav-relative site-nav-pair"}
+              >
+                <Link href="/app" className="site-nav-current">
                   Ads
                 </Link>
                 <button
@@ -84,17 +84,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                 >
                   {adsOpen ? "▴" : "▾"}
                 </button>
+                {adsOpen && (
+                  <div className="site-nav-menu" id="ads-menu" role="menu">
+                    {ADS_SUB.map((item) => (
+                      <Link key={`${item.label}-${item.href}`} href={item.href} onClick={() => setAdsOpen(false)}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
-              {adsOpen && (
-                <div className="site-nav-menu" id="ads-menu" role="menu">
-                  {ADS_SUB.map((item) => (
-                    <Link key={`${item.label}-${item.href}`} href={item.href} onClick={() => setAdsOpen(false)}>
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
+            ) : (
+              <Link href="/app">Ads</Link>
+            )}
             <a href={consoleHref("/review")} onClick={() => setAdsOpen(false)}>Review</a>
             <a href={consoleHref("/stores")} onClick={() => setAdsOpen(false)}>Stores</a>
             <a href={consoleHref("/settings")} onClick={() => setAdsOpen(false)}>Settings</a>
