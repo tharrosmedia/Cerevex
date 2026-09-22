@@ -40,6 +40,6 @@ OS auth is **separate** from Brain `APP_PASSWORD` week one.
 ## Isolation
 
 - OS Neon schema = `os` (`OS_DB_SCHEMA`). Brain = `public` + pgvector.
-- Shared `DATABASE_URL` is allowed. **M3 held until shared Neon smoke.**
-- No duplicate Neon / Railway / Inngest org for OS.
+- Shared `DATABASE_URL` is allowed. **M3 held until shared Neon smoke.** Checklist: `apps/os/SMOKE.md`.
+- No duplicate Neon / Railway / Inngest org for OS. Distinct Inngest app ids: Brain `shopify-brain`, OS `tharros-os` (share Cloud keys; do not sync OS onto `shopify-brain`).
 - No Tavily for OS.

@@ -4,7 +4,7 @@ Tharros OS — Origin **M1/M2** import (Plan 1.5). Professionally managed ads sp
 
 No Zapier. No Tavily. No live platform writes. No unsupervised spend. Apply stays behind a workspace kill switch (on by default) and an explicit authorization.
 
-**M3 is held until shared Neon smoke.**
+**M3 is held until shared Neon smoke.** Copy-paste checklist: [SMOKE.md](./SMOKE.md) (same Brain `DATABASE_URL`, schema `os`, do not clobber `seo-*`).
 
 ## Layout
 
@@ -64,7 +64,7 @@ Health:
 
 See `apps/os/.env.example`. Never commit `.env`. Brain env stays in `apps/brain/.env`.
 
-OS `DATABASE_URL` is **not** Brain’s public/pgvector catalog. Until M3 shared Neon smoke, use the local compose URL or a dedicated OS database, then set `search_path` / schema `os`.
+Local compose (`:54329`) is OS-only development. Shared Neon smoke (M3 gate) reuses the **existing Brain `DATABASE_URL`** (same Neon project) and writes only to schema `os` — see [SMOKE.md](./SMOKE.md). Do not provision a second Neon project. Do not run `os:db:seed` against production Brain Neon.
 
 ## Inngest names (locked)
 
