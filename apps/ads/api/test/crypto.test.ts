@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { containsRawSecret, decryptSecret, encryptSecret, redactSecrets } from "@tharros/ads-shared";
+import { containsRawSecret, decryptSecret, encryptSecret, redactSecrets } from "@tharros/ads-shared/crypto";
 
 describe("token encryption", () => {
   it("round-trips secrets and redacts them for logs", () => {

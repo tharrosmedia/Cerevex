@@ -1,5 +1,5 @@
 import type { Platform, StoredOAuthTokens } from "@tharros/ads-shared";
-import { googleRedirectUri, metaRedirectUri } from "@tharros/ads-shared";
+import { googleRedirectUri, metaRedirectUri } from "@tharros/ads-shared/oauth";
 
 export async function exchangeMetaCode(code: string): Promise<{
   tokens: StoredOAuthTokens;

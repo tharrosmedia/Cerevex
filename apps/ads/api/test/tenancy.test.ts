@@ -1,7 +1,7 @@
 import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadEnv } from "@tharros/ads-shared";
+import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { clientMemberships, clients, memberships, users, workspaces } from "@tharros/ads-shared/schema";
 import { createApp } from "../src/app";

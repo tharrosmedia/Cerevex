@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { containsRawSecret, loadEnv } from "@tharros/ads-shared";
+import { containsRawSecret } from "@tharros/ads-shared/crypto";
+import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { decryptSecret } from "@tharros/ads-shared/crypto";
 import { oauthCredentials } from "@tharros/ads-shared/schema";

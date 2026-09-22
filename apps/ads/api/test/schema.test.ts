@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import { loadEnv } from "@tharros/ads-shared";
+import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 
 loadEnv();
