@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
+import { operatorLoadError } from '@/lib/ui-copy';
 
 async function testConnection(formData: FormData) {
   'use server';
@@ -87,7 +88,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
   try {
     stores = await listStores();
   } catch (e: any) {
-    loadError = e.message || 'Failed to load stores (check DATABASE_URL)';
+    loadError = operatorLoadError(e.message) || 'Could not load stores.';
   }
 
   return (
@@ -140,9 +141,9 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
 
       <section>
         <h2>Your stores</h2>
-        {stores.length === 0 && !loadError ? (
+        {stores.length === 0 ? (
           <EmptyState message="No stores yet. Add one above." />
-        ) : stores.length > 0 ? (
+        ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -181,7 +182,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
               </tbody>
             </table>
           </div>
-        ) : null}
+        )}
         <p className="cx-help">
           After adding, the new store is selected. Use the store switcher in the top right to change stores.
         </p>
