@@ -69,9 +69,11 @@ function severityTone(severity: string | undefined): StatusTone {
 export const dynamic = 'force-dynamic';
 
 export default async function SeoFindings() {
-  const storeId = await getActiveStoreId();
   let findings: any[] = [];
-  try { if (storeId) findings = await listOpenFindings(storeId, 100); } catch {}
+  try {
+    const storeId = await getActiveStoreId();
+    if (storeId) findings = await listOpenFindings(storeId, 100);
+  } catch {}
 
   return (
     <div className="cx-page">
