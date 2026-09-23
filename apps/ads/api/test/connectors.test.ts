@@ -1,13 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   asConnector,
   callRailConnector,
   CONNECTORS,
   ga4AnalyticsConnector,
+  getAdPlatformConnector,
+  googleAdPlatformConnector,
   metaAdPlatformConnector,
   mockAdPlatformConnector,
   type Connector,
 } from "@tharros/ads-shared/connectors";
+import { applyViaConnector } from "@tharros/ads-shared/mutate";
+import { exchangeCode } from "../src/oauth-exchange";
 
 describe("connector interfaces", () => {
   it("registers Meta, Google, mock, GA4, and CallRail against the same Connector surface", () => {
@@ -33,5 +37,75 @@ describe("connector interfaces", () => {
     expect(mockAdPlatformConnector.implementation).toBe("mock");
     expect(typeof metaAdPlatformConnector.authorizeUrl).toBe("function");
     expect(typeof metaAdPlatformConnector.pull).toBe("function");
+  });
+
+  it("exposes pull, mutate, refresh, and exchange on Meta/Google connectors", () => {
+    for (const connector of [metaAdPlatformConnector, googleAdPlatformConnector]) {
+      expect(connector.connectCapability).toMatch(/^connect\.(meta|google)$/);
+      expect(typeof connector.pull).toBe("function");
+      expect(typeof connector.refreshTokens).toBe("function");
+      expect(typeof connector.exchangeCode).toBe("function");
+      expect(typeof connector.readLiveEntityState).toBe("function");
+      expect(typeof connector.applyLive).toBe("function");
+      expect(typeof connector.isLiveAllowed).toBe("function");
+    }
+    expect(getAdPlatformConnector("meta")).toBe(metaAdPlatformConnector);
+    expect(getAdPlatformConnector("google")).toBe(googleAdPlatformConnector);
+  });
+
+  it("pulls mock entities through getAdPlatformConnector without a live platform call", async () => {
+    const pulled = await getAdPlatformConnector("google").pull({
+      platform: "google",
+      tokens: { accessToken: "not-live", mock: true },
+      externalId: "customers/mock",
+      clientName: "Pilot",
+      allowLive: true,
+    });
+    expect(pulled.mode).toBe("mock");
+    expect(pulled.entities.some((entity) => entity.entityType === "campaign")).toBe(true);
+    expect(pulled.entities.some((entity) => entity.entityType === "keyword")).toBe(true);
+  });
+
+  it("routes live apply through the registry connector", async () => {
+    const connector = getAdPlatformConnector("meta");
+    const mutation = {
+      platform: "meta" as const,
+      action: "pause" as const,
+      target: { entityType: "campaign", externalId: "1", name: "HVAC" },
+      payload: {},
+    };
+    const read = vi.spyOn(connector, "readLiveEntityState").mockResolvedValue(null);
+    const apply = vi.spyOn(connector, "applyLive").mockResolvedValue({
+      action: "pause",
+      platform: "meta",
+      target: mutation.target,
+      status: "applied",
+      mode: "live",
+      writes: true,
+    });
+    const outcome = await applyViaConnector({
+      platform: "meta",
+      tokens: { accessToken: "tok", mock: false },
+      mutation,
+      accountExternalId: "act_1",
+    });
+    expect(read).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledOnce();
+    expect(outcome.mode).toBe("live");
+    expect(outcome.writes).toBe(true);
+    read.mockRestore();
+    apply.mockRestore();
+  });
+
+  it("dispatches OAuth exchange through the connector registry", async () => {
+    const connector = getAdPlatformConnector("google");
+    const exchange = vi.spyOn(connector, "exchangeCode").mockResolvedValue({
+      tokens: { accessToken: "live-token", mock: false },
+      externalId: "customers/1",
+    });
+    const result = await exchangeCode("google", "auth-code");
+    expect(exchange).toHaveBeenCalledWith("auth-code");
+    expect(result.externalId).toBe("customers/1");
+    exchange.mockRestore();
   });
 });

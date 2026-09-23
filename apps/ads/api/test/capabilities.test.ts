@@ -176,4 +176,74 @@ describe.skipIf(!process.env.DATABASE_URL)("PATCH /workspace capabilities", () =
       body: JSON.stringify({ capabilities: { "connect.meta": "on" } }),
     });
   });
+
+  it("rejects OAuth callback when connect.meta is off before upserting tokens", async () => {
+    const { signOAuthState } = await import("../src/oauth-state");
+    const { token } = await login("adam@tharrosmedia.com", "local-dev-only");
+    const clientsRes = await app.request("/clients", { headers: { authorization: `Bearer ${token}` } });
+    const clients = (await json(clientsRes)).clients as { id: string; name: string }[];
+    const clientId = clients.find((row) => row.name === "Got Ductless")?.id;
+    expect(clientId).toBeTruthy();
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "connect.meta": "hidden" } }),
+    });
+
+    const state = await signOAuthState({
+      userId: "00000000-0000-0000-0000-000000000001",
+      clientId: clientId!,
+      platform: "meta",
+    });
+    const callback = await app.request(`/oauth/meta/callback?code=not-a-real-code&state=${encodeURIComponent(state)}`);
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location") ?? "").toMatch(/oauth_error=capability_off/);
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "connect.meta": "on" } }),
+    });
+  });
+
+  it("refuses sync and disconnect when connect.google is off", async () => {
+    const { token } = await login("adam@tharrosmedia.com", "local-dev-only");
+    const clientsRes = await app.request("/clients", { headers: { authorization: `Bearer ${token}` } });
+    const clients = (await json(clientsRes)).clients as { id: string; name: string }[];
+    const clientId = clients.find((row) => row.name === "Got Ductless")?.id;
+    expect(clientId).toBeTruthy();
+
+    const connect = await app.request("/oauth/mock/connect", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ clientId, platform: "google" }),
+    });
+    expect(connect.status).toBe(200);
+    const accountId = String(((await json(connect)).adAccount as { id: string }).id);
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "connect.google": "hidden" } }),
+    });
+
+    const sync = await app.request(`/ad-accounts/${accountId}/sync`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(sync.status).toBe(409);
+
+    const disconnect = await app.request(`/ad-accounts/${accountId}/disconnect`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(disconnect.status).toBe(409);
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "connect.google": "on" } }),
+    });
+  });
 });

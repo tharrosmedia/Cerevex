@@ -2,11 +2,13 @@ import { eq } from "drizzle-orm";
 import type { AdAccountPublic, AdEntityPublic, AuthContext, Platform } from "@tharros/ads-shared";
 import { canMutate } from "@tharros/ads-shared";
 import { writeAuditEvent } from "@tharros/ads-shared/audit";
+import { getAdPlatformConnector } from "@tharros/ads-shared/connectors";
 import { loadTokens, publicTokenView, storeTokens } from "@tharros/ads-shared/credentials";
 import { getDb } from "@tharros/ads-shared/db";
 import { adAccountSyncEvent, sendAdAccountSync } from "@tharros/ads-shared/inngest";
 import { adAccounts, adEntities, adMetrics, oauthCredentials } from "@tharros/ads-shared/schema";
 import { HTTPException } from "hono/http-exception";
+import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 
 function publicConnectionStatus(row: typeof adAccounts.$inferSelect): string {
@@ -120,6 +122,10 @@ export async function disconnectAccount(auth: AuthContext, adAccountId: string) 
     throw new HTTPException(404, { message: "Ad account not found" });
   }
   await requireMutableClient(auth, account.clientId);
+  await requireWritableCapability(
+    account.workspaceId,
+    getAdPlatformConnector(account.platform).connectCapability,
+  );
   const db = getDb();
   await db.delete(oauthCredentials).where(eq(oauthCredentials.adAccountId, account.id));
   const [updated] = await db
@@ -174,6 +180,10 @@ export async function enqueueAccountSync(auth: AuthContext, adAccountId: string)
     throw new HTTPException(404, { message: "Ad account not found" });
   }
   const client = await requireMutableClient(auth, account.clientId);
+  await requireWritableCapability(
+    client.workspaceId,
+    getAdPlatformConnector(account.platform).connectCapability,
+  );
   const ids = await sendAdAccountSync({
     requestedBy: auth.user.id,
     workspaceId: client.workspaceId,

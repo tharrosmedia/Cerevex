@@ -4,7 +4,7 @@
 
 Modules & Nav IA 1.1: first-run onboarding picks a business type (home-service operator / agency / ecommerce). Defaults are Leads ON for all, Clients ON only for agency, Sales ON only for ecommerce, Workflows ON. Flags live in `os.workspaces.settings_json`. Settings → Modules can override; the Ads rail shows only ON modules.
 
-Modularity retrofit: product capabilities (`cockpit`, `apply`, `connect.meta`, `connect.google`, `audits`, plus `m51.*` dark placeholders) live in the same `settings_json.capabilities` object. Flip a workspace flag to hide unfinished work without redeploying Site Brain. Connector interfaces (`AdPlatformConnector`, `AnalyticsConnector`, `CallTrackingConnector`) live in `@tharros/ads-shared/connectors`. Details: [`docs/modularity-retrofit.md`](../../docs/modularity-retrofit.md).
+Modularity retrofit: product capabilities (`cockpit`, `apply`, `connect.meta`, `connect.google`, `audits`, plus `m51.*` dark placeholders) live in the same `settings_json.capabilities` object. Flip a workspace flag to hide unfinished work without redeploying Site Brain. Connector interfaces (`AdPlatformConnector`, `AnalyticsConnector`, `CallTrackingConnector`) live in `@tharros/ads-shared/connectors`. Sync pull, live apply, and OAuth exchange go through `getAdPlatformConnector` — Meta/Google branches stay inside those implementations. Details: [`docs/modularity-retrofit.md`](../../docs/modularity-retrofit.md).
 
 **No unsupervised ad spend.** Approve is Adam-only in soft-launch (`APPROVE_OPERATOR_EMAILS`, default `adam@tharrosmedia.com`). Apply stays behind a workspace kill switch (on by default), per-account freeze, and an explicit Approve. Deny/Snooze never write platforms.
 
