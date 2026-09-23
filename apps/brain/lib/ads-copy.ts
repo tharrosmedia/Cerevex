@@ -15,6 +15,8 @@ const FINDING_LABELS: Record<string, string> = {
   creative_cross_platform: "Winning ad on one platform",
   lp_mismatch: "Ad and page do not match",
   lp_intelligence: "Landing-page session signals",
+  lead_lifecycle: "Lead to booked",
+  booked_job: "Booked job ads signal",
 };
 
 const SUGGESTION_LABELS: Record<string, string> = {
@@ -30,6 +32,8 @@ const SUGGESTION_LABELS: Record<string, string> = {
   create_alternative: "Create the Grok alternative",
   call_attribution: "Calls joined to a campaign",
   crm_booked_job: "Call booked a job",
+  lead_lifecycle: "Lead moved toward booked",
+  booked_job: "Booked jobs can steer ads",
   lp_intelligence: "Improve the landing page",
 };
 
@@ -46,6 +50,8 @@ const SUGGESTION_WHY: Record<string, string> = {
   create_alternative: "Grok made an alternative. Approve creates the ad. Generate did not write live.",
   call_attribution: "Calls joined to a campaign in plain language.",
   crm_booked_job: "A call matches a booked job. Nothing was written to the CRM.",
+  lead_lifecycle: "A lead moved on the common path inside Cerevex. CRM apply later.",
+  booked_job: "A booked job can steer ads. Approve writes only when the signal flag is on.",
   lp_intelligence: "Session signals show where the landing page loses people. Site apply later.",
 };
 
@@ -197,6 +203,12 @@ export function metricLines(record: Record<string, unknown> | null | undefined):
   if (typeof record.answeredCount === "number") lines.push(`Answered: ${record.answeredCount}`);
   if (typeof record.conversionCount === "number") lines.push(`CallRail conversions: ${record.conversionCount}`);
   if (typeof record.bookedJoinCount === "number") lines.push(`Booked-job joins: ${record.bookedJoinCount}`);
+  if (typeof record.leadCount === "number") lines.push(`New leads: ${record.leadCount}`);
+  if (typeof record.contactedCount === "number") lines.push(`Contacted: ${record.contactedCount}`);
+  if (typeof record.bookedCount === "number") lines.push(`Booked: ${record.bookedCount}`);
+  if (typeof record.bookedJobCount === "number") lines.push(`Booked jobs: ${record.bookedJobCount}`);
+  if (typeof record.campaignName === "string") lines.push(`Campaign: ${record.campaignName}`);
+  if (record.crmWrite === "later") lines.push("CRM apply later — Cerevex does not write Housecall Pro in this slice.");
   if (typeof record.hint === "string") lines.push(record.hint);
   if (typeof record.entityExternalId === "string") lines.push(`Entity: ${record.entityExternalId}`);
   if (typeof record.adAccountId === "string") lines.push(`Account: ${record.adAccountId}`);
@@ -225,6 +237,8 @@ export const REC_INBOX_KINDS = [
   { value: "creative_test", label: "Creative test" },
   { value: "lp_congruence", label: "Landing page" },
   { value: "lp_intelligence", label: "LP structure" },
+  { value: "lead_lifecycle", label: "Lead path" },
+  { value: "booked_job", label: "Booked job" },
   { value: "create_alternative", label: "Create alternative" },
 ] as const;
 
@@ -233,6 +247,8 @@ export function suggestionInboxKind(type: string | null | undefined): string {
   if (type === "creative_test") return "Creative test";
   if (type === "lp_congruence") return "Landing page";
   if (type === "lp_intelligence") return "LP structure";
+  if (type === "lead_lifecycle") return "Lead path";
+  if (type === "booked_job") return "Booked job";
   if (type === "create_alternative") return "Create alternative";
   return "Check";
 }

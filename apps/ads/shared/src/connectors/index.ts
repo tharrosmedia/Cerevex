@@ -42,6 +42,8 @@ export type {
   CallTrackingPullResult,
   CrmJoinInput,
   CrmJoinResult,
+  CrmPullInput,
+  CrmPullResult,
   SessionSignalsPullInput,
   SessionSignalsPullResult,
 } from "./types";
@@ -58,7 +60,7 @@ export { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics
 export { bundledCallTrackingConnector, BundledCallTrackingConnector, twilioEnvCredentials } from "./bundled";
 export { callRailConnector, CallRailConnector, callRailEnvCredentials } from "./callrail";
 export { clarityAnalyticsConnector, ClarityAnalyticsConnector, clarityEnvCredentials, signalsFromClarityInsights } from "./clarity";
-export { housecallProConnector } from "./crm";
+export { housecallProConnector, hcpEnvCredentials, jobsFromHcpBody, leadsFromHcpBody } from "./crm";
 export { wordPressSiteConnector, getDefaultSiteConnector } from "./site";
 
 export const AD_PLATFORM_CONNECTORS: AdPlatformConnector[] = [

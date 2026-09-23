@@ -10,6 +10,7 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import { getDb } from "./db";
 import { workspaces } from "./schema";
 import type { BookedJob, CallRecord } from "./attribution";
+import { publicLeadView, type CrmLead } from "./lead-lifecycle";
 import { publicClarityView, type SessionSignalsSnapshot } from "./lp-intelligence";
 
 export type CallRailClientState = {
@@ -32,8 +33,12 @@ export type CrmClientState = {
   connected: boolean;
   mock: boolean;
   provider: "hcp";
+  encryptedApiKey?: string | null;
+  usesEnv?: boolean;
+  lastPulledAt?: string | null;
   lastError?: string | null;
   bookedJobs: BookedJob[];
+  leads?: CrmLead[];
 };
 
 export type BundledClientState = {
@@ -139,8 +144,12 @@ export function readConnectorSettings(settingsJson: unknown): ConnectorSettings 
       connected: Boolean(row.connected),
       mock: Boolean(row.mock),
       provider: "hcp",
+      encryptedApiKey: typeof row.encryptedApiKey === "string" ? row.encryptedApiKey : null,
+      usesEnv: Boolean(row.usesEnv),
+      lastPulledAt: typeof row.lastPulledAt === "string" ? row.lastPulledAt : null,
       lastError: typeof row.lastError === "string" ? row.lastError : null,
       bookedJobs: Array.isArray(row.bookedJobs) ? (row.bookedJobs as BookedJob[]) : [],
+      leads: Array.isArray(row.leads) ? (row.leads as CrmLead[]) : [],
     };
   }
   for (const [clientId, value] of Object.entries(clarityRaw)) {
@@ -242,15 +251,27 @@ export function publicCrmView(state: CrmClientState | undefined): {
   connected: boolean;
   mock: boolean;
   provider: "hcp";
-  bookedJobCount: number;
+  usesEnv: boolean;
+  hasApiKey: boolean;
+  lastPulledAt: string | null;
   lastError: string | null;
+  bookedJobCount: number;
+  leadCount: number;
+  leads: CrmLead[];
+  writes: false;
 } {
   return {
     connected: Boolean(state?.connected),
     mock: Boolean(state?.mock),
     provider: "hcp",
-    bookedJobCount: state?.bookedJobs.length ?? 0,
+    usesEnv: Boolean(state?.usesEnv),
+    hasApiKey: Boolean(state?.encryptedApiKey),
+    lastPulledAt: state?.lastPulledAt ?? null,
     lastError: state?.lastError ?? null,
+    bookedJobCount: state?.bookedJobs.length ?? 0,
+    leadCount: state?.leads?.length ?? 0,
+    leads: (state?.leads ?? []).map(publicLeadView),
+    writes: false,
   };
 }
 
@@ -268,6 +289,19 @@ export function decryptCallRailApiKey(payload: string | null | undefined): strin
 }
 
 export { publicClarityView };
+
+export function encryptHcpApiKey(apiKey: string): string {
+  return encryptSecret(apiKey);
+}
+
+export function decryptHcpApiKey(payload: string | null | undefined): string | null {
+  if (!payload) return null;
+  try {
+    return decryptSecret(payload);
+  } catch {
+    return null;
+  }
+}
 
 export function encryptClarityApiKey(apiKey: string): string {
   return encryptSecret(apiKey);

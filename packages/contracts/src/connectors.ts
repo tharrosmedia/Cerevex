@@ -94,8 +94,8 @@ export const CONNECTOR_CATALOG: ConnectorCatalogEntry[] = [
     kind: "crm",
     id: "hcp",
     label: "Housecall Pro",
-    implementation: "stub",
-    help: "Soft CRM join for booked-job status. Recommend + join only. No write-backs.",
+    implementation: "live",
+    help: "Housecall Pro connect + pull for leads and booked-job status. No unsupervised write-backs. Approve gates any CRM or ads write.",
   },
   {
     kind: "analytics",

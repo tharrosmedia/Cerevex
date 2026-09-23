@@ -1,7 +1,13 @@
 import { desc, eq } from "drizzle-orm";
-import { budgetShiftWriteBlockedReason, isCapabilityOn, resolveWorkspaceCapabilities } from "@cerevex/contracts";
+import {
+  bookedJobSignalWriteBlockedReason,
+  budgetShiftWriteBlockedReason,
+  isCapabilityOn,
+  resolveWorkspaceCapabilities,
+} from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { getDefaultSiteConnector } from "./connectors/site";
+import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { parseApplyMutations } from "./audit-schemas";
 import { getDb } from "./db";
@@ -189,6 +195,63 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
       outcomes: [],
       writes: false,
       blocked: "capability_apply",
+    };
+  }
+
+  const crmBlocked = crmWriteBlockedReason(recommendation.type);
+  if (crmBlocked) {
+    const response = {
+      writes: false,
+      outcomes: [],
+      blocked: crmBlocked,
+      jobType,
+      mode: "mock",
+      reason: "Lead lifecycle is recommend-only. CRM apply later — nothing writes Housecall Pro.",
+      crmWrite: "later",
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "succeeded",
+        error: null,
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: crmBlocked,
+    };
+  }
+
+  const bookedJobBlocked = bookedJobSignalWriteBlockedReason(capabilities, recommendation.type);
+  if (bookedJobBlocked) {
+    const response = {
+      writes: false,
+      outcomes: [],
+      blocked: bookedJobBlocked,
+      jobType,
+      mode: "mock",
+      reason: "Booked-job signal is recommend-only or off. No platform write.",
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "succeeded",
+        error: null,
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: bookedJobBlocked,
     };
   }
 

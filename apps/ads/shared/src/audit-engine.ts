@@ -8,6 +8,12 @@ import {
 import type { BookedJob, CallRecord } from "./attribution";
 import { summarizeAttribution } from "./attribution";
 import { getDefaultSiteConnector } from "./connectors/site";
+import {
+  recsFromBookedJobSignal,
+  recsFromLeadLifecycle,
+  summarizeLeadLifecycle,
+  type CrmLead,
+} from "./lead-lifecycle";
 import { recsFromSessionSignals, type AggregatedSessionSignal } from "./lp-intelligence";
 import type { Platform, RecommendationType } from "./types";
 
@@ -49,9 +55,12 @@ export type EvaluateAccountInput = {
   offlineSignals?: {
     calls?: CallRecord[];
     bookedJobs?: BookedJob[];
+    leads?: CrmLead[];
     callrailEnabled?: boolean;
     bundledEnabled?: boolean;
     crmEnabled?: boolean;
+    leadLifecycleEnabled?: boolean;
+    bookedJobSignalEnabled?: boolean;
     sourceLabel?: string;
     lpSignals?: AggregatedSessionSignal[];
     lpIntelligenceEnabled?: boolean;
@@ -421,6 +430,106 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
             bookedJobLabel: booked?.bookedJobLabel,
           },
           mutations: target ? [mutation(input.platform, "review", target, { action: "crm_join_review_only" })] : [],
+        }),
+      );
+    }
+  }
+
+  if (offline?.leadLifecycleEnabled && (offline.leads?.length ?? 0) > 0) {
+    const lifecycleDrafts = recsFromLeadLifecycle(offline.leads ?? []);
+    const target = campaigns[0];
+    const summary = summarizeLeadLifecycle(offline.leads ?? []);
+    findings.push(
+      finding(input, "lead_lifecycle", "info", "Lead → contacted → booked is visible in Cerevex", {
+        hint: lifecycleDrafts[0]?.why,
+        leadCount: summary.leadCount,
+        contactedCount: summary.contactedCount,
+        bookedCount: summary.bookedCount,
+        crmWrite: "later",
+      }),
+    );
+    for (const draft of lifecycleDrafts) {
+      recommendations.push(
+        recommendation(input, {
+          type: "lead_lifecycle",
+          ruleId: "lead_lifecycle",
+          title: draft.title,
+          rationale: draft.rationale,
+          estimatedImpactUsd: null,
+          risk: "low",
+          confidence: confidence(0.62),
+          evidence: {
+            inbox: "lead_lifecycle",
+            writes: false,
+            crmWrite: draft.crmWrite,
+            leadCount: draft.leadCount,
+            contactedCount: draft.contactedCount,
+            bookedCount: draft.bookedCount,
+          },
+          mutations: target
+            ? [mutation(input.platform, "review", target, { action: "crm_write_later", crmWrite: "later" })]
+            : [],
+        }),
+      );
+    }
+  }
+
+  if (offline?.bookedJobSignalEnabled && ((offline.bookedJobs?.length ?? 0) > 0)) {
+    const bookedJobs = offline.bookedJobs ?? [];
+    const openJobs = bookedJobs.filter((job) => job.status === "booked" || job.status === "completed");
+    const campaignHint = openJobs[0]?.campaignHint;
+    const winner =
+      campaigns.find((campaign) => campaignHint && campaign.name.toLowerCase().includes(campaignHint.toLowerCase())) ??
+      campaigns[0];
+    const loser = campaigns.find((campaign) => campaign.externalId !== winner?.externalId) ?? null;
+    const canProposeBudget = Boolean(winner && loser);
+    const drafts = recsFromBookedJobSignal({
+      bookedJobs,
+      bookedJoinCount: openJobs.length,
+      campaignName: winner?.name,
+      canProposeBudget,
+    });
+    findings.push(
+      finding(input, "booked_job", "info", "Booked jobs can steer ads spend", {
+        hint: drafts[0]?.why,
+        bookedJobCount: openJobs.length,
+      }),
+    );
+    for (const draft of drafts) {
+      const mutations: ProposedMutation[] = [];
+      if (winner && loser && canProposeBudget) {
+        mutations.push(
+          mutation(input.platform, "update_budget", loser, {
+            percent: -10,
+            reason: "booked_job_from_unbooked",
+            m52: "booked_job",
+          }),
+          mutation(input.platform, "update_budget", winner, {
+            percent: 10,
+            reason: "booked_job_toward_winner",
+            m52: "booked_job",
+          }),
+        );
+      } else if (winner) {
+        mutations.push(mutation(input.platform, "review", winner, { action: "booked_job_review_only", m52: "booked_job" }));
+      }
+      recommendations.push(
+        recommendation(input, {
+          type: "booked_job",
+          ruleId: "booked_job_signal",
+          title: draft.title,
+          rationale: draft.rationale,
+          estimatedImpactUsd: null,
+          risk: "low",
+          confidence: confidence(0.58),
+          evidence: {
+            inbox: "booked_job",
+            writes: false,
+            bookedJobCount: draft.bookedJobCount,
+            bookedJoinCount: draft.bookedJoinCount,
+            campaignName: draft.campaignName,
+          },
+          mutations,
         }),
       );
     }

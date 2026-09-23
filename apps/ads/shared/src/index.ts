@@ -66,6 +66,23 @@ export {
   mockHcpBookedJobs,
 } from "./attribution";
 export type { CallRecord, BookedJob, CallJoin, AttributionSummary, AttributionCampaign } from "./attribution";
+export {
+  mockHcpLeads,
+  summarizeLeadLifecycle,
+  recsFromLeadLifecycle,
+  recsFromBookedJobSignal,
+  crmWriteBlockedReason,
+  publicLeadView,
+  LEAD_STAGES,
+} from "./lead-lifecycle";
+export type {
+  CrmLead,
+  LeadStage,
+  LeadLifecycleCard,
+  LeadLifecycleSummary,
+  LeadLifecycleRecDraft,
+  BookedJobSignalRecDraft,
+} from "./lead-lifecycle";
 export { evaluateApplyGate, applyBlockMessage, APPLY_BLOCK_REASONS } from "./apply-gate";
 export {
   findingDraftSchema,

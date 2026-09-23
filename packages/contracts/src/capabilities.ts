@@ -38,6 +38,8 @@ export const CAPABILITY_IDS = [
   "m52.callrail_connect",
   "m52.bundled_call_tracking",
   "m52.crm_join",
+  "m52.lead_lifecycle",
+  "m52.booked_job_signal",
   "m52.clarity_connect",
   "m52.lp_intelligence",
 ] as const;
@@ -195,7 +197,23 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
   "m52.crm_join": {
     id: "m52.crm_join",
     label: "CRM booked-job join (M5.2)",
-    help: "Soft-join Housecall Pro booked-job status to calls. Recommend + join only. Deep write-backs stay out.",
+    help: "Connect Housecall Pro (mock or live) and pull leads plus booked-job status. Soft-join to calls. No unsupervised CRM writes — Approve gates any write.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.lead_lifecycle": {
+    id: "m52.lead_lifecycle",
+    label: "Lead lifecycle (M5.2)",
+    help: "Show lead → contacted → booked cards in Cerevex. Recommend-only CRM mutations. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.booked_job_signal": {
+    id: "m52.booked_job_signal",
+    label: "Booked-job ads signal (M5.2)",
+    help: "Use booked jobs as an ads optimization signal in the rec inbox. Approve may shift budget only when this is on. recommend_only shows the suggestion and writes nothing. Default hidden.",
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
@@ -387,6 +405,30 @@ export function isLpIntelligenceVisible(flags: CapabilityFlags): boolean {
 
 export function isLpIntelligenceWritable(flags: CapabilityFlags): boolean {
   return isCapabilityOn("m52.lp_intelligence", flags);
+}
+
+export function isLeadLifecycleVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.lead_lifecycle", flags);
+}
+
+export function isBookedJobSignalVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.booked_job_signal", flags);
+}
+
+export function isBookedJobSignalWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m52.booked_job_signal", flags);
+}
+
+/** Booked-job optimize recs may write ads only when m52.booked_job_signal is on. */
+export function bookedJobSignalWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "booked_job") return null;
+  if (isBookedJobSignalWritable(flags)) return null;
+  return flags["m52.booked_job_signal"] === "recommend_only"
+    ? "capability_m52_booked_job_signal_recommend_only"
+    : "capability_m52_booked_job_signal";
 }
 
 export function isCapabilityWritable(id: CapabilityId, flags: CapabilityFlags): boolean {

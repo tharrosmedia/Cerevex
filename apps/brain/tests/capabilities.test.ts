@@ -32,6 +32,8 @@ assert.equal(flags['m51.brainstorm'], 'hidden');
 assert.equal(flags['m52.callrail_connect'], 'hidden');
 assert.equal(flags['m52.bundled_call_tracking'], 'hidden');
 assert.equal(flags['m52.crm_join'], 'hidden');
+assert.equal(flags['m52.lead_lifecycle'], 'hidden');
+assert.equal(flags['m52.booked_job_signal'], 'hidden');
 assert.equal(flags['m52.clarity_connect'], 'hidden');
 assert.equal(flags['m52.lp_intelligence'], 'hidden');
 assert.equal(flags['sync.live'], 'on');
@@ -46,6 +48,8 @@ assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.cal
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.bundled_call_tracking'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.clarity_connect'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.lp_intelligence'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.lead_lifecycle'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.booked_job_signal'));
 assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), null);
 assert.equal(capabilityOnBlockedReason('m51.budget_shift', 'recommend_only'), null);
 assert.equal(capabilityOnBlockedReason('cockpit', 'on'), null);

@@ -16,6 +16,7 @@ import type {
 } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import type { BookedJob, CallRecord } from "../attribution";
+import type { CrmLead } from "../lead-lifecycle";
 import type { AggregatedSessionSignal } from "../lp-intelligence";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import type { PullResult } from "../platforms";
@@ -79,6 +80,7 @@ export type CrmJoinInput = {
   workspaceId: string;
   clientId: string;
   clientName: string;
+  apiKey?: string;
   mock?: boolean;
 };
 
@@ -88,6 +90,25 @@ export type CrmJoinResult = {
   connectorId: string;
   mock: boolean;
   bookedJobs: BookedJob[];
+  writes: false;
+  reason?: string;
+};
+
+export type CrmPullInput = {
+  workspaceId: string;
+  clientId: string;
+  clientName: string;
+  apiKey?: string;
+  mock?: boolean;
+};
+
+export type CrmPullResult = {
+  ok: boolean;
+  stub: boolean;
+  connectorId: string;
+  mock: boolean;
+  bookedJobs: BookedJob[];
+  leads: CrmLead[];
   writes: false;
   reason?: string;
 };
@@ -185,6 +206,7 @@ export interface CrmConnector extends Connector {
   readonly connectCapability?: Extract<CapabilityId, "m52.crm_join">;
   readonly writes: false;
   listBookedJobs(input: CrmJoinInput): Promise<CrmJoinResult>;
+  pullLeadsAndJobs(input: CrmPullInput): Promise<CrmPullResult>;
 }
 
 export interface SiteConnector extends Connector {

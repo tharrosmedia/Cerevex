@@ -32,6 +32,9 @@ export type OfflineAttributionView = {
     connected: boolean;
     mock: boolean;
     bookedJobCount: number;
+    leadCount?: number;
+    lastPulledAt?: string | null;
+    lastError?: string | null;
   };
   sentences: string[];
   joins: OfflineJoin[];
@@ -69,8 +72,13 @@ export function OfflineAttribution({
         <p className="cx-help">No call tracker is connected yet. Use Settings → Connect for CallRail or bundled.</p>
       )}
       {view.crm.connected ? (
-        <p className="cx-help">Housecall Pro is mock-joined for booked-job status. Deep write-backs stay off.</p>
+        <p className="cx-help">
+          Housecall Pro is connected{view.crm.mock ? " (mock)" : ""} for booked-job status.
+          {view.crm.lastPulledAt ? ` Last pull ${new Date(view.crm.lastPulledAt).toLocaleString()}.` : ""}
+          {" "}Deep write-backs stay off.
+        </p>
       ) : null}
+      {view.crm.lastError ? <p className="cx-banner cx-banner-warn">{view.crm.lastError}</p> : null}
       {view.callrail.lastError ? <p className="cx-banner cx-banner-warn">{view.callrail.lastError}</p> : null}
       {view.bundled?.lastError ? <p className="cx-banner cx-banner-warn">{view.bundled.lastError}</p> : null}
       {view.sentences.length > 0 ? (

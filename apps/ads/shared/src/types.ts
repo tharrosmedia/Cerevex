@@ -162,6 +162,8 @@ export const RECOMMENDATION_TYPES = [
   "create_alternative",
   "call_attribution",
   "crm_booked_job",
+  "lead_lifecycle",
+  "booked_job",
   "lp_intelligence",
 ] as const;
 export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
@@ -213,6 +215,20 @@ export type LpIntelligenceRecommendationType = (typeof LP_INTELLIGENCE_RECOMMEND
 
 export function isLpIntelligenceRecommendationType(value: string): value is LpIntelligenceRecommendationType {
   return (LP_INTELLIGENCE_RECOMMENDATION_TYPES as readonly string[]).includes(value);
+}
+
+export const LEAD_LIFECYCLE_RECOMMENDATION_TYPES = ["lead_lifecycle"] as const;
+export type LeadLifecycleRecommendationType = (typeof LEAD_LIFECYCLE_RECOMMENDATION_TYPES)[number];
+
+export function isLeadLifecycleRecommendationType(value: string): value is LeadLifecycleRecommendationType {
+  return (LEAD_LIFECYCLE_RECOMMENDATION_TYPES as readonly string[]).includes(value);
+}
+
+export const BOOKED_JOB_SIGNAL_RECOMMENDATION_TYPES = ["booked_job"] as const;
+export type BookedJobSignalRecommendationType = (typeof BOOKED_JOB_SIGNAL_RECOMMENDATION_TYPES)[number];
+
+export function isBookedJobSignalRecommendationType(value: string): value is BookedJobSignalRecommendationType {
+  return (BOOKED_JOB_SIGNAL_RECOMMENDATION_TYPES as readonly string[]).includes(value);
 }
 
 export type StubPingPayload = {

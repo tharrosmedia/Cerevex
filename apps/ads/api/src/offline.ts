@@ -4,19 +4,26 @@ import { HTTPException } from "hono/http-exception";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  isBookedJobSignalRecommendationType,
+  isBookedJobSignalVisible,
   isCallAttributionVisible,
   isCapabilityVisible,
+  isLeadLifecycleRecommendationType,
+  isLeadLifecycleVisible,
   isLpIntelligenceRecommendationType,
   isLpIntelligenceVisible,
   isOfflineRecommendationType,
+  summarizeLeadLifecycle,
   type CapabilityFlags,
 } from "@tharros/ads-shared";
 import { summarizeAttribution, type AttributionCampaign } from "@tharros/ads-shared/attribution";
 import { writeAuditEvent } from "@tharros/ads-shared/audit";
 import {
   decryptCallRailApiKey,
+  decryptHcpApiKey,
   decryptTwilioAuthToken,
   encryptCallRailApiKey,
+  encryptHcpApiKey,
   encryptTwilioAuthToken,
   loadWorkspaceSettings,
   publicBundledView,
@@ -59,6 +66,13 @@ const clientIdSchema = z.object({
   clientId: z.string().uuid(),
 });
 
+const connectCrmSchema = z.object({
+  clientId: z.string().uuid(),
+  mock: z.boolean().optional(),
+  useEnv: z.boolean().optional(),
+  apiKey: z.string().min(4).max(200).optional(),
+});
+
 async function campaignsForClient(clientId: string): Promise<AttributionCampaign[]> {
   const rows = await getDb().select().from(adEntities).where(eq(adEntities.clientId, clientId));
   return rows
@@ -77,6 +91,8 @@ export function filterOfflineRecommendations<T extends { type: string }>(
 ): T[] {
   return rows.filter((row) => {
     if (isLpIntelligenceRecommendationType(row.type)) return isLpIntelligenceVisible(flags);
+    if (isLeadLifecycleRecommendationType(row.type)) return isLeadLifecycleVisible(flags);
+    if (isBookedJobSignalRecommendationType(row.type)) return isBookedJobSignalVisible(flags);
     if (!isOfflineRecommendationType(row.type)) return true;
     if (row.type === "call_attribution") return isCallAttributionVisible(flags);
     if (row.type === "crm_booked_job") return isCapabilityVisible("m52.crm_join", flags);
@@ -446,27 +462,83 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     });
   });
 
+  app.get("/clients/:id/lead-lifecycle", requireAuth, async (c) => {
+    const client = await getVisibleClient(c.get("auth"), c.req.param("id"));
+    if (!client) {
+      throw new HTTPException(404, { message: "Client not found" });
+    }
+    const { flags } = await loadWorkspaceCapabilities(client.workspaceId);
+    const crmOn = isCapabilityVisible("m52.crm_join", flags);
+    const lifecycleOn = isLeadLifecycleVisible(flags);
+    if (!crmOn && !lifecycleOn) {
+      return c.json({
+        visible: false,
+        crm: publicCrmView(undefined),
+        sentences: [],
+        cards: [],
+        leadCount: 0,
+        contactedCount: 0,
+        bookedCount: 0,
+        writes: false,
+        crmWrite: "later",
+      });
+    }
+    const { connectors } = await loadWorkspaceSettings(client.workspaceId);
+    const crm = connectors.crm[client.id];
+    const summary = summarizeLeadLifecycle(lifecycleOn ? (crm?.leads ?? []) : []);
+    return c.json({
+      visible: true,
+      crm: publicCrmView(crmOn ? crm : undefined),
+      sentences: summary.sentences,
+      cards: summary.cards,
+      leadCount: summary.leadCount,
+      contactedCount: summary.contactedCount,
+      bookedCount: summary.bookedCount,
+      writes: false,
+      crmWrite: "later",
+    });
+  });
+
   app.post("/connectors/crm/connect", requireAuth, async (c) => {
-    const parsed = clientIdSchema.extend({ mock: z.boolean().optional() }).safeParse(await c.req.json().catch(() => null));
+    const parsed = connectCrmSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      throw new HTTPException(400, { message: "clientId is required" });
+      throw new HTTPException(400, { message: "clientId is required. Add mock, useEnv, or apiKey." });
     }
     const auth = c.get("auth");
     const client = await requireMutableClient(auth, parsed.data.clientId);
     await requireWritableCapability(client.workspaceId, "m52.crm_join");
-    const joined = await housecallProConnector.listBookedJobs({
+    const wantMock = parsed.data.mock ?? (!parsed.data.useEnv && !parsed.data.apiKey);
+    const connected = await housecallProConnector.connect({
+      workspaceId: client.workspaceId,
+      clientId: client.id,
+      mock: wantMock,
+      useEnv: parsed.data.useEnv,
+      apiKey: parsed.data.apiKey,
+    });
+    if (!connected.ok) {
+      throw new HTTPException(409, { message: connected.reason ?? "Housecall Pro connect failed." });
+    }
+    const pulled = await housecallProConnector.pullLeadsAndJobs({
       workspaceId: client.workspaceId,
       clientId: client.id,
       clientName: client.name,
-      mock: true,
+      mock: Boolean(connected.mock),
+      apiKey: parsed.data.apiKey,
     });
+    if (!pulled.ok) {
+      throw new HTTPException(409, { message: pulled.reason ?? "Housecall Pro pull failed. Nothing was written." });
+    }
     const { connectors } = await loadWorkspaceSettings(client.workspaceId);
     connectors.crm[client.id] = {
       connected: true,
-      mock: true,
+      mock: Boolean(connected.mock),
       provider: "hcp",
+      encryptedApiKey: parsed.data.apiKey ? encryptHcpApiKey(parsed.data.apiKey) : null,
+      usesEnv: Boolean(parsed.data.useEnv) && !connected.mock,
+      lastPulledAt: new Date().toISOString(),
       lastError: null,
-      bookedJobs: joined.bookedJobs,
+      bookedJobs: pulled.bookedJobs,
+      leads: pulled.leads,
     };
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
@@ -476,13 +548,13 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       action: "crm_connect",
       entityType: "client",
       entityId: client.id,
-      payload: { provider: "hcp", mock: true, writes: false },
+      payload: { provider: "hcp", mock: Boolean(connected.mock), usesEnv: Boolean(parsed.data.useEnv), writes: false },
     });
     return c.json({
       ok: true,
       crm: publicCrmView(connectors.crm[client.id]),
       writes: false,
-      reason: joined.reason,
+      reason: connected.reason,
     });
   });
 
@@ -497,6 +569,70 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     const { connectors } = await loadWorkspaceSettings(client.workspaceId);
     delete connectors.crm[client.id];
     await saveWorkspaceConnectors(client.workspaceId, connectors);
+    await housecallProConnector.disconnect({ workspaceId: client.workspaceId, clientId: client.id });
+    await writeAuditEvent({
+      workspaceId: client.workspaceId,
+      actorType: "user",
+      actorId: auth.user.id,
+      action: "crm_disconnect",
+      entityType: "client",
+      entityId: client.id,
+      payload: { writes: false },
+    });
     return c.json({ ok: true, crm: publicCrmView(undefined), writes: false });
+  });
+
+  app.post("/connectors/crm/pull", requireAuth, async (c) => {
+    const parsed = clientIdSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: "clientId is required" });
+    }
+    const auth = c.get("auth");
+    const client = await requireMutableClient(auth, parsed.data.clientId);
+    await requireWritableCapability(client.workspaceId, "m52.crm_join");
+    const { connectors } = await loadWorkspaceSettings(client.workspaceId);
+    const current = connectors.crm[client.id];
+    if (!current?.connected) {
+      throw new HTTPException(409, { message: "Connect Housecall Pro before pulling leads." });
+    }
+    const pulled = await housecallProConnector.pullLeadsAndJobs({
+      workspaceId: client.workspaceId,
+      clientId: client.id,
+      clientName: client.name,
+      mock: current.mock,
+      apiKey: decryptHcpApiKey(current.encryptedApiKey) ?? undefined,
+    });
+    if (!pulled.ok) {
+      current.lastError = pulled.reason ?? "Housecall Pro pull failed.";
+      connectors.crm[client.id] = current;
+      await saveWorkspaceConnectors(client.workspaceId, connectors);
+      throw new HTTPException(409, { message: current.lastError });
+    }
+    current.lastError = null;
+    current.lastPulledAt = new Date().toISOString();
+    current.bookedJobs = pulled.bookedJobs;
+    current.leads = pulled.leads;
+    connectors.crm[client.id] = current;
+    await saveWorkspaceConnectors(client.workspaceId, connectors);
+    await writeAuditEvent({
+      workspaceId: client.workspaceId,
+      actorType: "user",
+      actorId: auth.user.id,
+      action: "crm_pull",
+      entityType: "client",
+      entityId: client.id,
+      payload: {
+        mock: pulled.mock,
+        bookedJobCount: pulled.bookedJobs.length,
+        leadCount: pulled.leads.length,
+        writes: false,
+      },
+    });
+    return c.json({
+      ok: true,
+      crm: publicCrmView(current),
+      writes: false,
+      reason: pulled.reason,
+    });
   });
 }

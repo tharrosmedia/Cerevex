@@ -7,7 +7,9 @@ import {
   CONNECTORS,
   ga4AnalyticsConnector,
   getAdPlatformConnector,
+  getCrmConnector,
   getSiteConnector,
+  housecallProConnector,
   googleAdPlatformConnector,
   metaAdPlatformConnector,
   mockAdPlatformConnector,
@@ -54,6 +56,11 @@ describe("connector interfaces", () => {
     expect(bundledCallTrackingConnector.implementation).toBe("live");
     expect(bundledCallTrackingConnector.connectCapability).toBe("m52.bundled_call_tracking");
     expect(typeof bundledCallTrackingConnector.pullCalls).toBe("function");
+    expect(housecallProConnector.implementation).toBe("live");
+    expect(housecallProConnector.connectCapability).toBe("m52.crm_join");
+    expect(housecallProConnector.writes).toBe(false);
+    expect(typeof housecallProConnector.pullLeadsAndJobs).toBe("function");
+    expect(getCrmConnector("hcp")).toBe(housecallProConnector);
   });
 
   it("refuses live pull when sync.live is hidden even if tokens look live", () => {

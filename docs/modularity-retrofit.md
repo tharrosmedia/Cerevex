@@ -130,9 +130,23 @@ If Railway Site Brain start/build uses `--workspace=@shopify-brain/brain`, chang
 - Site connector (`wordpress`) is a stub (`supportsLandingPageMutation: false`). Approve → apply_jobs stays review-only + “Site apply later”. Deny/Snooze never write.
 - Core ads/cockpit stays healthy when both flags are hidden.
 
+## M5.2 Phase D (CRM / HCP booked-job loop)
+
+Deepens Phase A `CrmConnector` (`hcp`). `m52.crm_join`, `m52.lead_lifecycle`, and `m52.booked_job_signal` are live product flags (`unfinished: false`). Default `hidden`. Env kills: `CAPABILITY_KILL_M52_CRM_JOIN=1`, `CAPABILITY_KILL_M52_LEAD_LIFECYCLE=1`, `CAPABILITY_KILL_M52_BOOKED_JOB_SIGNAL=1`.
+
+| Id | Role |
+|---|---|
+| `m52.crm_join` | Connect / pull Housecall Pro (mock or live). Soft-join booked jobs to calls. Writable required for connect/pull. |
+| `m52.lead_lifecycle` | Lead → contacted → booked cards + `lead_lifecycle` inbox recs. Recommend-only CRM mutations (`crm_write_later`). |
+| `m52.booked_job_signal` | `booked_job` ads optimization recs. Visible when `on` or `recommend_only`. Ads budget writes only when `on`. |
+
+- Mock path is required for QA. Live HCP via `HCP_API_KEY` / encrypted settings. Fail closed on bad creds. Connect and pull never write HCP.
+- Booked-job recs can propose `update_budget` toward the campaign that booked work. Approve → `apply_jobs` with the same kill/freeze/audit gates. Deny/Snooze never write.
+- Core ads/cockpit stays healthy when all three flags are hidden.
+
 ## Out of scope (still deferred)
 
-- **M5.2 later phases** — deep CRM write-backs, weekly narrative, seasonality.
+- **M5.2 later phases** — weekly narrative, seasonality. Unsupervised CRM write-backs stay out.
 - Dropping the one-release Inngest `LEGACY_ADS_*` listeners.
 - Railway service / DNS / domain cutover. Live Inngest app id `shopify-brain`. Neon schema rename.
 
