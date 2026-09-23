@@ -4,7 +4,7 @@
  */
 
 import type { CapabilityFlags } from "@cerevex/contracts";
-import { isCapabilityVisible } from "@cerevex/contracts";
+import { isBudgetShiftWritable, isCapabilityVisible } from "@cerevex/contracts";
 import {
   parseFindingDraft,
   parseRecommendationDraft,
@@ -89,6 +89,24 @@ function mutation(
     payload,
     execute: false,
   };
+}
+
+/** Live budget mutations only when m51.budget_shift is on. recommend_only stays review. */
+function budgetShiftMutations(
+  writable: boolean,
+  platform: Platform,
+  rows: Array<{
+    entity: { entityType: string; externalId: string; name: string };
+    payload: Record<string, unknown>;
+  }>,
+): ProposedMutation[] {
+  return rows.map((row) =>
+    mutation(platform, writable ? "update_budget" : "review", row.entity, {
+      ...row.payload,
+      m51: "budget_shift",
+      ...(writable ? {} : { action: "do_not_autoshift_budget" }),
+    }),
+  );
 }
 
 function finding(
@@ -193,6 +211,7 @@ export function evaluateClientM51(input: EvaluateClientM51Input): EvaluateClient
   const recommendations: RecommendationDraft[] = [];
   const allScores = input.accounts.flatMap(campaignScores);
 
+  const budgetShiftOn = isBudgetShiftWritable(input.capabilities);
   if (isCapabilityVisible("m51.budget_shift", input.capabilities)) {
     for (const account of input.accounts) {
       const scores = campaignScores(account).filter((row) => row.cpa != null);
@@ -219,7 +238,11 @@ export function evaluateClientM51(input: EvaluateClientM51Input): EvaluateClient
           type: "budget_shift",
           ruleId: "budget_shift_gap",
           title: `Shift budget toward ${winner.campaign.name}`,
-          rationale: `${winner.campaign.name} brings a lead for $${winner.cpa.toFixed(2)}. ${loser.campaign.name} costs $${loser.cpa.toFixed(2)}. Approve moves ${M51_THRESHOLDS.shiftPercent}% of the weaker campaign’s budget to the stronger one.${funnel.boosts && funnel.why ? ` ${funnel.why}` : ""} Deny and Snooze write nothing.`,
+          rationale: `${winner.campaign.name} brings a lead for $${winner.cpa.toFixed(2)}. ${loser.campaign.name} costs $${loser.cpa.toFixed(2)}. ${
+            budgetShiftOn
+              ? `Approve moves ${M51_THRESHOLDS.shiftPercent}% of the weaker campaign’s budget to the stronger one.`
+              : "Budget shift is recommend-only here — Approve will not change spend."
+          }${funnel.boosts && funnel.why ? ` ${funnel.why}` : ""} Deny and Snooze write nothing.`,
           estimatedImpactUsd: money(opportunity),
           risk: "medium",
           confidence: confidence(funnel.boosts ? 0.78 : 0.66),
@@ -233,18 +256,16 @@ export function evaluateClientM51(input: EvaluateClientM51Input): EvaluateClient
             spend30dUsd: money(loser.spend),
             funnel: funnel.boosts ? input.funnel : undefined,
           },
-          mutations: [
-            mutation(account.platform, "update_budget", loser.campaign, {
-              percent: -M51_THRESHOLDS.shiftPercent,
-              direction: "down",
-              reason: "shift_from_weaker",
-            }),
-            mutation(account.platform, "update_budget", winner.campaign, {
-              percent: M51_THRESHOLDS.shiftPercent,
-              direction: "up",
-              reason: "shift_to_winner",
-            }),
-          ],
+          mutations: budgetShiftMutations(budgetShiftOn, account.platform, [
+            {
+              entity: loser.campaign,
+              payload: { percent: -M51_THRESHOLDS.shiftPercent, direction: "down", reason: "shift_from_weaker" },
+            },
+            {
+              entity: winner.campaign,
+              payload: { percent: M51_THRESHOLDS.shiftPercent, direction: "up", reason: "shift_to_winner" },
+            },
+          ]),
         }),
       );
     }
@@ -281,7 +302,11 @@ export function evaluateClientM51(input: EvaluateClientM51Input): EvaluateClient
               type: "budget_shift",
               ruleId: "budget_shift_cross_platform",
               title: `Move spend from ${platformLabel(loser.account.platform)} toward ${platformLabel(winner.account.platform)}`,
-              rationale: `${platformLabel(winner.account.platform)} brings a lead for $${winner.cpa!.toFixed(2)} on ${winner.campaign.name}. ${platformLabel(loser.account.platform)} costs $${loser.cpa!.toFixed(2)} on ${loser.campaign.name}. Approve lowers the weaker platform budget by ${M51_THRESHOLDS.shiftPercent}%.${funnel.boosts && funnel.why ? ` ${funnel.why}` : ""}`,
+              rationale: `${platformLabel(winner.account.platform)} brings a lead for $${winner.cpa!.toFixed(2)} on ${winner.campaign.name}. ${platformLabel(loser.account.platform)} costs $${loser.cpa!.toFixed(2)} on ${loser.campaign.name}. ${
+                budgetShiftOn
+                  ? `Approve lowers the weaker platform budget by ${M51_THRESHOLDS.shiftPercent}%.`
+                  : "Budget shift is recommend-only here — Approve will not change spend."
+              }${funnel.boosts && funnel.why ? ` ${funnel.why}` : ""}`,
               estimatedImpactUsd: money(opportunity),
               risk: "medium",
               confidence: confidence(funnel.boosts ? 0.8 : 0.68),
@@ -294,14 +319,17 @@ export function evaluateClientM51(input: EvaluateClientM51Input): EvaluateClient
                 spend30dUsd: money(loser.spend),
                 funnel: funnel.boosts ? input.funnel : undefined,
               },
-              mutations: [
-                mutation(loser.account.platform, "update_budget", loser.campaign, {
-                  percent: -M51_THRESHOLDS.shiftPercent,
-                  direction: "down",
-                  reason: "shift_to_winning_platform",
-                  winningPlatform: winner.account.platform,
-                }),
-              ],
+              mutations: budgetShiftMutations(budgetShiftOn, loser.account.platform, [
+                {
+                  entity: loser.campaign,
+                  payload: {
+                    percent: -M51_THRESHOLDS.shiftPercent,
+                    direction: "down",
+                    reason: "shift_to_winning_platform",
+                    winningPlatform: winner.account.platform,
+                  },
+                },
+              ]),
             }),
           );
         }

@@ -5,9 +5,11 @@ import {
   approveOperatorEmails,
   canApproveApply,
   canApproveWithApply,
+  budgetShiftWriteBlockedReason,
   capabilityOnBlockedReason,
   DEFAULT_APPROVE_OPERATOR_EMAIL,
   defaultCapabilityFlags,
+  isBudgetShiftWritable,
   defaultModulesFor,
   envCapabilityKills,
   inferApplyJobType,
@@ -63,6 +65,21 @@ describe("capability registry", () => {
     expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toBeNull();
     expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
     expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();
+  });
+
+  it("blocks budget-shift apply writes unless m51.budget_shift is on", () => {
+    const hidden = defaultCapabilityFlags();
+    const recommendOnly = { ...hidden, "m51.budget_shift": "recommend_only" as const };
+    const on = { ...hidden, "m51.budget_shift": "on" as const };
+    expect(isBudgetShiftWritable(hidden)).toBe(false);
+    expect(isBudgetShiftWritable(recommendOnly)).toBe(false);
+    expect(isBudgetShiftWritable(on)).toBe(true);
+    expect(budgetShiftWriteBlockedReason(recommendOnly, "budget_shift")).toBe(
+      "capability_m51_budget_shift_recommend_only",
+    );
+    expect(budgetShiftWriteBlockedReason(hidden, "budget_shift")).toBe("capability_m51_budget_shift");
+    expect(budgetShiftWriteBlockedReason(on, "budget_shift")).toBeNull();
+    expect(budgetShiftWriteBlockedReason(recommendOnly, "lp_congruence")).toBeNull();
   });
 
   it("hides the leads/brainstorm surface unless m51.brainstorm is visible", () => {

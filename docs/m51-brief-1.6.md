@@ -6,7 +6,7 @@ Day-job loop on Meta + Google v0: see creatives → analyze → recommend → op
 
 | Id | What turns on |
 |---|---|
-| `m51.budget_shift` | Budget-shift rec generation + inbox type |
+| `m51.budget_shift` | Recs when `on` or `recommend_only`. Approve/apply writes **only** when `on`. `recommend_only` emits `review` and never queues `update_budget`. |
 | `m51.grok_creatives` | Creatives viewer, Adapt / make another, Promote |
 | `m51.lp_congruence` | Landing-page match recs (recommend-only) |
 | `m51.ga4_connect` | Funnel connect (GA4 + pixel) |

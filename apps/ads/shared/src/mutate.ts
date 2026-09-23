@@ -4,7 +4,7 @@ import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";
-import { isCapabilityOn } from "@cerevex/contracts";
+import { isBudgetShiftWritable, isCapabilityOn } from "@cerevex/contracts";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { LiveEntityState, MutationOutcome } from "./mutate-types";
@@ -147,6 +147,14 @@ export async function readLiveEntityState(input: {
   });
 }
 
+/** M5.1 budget-shift writes — not generic M5 high-CPA `update_budget`. */
+export function isM51BudgetShiftMutation(mutation: ApplyMutation): boolean {
+  const payload = mutation.payload ?? {};
+  if (payload.m51 === "budget_shift") return true;
+  const reason = payload.reason;
+  return mutation.action === "update_budget" && typeof reason === "string" && reason.startsWith("shift_");
+}
+
 /** Live apply/read always goes through the AdPlatform connector registry. */
 export async function applyViaConnector(input: {
   platform: Platform;
@@ -170,6 +178,17 @@ export function classifyMutation(
   mutation: ApplyMutation,
   flags: CapabilityFlags = resolveWorkspaceCapabilities({}),
 ): MutationOutcome | null {
+  if (isM51BudgetShiftMutation(mutation) && !isBudgetShiftWritable(flags)) {
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: "Budget shift is recommend-only or off (m51.budget_shift). No platform write.",
+    };
+  }
   if (mutation.action === "review") {
     return {
       action: mutation.action,

@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { isCapabilityOn, resolveWorkspaceCapabilities } from "@cerevex/contracts";
+import { budgetShiftWriteBlockedReason, isCapabilityOn, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { parseApplyMutations } from "./audit-schemas";
 import { getDb } from "./db";
@@ -187,6 +187,34 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
       outcomes: [],
       writes: false,
       blocked: "capability_apply",
+    };
+  }
+
+  const budgetShiftBlocked = budgetShiftWriteBlockedReason(capabilities, recommendation.type);
+  if (budgetShiftBlocked) {
+    const response = {
+      writes: false,
+      outcomes: [],
+      blocked: budgetShiftBlocked,
+      jobType,
+      mode: "mock",
+      reason: "Budget shift is recommend-only or off. No platform write.",
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "succeeded",
+        error: null,
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: budgetShiftBlocked,
     };
   }
 

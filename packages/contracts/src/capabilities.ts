@@ -134,7 +134,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
   "m51.budget_shift": {
     id: "m51.budget_shift",
     label: "Budget shift",
-    help: "Recommend moving spend toward the winning platform or campaign. Approve applies budget mutations. Default hidden.",
+    help: "Recommend moving spend toward the winning platform or campaign. Approve applies budget mutations only when this is on. recommend_only shows the suggestion and writes nothing. Default hidden.",
     defaultState: "hidden",
     unfinished: false,
     group: "m51",
@@ -368,6 +368,22 @@ export function isApplyEnabled(flags: CapabilityFlags): boolean {
 
 export function canApproveWithApply(operatorCanApprove: boolean, flags: CapabilityFlags): boolean {
   return Boolean(operatorCanApprove) && isApplyEnabled(flags);
+}
+
+/** Budget-shift recs may write only when m51.budget_shift is on (not hidden / recommend_only). */
+export function isBudgetShiftWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m51.budget_shift", flags);
+}
+
+export function budgetShiftWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "budget_shift") return null;
+  if (isBudgetShiftWritable(flags)) return null;
+  return flags["m51.budget_shift"] === "recommend_only"
+    ? "capability_m51_budget_shift_recommend_only"
+    : "capability_m51_budget_shift";
 }
 
 export type LegacyAdsWebGate = "loading" | "unauthenticated" | "allow" | "block";

@@ -4,8 +4,13 @@ import { evaluateClientM51, M51_THRESHOLDS } from "@tharros/ads-shared/m51-engin
 import { analyzeCopySentiment, compareAdsInGroup, creativeFromRaw } from "@tharros/ads-shared/creative-analysis";
 import { compareAdToLanding } from "@tharros/ads-shared/lp-congruence";
 import { inferPlatformFromClick, summarizeFunnel } from "@tharros/ads-shared/funnel";
-import { classifyMutation } from "@tharros/ads-shared/mutate";
-import { defaultCapabilityFlags, mockPull, proposedMutationSchema } from "@tharros/ads-shared";
+import { classifyMutation, isM51BudgetShiftMutation } from "@tharros/ads-shared/mutate";
+import {
+  budgetShiftWriteBlockedReason,
+  defaultCapabilityFlags,
+  mockPull,
+  proposedMutationSchema,
+} from "@tharros/ads-shared";
 
 function flagsOn() {
   return {
@@ -62,6 +67,66 @@ describe("M5.1 engines (no database)", () => {
       }
     }
     expect(M51_THRESHOLDS.shiftPercent).toBe(15);
+  });
+
+  it("recommend_only budget shift never emits update_budget or an apply write", () => {
+    const recommendOnly = {
+      ...defaultCapabilityFlags(),
+      "m51.budget_shift": "recommend_only" as const,
+      "apply.budget": "on" as const,
+    };
+    const result = evaluateClientM51({
+      workspaceId,
+      clientId,
+      auditRunId,
+      capabilities: recommendOnly,
+      accounts: [
+        slice("meta", "Got Ductless", randomUUID()),
+        slice("google", "Got Ductless", randomUUID()),
+      ],
+    });
+    const recs = result.recommendations.filter((row) => row.type === "budget_shift");
+    expect(recs.length).toBeGreaterThan(0);
+    for (const rec of recs) {
+      expect(rec.proposedMutationsJson.some((row) => row.action === "update_budget")).toBe(false);
+      expect(rec.proposedMutationsJson.every((row) => row.action === "review")).toBe(true);
+      expect(rec.rationale).toMatch(/recommend-only|will not change spend/i);
+      for (const mutation of rec.proposedMutationsJson) {
+        expect(mutation.execute).toBe(false);
+        expect(mutation.payload.m51).toBe("budget_shift");
+        expect(mutation.payload.action).toBe("do_not_autoshift_budget");
+        const classified = classifyMutation(mutation, recommendOnly);
+        expect(classified?.writes).toBe(false);
+        expect(classified?.status).toBe("skipped");
+      }
+    }
+
+    const shiftWrite = {
+      platform: "meta" as const,
+      action: "update_budget" as const,
+      target: { entityType: "campaign", externalId: "1", name: "HVAC" },
+      payload: { percent: -15, reason: "shift_from_weaker", m51: "budget_shift" },
+    };
+    expect(isM51BudgetShiftMutation(shiftWrite)).toBe(true);
+    const blocked = classifyMutation(shiftWrite, recommendOnly);
+    expect(blocked?.writes).toBe(false);
+    expect(blocked?.status).toBe("skipped");
+    expect(blocked?.reason).toMatch(/recommend-only|m51\.budget_shift/);
+
+    expect(budgetShiftWriteBlockedReason(recommendOnly, "budget_shift")).toBe(
+      "capability_m51_budget_shift_recommend_only",
+    );
+    expect(budgetShiftWriteBlockedReason(flagsOn(), "budget_shift")).toBeNull();
+    expect(budgetShiftWriteBlockedReason(recommendOnly, "creative_test")).toBeNull();
+
+    const genericBudget = {
+      platform: "meta" as const,
+      action: "update_budget" as const,
+      target: { entityType: "campaign", externalId: "1", name: "HVAC" },
+      payload: { percent: -10 },
+    };
+    expect(isM51BudgetShiftMutation(genericBudget)).toBe(false);
+    expect(classifyMutation(genericBudget, recommendOnly)).toBeNull();
   });
 
   it("emits a cross-platform creative test and does not invent metrics", () => {

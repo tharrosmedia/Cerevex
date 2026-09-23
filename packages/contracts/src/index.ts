@@ -126,6 +126,8 @@ export {
   legacyAdsChromeLinksAllowed,
   isApplyEnabled,
   canApproveWithApply,
+  isBudgetShiftWritable,
+  budgetShiftWriteBlockedReason,
   legacyAdsWebGate,
   capabilityBlockMessage,
   filterItemsByCapabilities,
