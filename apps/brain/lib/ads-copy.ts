@@ -17,6 +17,12 @@ const FINDING_LABELS: Record<string, string> = {
   lp_intelligence: "Landing-page session signals",
   lead_lifecycle: "Lead to booked",
   booked_job: "Booked job ads signal",
+  creative_fatigue: "Creative looks tired",
+  search_negatives: "Search-term waste",
+  geo_discipline: "Service area too wide",
+  brand_guardrails: "Claim or brand risk",
+  brand_guardrail_block: "Claim or brand risk",
+  brand_guardrail_warn: "Claim or brand warning",
 };
 
 const SUGGESTION_LABELS: Record<string, string> = {
@@ -35,6 +41,10 @@ const SUGGESTION_LABELS: Record<string, string> = {
   lead_lifecycle: "Lead moved toward booked",
   booked_job: "Booked jobs can steer ads",
   lp_intelligence: "Improve the landing page",
+  creative_fatigue: "Refresh the tired ad",
+  search_negatives: "Add Google negatives",
+  geo_discipline: "Tighten the service area",
+  brand_guardrails: "Hold a claim or brand risk",
 };
 
 const SUGGESTION_WHY: Record<string, string> = {
@@ -53,6 +63,10 @@ const SUGGESTION_WHY: Record<string, string> = {
   lead_lifecycle: "A lead moved on the common path inside Cerevex. CRM apply later.",
   booked_job: "A booked job can steer ads. Approve writes only when the signal flag is on.",
   lp_intelligence: "Session signals show where the landing page loses people. Site apply later.",
+  creative_fatigue: "This ad has been shown enough. Approve records a refresh plan. Nothing is written live.",
+  search_negatives: "Wasteful Google searches spent money with no leads. Approve adds negatives only when the flag is on.",
+  geo_discipline: "Ads are aimed wider than the shop's service area. Approve tightens only when the flag is on.",
+  brand_guardrails: "A claim or brand risk must block or warn. Unsupervised spend cannot pass this quietly.",
 };
 
 const AUDIT_STATUS_LABELS: Record<string, string> = {
@@ -229,6 +243,35 @@ export function metricLines(record: Record<string, unknown> | null | undefined):
   if (typeof record.sessionCount === "number") lines.push(`Sessions in summary: ${record.sessionCount}`);
   if (record.siteApply === "later") lines.push("Site apply later — Cerevex cannot change the website in this slice.");
   if (record.capture === false) lines.push("No in-house session recorder. Signals come from Clarity.");
+  if (typeof record.impressions30d === "number") lines.push(`Impressions (30 days): ${record.impressions30d}`);
+  if (typeof record.impressions7d === "number") lines.push(`Impressions (7 days): ${record.impressions7d}`);
+  if (typeof record.ctr30d === "number") lines.push(`Click rate (30 days): ${(record.ctr30d * 100).toFixed(2)}%`);
+  if (typeof record.ctr7d === "number") lines.push(`Click rate (7 days): ${(record.ctr7d * 100).toFixed(2)}%`);
+  if (typeof record.cadenceDays === "number") lines.push(`Refresh cadence: about every ${record.cadenceDays} days`);
+  if (typeof record.searchTermCount === "number") lines.push(`Wasteful search terms: ${record.searchTermCount}`);
+  if (Array.isArray(record.searchTerms)) {
+    for (const term of record.searchTerms) {
+      if (term && typeof term === "object" && typeof (term as { text?: unknown }).text === "string") {
+        const row = term as { text: string; spendUsd?: number };
+        const spend = formatMoney(row.spendUsd ?? null);
+        lines.push(spend ? `Search: ${row.text} (${spend})` : `Search: ${row.text}`);
+      }
+    }
+  }
+  if (Array.isArray(record.targeting) && record.targeting.every((row) => typeof row === "string")) {
+    lines.push(`Targeting: ${(record.targeting as string[]).join(", ")}`);
+  }
+  if (Array.isArray(record.serviceArea) && record.serviceArea.every((row) => typeof row === "string")) {
+    lines.push(`Service area: ${(record.serviceArea as string[]).join(", ")}`);
+  }
+  if (typeof record.radiusMiles === "number") lines.push(`Radius: ${record.radiusMiles} miles`);
+  if (typeof record.guardrail === "string") lines.push(`Guardrail: ${record.guardrail === "block" ? "Block" : "Warn"}`);
+  if (Array.isArray(record.claimHits)) {
+    const terms = record.claimHits
+      .map((hit) => (hit && typeof hit === "object" && typeof (hit as { term?: unknown }).term === "string" ? (hit as { term: string }).term : null))
+      .filter((term): term is string => Boolean(term));
+    if (terms.length > 0) lines.push(`Claim hits: ${terms.join(", ")}`);
+  }
   return lines;
 }
 
@@ -240,6 +283,10 @@ export const REC_INBOX_KINDS = [
   { value: "lead_lifecycle", label: "Lead path" },
   { value: "booked_job", label: "Booked job" },
   { value: "create_alternative", label: "Create alternative" },
+  { value: "creative_fatigue", label: "Creative fatigue" },
+  { value: "search_negatives", label: "Search terms" },
+  { value: "geo_discipline", label: "Service area" },
+  { value: "brand_guardrails", label: "Brand guardrail" },
 ] as const;
 
 export function suggestionInboxKind(type: string | null | undefined): string {
@@ -250,5 +297,9 @@ export function suggestionInboxKind(type: string | null | undefined): string {
   if (type === "lead_lifecycle") return "Lead path";
   if (type === "booked_job") return "Booked job";
   if (type === "create_alternative") return "Create alternative";
+  if (type === "creative_fatigue") return "Creative fatigue";
+  if (type === "search_negatives") return "Search terms";
+  if (type === "geo_discipline") return "Service area";
+  if (type === "brand_guardrails") return "Brand guardrail";
   return "Check";
 }

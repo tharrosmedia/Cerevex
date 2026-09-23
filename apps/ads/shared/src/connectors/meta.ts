@@ -315,6 +315,17 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
         reason: "Created a paused Meta ad. It stays off until you turn it on in Meta.",
       };
     }
+    if (mutation.action === "tighten_geo") {
+      return {
+        action: mutation.action,
+        platform: "meta",
+        target: mutation.target,
+        status: "skipped",
+        mode: "live",
+        writes: false,
+        reason: "Service-area tighten is Approve-recorded. Live location targeting is not in this slice.",
+      };
+    }
     if (mutation.action === "exclude_placement") {
       const placement = typeof mutation.payload.placement === "string" ? mutation.payload.placement : "audience_network";
       await graphPost(id, tokens.accessToken, {

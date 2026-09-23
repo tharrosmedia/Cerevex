@@ -5,8 +5,23 @@ import { getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";
-import { isBookedJobSignalWritable, isBudgetShiftWritable, isCapabilityOn } from "@cerevex/contracts";
+import {
+  isBookedJobSignalWritable,
+  isBrandGuardrailsVisible,
+  isBrandGuardrailsWritable,
+  isBudgetShiftWritable,
+  isCapabilityOn,
+  isGeoDisciplineWritable,
+  isSearchNegativesWritable,
+} from "@cerevex/contracts";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
+import {
+  brandGuardrailSpendBlockedReason,
+  claimHitsForEntity,
+  isM52BrandGuardrailMutation,
+  isM52GeoDisciplineMutation,
+  isM52SearchNegativeMutation,
+} from "./operator-hygiene";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { LiveEntityState, MutationOutcome } from "./mutate-types";
@@ -166,6 +181,46 @@ export function isM52BookedJobMutation(mutation: ApplyMutation): boolean {
   return mutation.action === "update_budget" && typeof reason === "string" && reason.startsWith("booked_job_");
 }
 
+async function brandSpendGuardOutcome(
+  adAccountId: string,
+  mutation: ApplyMutation,
+  flags: CapabilityFlags,
+): Promise<MutationOutcome | null> {
+  if (!isBrandGuardrailsVisible(flags)) return null;
+  const db = getDb();
+  const rows = await db.query.adEntities.findMany({
+    where: eq(adEntities.adAccountId, adAccountId),
+  });
+  const target = rows.find((row) => row.externalId === mutation.target.externalId);
+  const related = rows.filter((row) => {
+    if (row.externalId === mutation.target.externalId) return true;
+    if (!target) return false;
+    return row.parentExternalId === target.externalId || target.parentExternalId === row.externalId;
+  });
+  const pool = related.length > 0 ? related : target ? [target] : [];
+  const hits = pool.flatMap((row) =>
+    claimHitsForEntity({
+      entityType: row.entityType,
+      externalId: row.externalId,
+      name: row.name,
+      status: row.status,
+      parentExternalId: row.parentExternalId,
+      raw: (row.rawJson as Record<string, unknown>) ?? {},
+    }),
+  );
+  const blocked = brandGuardrailSpendBlockedReason(true, mutation, hits);
+  if (!blocked) return null;
+  return {
+    action: mutation.action,
+    platform: mutation.platform,
+    target: mutation.target,
+    status: "skipped",
+    mode: "mock",
+    writes: false,
+    reason: "Brand guardrail blocked this spend change. Unsupervised spend is not allowed past a claim risk.",
+  };
+}
+
 /** Live apply/read always goes through the AdPlatform connector registry. */
 export async function applyViaConnector(input: {
   platform: Platform;
@@ -209,6 +264,39 @@ export function classifyMutation(
       mode: "mock",
       writes: false,
       reason: "Booked-job signal is recommend-only or off (m52.booked_job_signal). No platform write.",
+    };
+  }
+  if (isM52SearchNegativeMutation(mutation) && !isSearchNegativesWritable(flags)) {
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: "Search-term hygiene is recommend-only or off (m52.search_negatives). No platform write.",
+    };
+  }
+  if (isM52GeoDisciplineMutation(mutation) && !isGeoDisciplineWritable(flags)) {
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: "Geo / service-area is recommend-only or off (m52.geo_discipline). No platform write.",
+    };
+  }
+  if (isM52BrandGuardrailMutation(mutation) && !isBrandGuardrailsWritable(flags)) {
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: "Brand guardrails are recommend-only or off (m52.brand_guardrails). No platform write.",
     };
   }
   if (mutation.action === "review") {
@@ -276,8 +364,12 @@ export async function executeMutation(input: {
   mutation: ApplyMutation;
   capabilities?: CapabilityFlags;
 }): Promise<MutationOutcome> {
-  const skipped = classifyMutation(input.mutation, input.capabilities ?? resolveWorkspaceCapabilities({}));
+  const flags = input.capabilities ?? resolveWorkspaceCapabilities({});
+  const skipped = classifyMutation(input.mutation, flags);
   if (skipped) return skipped;
+
+  const brandSpend = await brandSpendGuardOutcome(input.adAccountId, input.mutation, flags);
+  if (brandSpend) return brandSpend;
 
   const tokens = await loadTokens(input.adAccountId);
   if (!tokens) {

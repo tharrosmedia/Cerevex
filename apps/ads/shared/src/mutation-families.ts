@@ -19,6 +19,7 @@ export const MUTATION_FAMILY_IDS = [
   "placement_exclude",
   "bid",
   "budget",
+  "geo",
   "create_entity",
 ] as const;
 export type MutationFamilyId = (typeof MUTATION_FAMILY_IDS)[number];
@@ -66,6 +67,13 @@ export const MUTATION_FAMILIES: Record<MutationFamilyId, MutationFamily> = {
     capability: "apply.budget",
     sealed: false,
     help: "Change budget on an existing entity. Capability apply.budget (FEATURE_BUDGET_MUTATIONS).",
+  },
+  geo: {
+    id: "geo",
+    actions: ["tighten_geo"],
+    capability: null,
+    sealed: false,
+    help: "Record a service-area tighten after Approve. Live location targeting stays out of this slice.",
   },
   create_entity: {
     id: "create_entity",

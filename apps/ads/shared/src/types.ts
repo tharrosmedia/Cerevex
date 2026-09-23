@@ -165,6 +165,10 @@ export const RECOMMENDATION_TYPES = [
   "lead_lifecycle",
   "booked_job",
   "lp_intelligence",
+  "creative_fatigue",
+  "search_negatives",
+  "geo_discipline",
+  "brand_guardrails",
 ] as const;
 export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
 
@@ -185,6 +189,7 @@ export const MUTATION_ACTIONS = [
   "exclude_placement",
   "create_ad",
   "add_keyword",
+  "tighten_geo",
   "review",
 ] as const;
 export type MutationAction = (typeof MUTATION_ACTIONS)[number];
@@ -196,6 +201,7 @@ export const EXECUTABLE_MUTATION_ACTIONS = [
   "exclude_placement",
   "update_bid",
   "update_budget",
+  "tighten_geo",
 ] as const;
 export type ExecutableMutationAction = (typeof EXECUTABLE_MUTATION_ACTIONS)[number];
 
@@ -229,6 +235,18 @@ export type BookedJobSignalRecommendationType = (typeof BOOKED_JOB_SIGNAL_RECOMM
 
 export function isBookedJobSignalRecommendationType(value: string): value is BookedJobSignalRecommendationType {
   return (BOOKED_JOB_SIGNAL_RECOMMENDATION_TYPES as readonly string[]).includes(value);
+}
+
+export const HYGIENE_RECOMMENDATION_TYPES = [
+  "creative_fatigue",
+  "search_negatives",
+  "geo_discipline",
+  "brand_guardrails",
+] as const;
+export type HygieneRecommendationType = (typeof HYGIENE_RECOMMENDATION_TYPES)[number];
+
+export function isHygieneRecommendationType(value: string): value is HygieneRecommendationType {
+  return (HYGIENE_RECOMMENDATION_TYPES as readonly string[]).includes(value);
 }
 
 export type StubPingPayload = {

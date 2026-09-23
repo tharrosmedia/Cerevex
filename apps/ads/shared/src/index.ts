@@ -31,6 +31,27 @@ export type {
 // `/app/page` build failure).
 export { mockPull } from "./platforms";
 export { evaluateAccount, AUDIT_THRESHOLDS } from "./audit-engine";
+export {
+  HYGIENE_THRESHOLDS,
+  evaluateOperatorHygiene,
+  recsFromCreativeFatigue,
+  recsFromSearchNegatives,
+  recsFromGeoDiscipline,
+  recsFromBrandGuardrails,
+  scanClaimHits,
+  claimHitsForEntity,
+  brandGuardrailSpendBlockedReason,
+  isSpendIncreasingMutation,
+  isM52SearchNegativeMutation,
+  isM52GeoDisciplineMutation,
+  isM52BrandGuardrailMutation,
+  isM52CreativeFatigueMutation,
+  mockWasteSearchTerms,
+  searchTermsFromRaw,
+  geoFromRaw,
+  isBroadGeo,
+} from "./operator-hygiene";
+export type { HygieneRecDraft, HygieneEntity, HygieneMetric, SearchTermRow, ClaimHit } from "./operator-hygiene";
 export { evaluateClientM51, M51_THRESHOLDS } from "./m51-engine";
 export {
   analyzeCopySentiment,
