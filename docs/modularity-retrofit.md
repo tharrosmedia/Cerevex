@@ -53,7 +53,7 @@ Shared `Connector` surface: `isConfigured`, `connect`, `disconnect`. Meta + Call
 ## R4 (same PR)
 
 - One ads-nav catalog in `@shopify-brain/contracts` (`resolveAdsNav`). In-shell `/ads` is the operator path.
-- Leftover `apps/ads/web` is gated by `shell.legacy_ads_web` (default hidden) and points Audits/Suggestions at console `/ads`.
+- Leftover `apps/ads/web` is hard-blocked unless `shell.legacy_ads_web` is on (default hidden). Authenticated `/app/*` redirects to in-shell `/ads`. `NEXT_PUBLIC_ADS_LEGACY_CHROME=1` remains the console cross-origin link gate.
 - Cross-origin `NEXT_PUBLIC_ADS_ORIGIN` is ignored unless `NEXT_PUBLIC_ADS_LEGACY_CHROME=1`.
 
 ## Deferred

@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyEnvKills,
+  canApproveWithApply,
   defaultCapabilityFlags,
   envCapabilityKills,
   inferApplyJobType,
+  isApplyEnabled,
+  isLegacyAdsWebAllowed,
   isMutationFamilyEnabled,
+  legacyAdsWebGate,
   MUTATION_FAMILIES,
   resolveWorkspaceCapabilities,
   settingsJsonWithCapabilityOverrides,
@@ -77,6 +81,35 @@ describe("capability registry", () => {
     expect(isMutationFamilyEnabled(MUTATION_FAMILIES.pause, off)).toBe(true);
     expect(inferApplyJobType([{ action: "create_ad" }, { action: "add_keyword" }])).toBe("create_entity");
     expect(inferApplyJobType([{ action: "pause" }, { action: "create_ad" }])).toBe("mutate_existing");
+  });
+
+  it("hard-blocks leftover ads-web unless shell.legacy_ads_web is on", () => {
+    const flags = defaultCapabilityFlags();
+    expect(isLegacyAdsWebAllowed(flags)).toBe(false);
+    expect(legacyAdsWebGate({ loading: false, authenticated: true, capabilities: flags })).toBe("block");
+    expect(
+      legacyAdsWebGate({
+        loading: false,
+        authenticated: true,
+        capabilities: { ...flags, "shell.legacy_ads_web": "on" },
+      }),
+    ).toBe("allow");
+    expect(
+      legacyAdsWebGate({
+        loading: false,
+        authenticated: true,
+        capabilities: { ...flags, "shell.legacy_ads_web": "recommend_only" },
+      }),
+    ).toBe("block");
+  });
+
+  it("ANDs apply into Approve the same way in-shell does", () => {
+    const flags = defaultCapabilityFlags();
+    expect(isApplyEnabled(flags)).toBe(true);
+    expect(canApproveWithApply(true, flags)).toBe(true);
+    expect(canApproveWithApply(true, { ...flags, apply: "hidden" })).toBe(false);
+    expect(canApproveWithApply(true, { ...flags, apply: "recommend_only" })).toBe(false);
+    expect(canApproveWithApply(false, flags)).toBe(false);
   });
 });
 

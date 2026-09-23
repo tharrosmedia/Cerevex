@@ -293,6 +293,36 @@ export function isCapabilityWritable(id: CapabilityId, flags: CapabilityFlags): 
   return flags[id] === "on";
 }
 
+/** Leftover ads-web chrome is break-glass only. Default hidden. */
+export function isLegacyAdsWebAllowed(flags: CapabilityFlags): boolean {
+  return isCapabilityWritable("shell.legacy_ads_web", flags);
+}
+
+/** Approve may queue writes only when apply is on (not hidden / recommend_only). */
+export function isApplyEnabled(flags: CapabilityFlags): boolean {
+  return isCapabilityWritable("apply", flags);
+}
+
+export function canApproveWithApply(operatorCanApprove: boolean, flags: CapabilityFlags): boolean {
+  return Boolean(operatorCanApprove) && isApplyEnabled(flags);
+}
+
+export type LegacyAdsWebGate = "loading" | "unauthenticated" | "allow" | "block";
+
+/**
+ * Hard-gate leftover /app/* chrome. Fail closed once a session exists.
+ * Sign-in stays available so an operator can authenticate, then get redirected.
+ */
+export function legacyAdsWebGate(input: {
+  loading: boolean;
+  authenticated: boolean;
+  capabilities: CapabilityFlags;
+}): LegacyAdsWebGate {
+  if (input.loading) return "loading";
+  if (!input.authenticated) return "unauthenticated";
+  return isLegacyAdsWebAllowed(input.capabilities) ? "allow" : "block";
+}
+
 export function capabilityBlockMessage(id: CapabilityId, state: CapabilityState | undefined): string {
   const label = CAPABILITY_CATALOG[id]?.label ?? id;
   if (state === "recommend_only") {

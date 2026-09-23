@@ -110,6 +110,10 @@ export {
   isCapabilityOn,
   isCapabilityVisible,
   isCapabilityWritable,
+  isLegacyAdsWebAllowed,
+  isApplyEnabled,
+  canApproveWithApply,
+  legacyAdsWebGate,
   capabilityBlockMessage,
   filterItemsByCapabilities,
 } from "./capabilities";
@@ -119,6 +123,7 @@ export type {
   CapabilityFlags,
   CapabilityOverrides,
   CapabilityCatalogEntry,
+  LegacyAdsWebGate,
 } from "./capabilities";
 
 export {

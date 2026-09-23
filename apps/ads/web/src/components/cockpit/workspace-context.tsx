@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { CapabilityFlags, ModuleFlags, SessionUser, WorkspaceSummary } from "@tharros/ads-shared";
-import { defaultCapabilityFlags, unboardedModules } from "@tharros/ads-shared";
+import { canApproveWithApply, defaultCapabilityFlags, isApplyEnabled, unboardedModules } from "@tharros/ads-shared";
 import { ApiError, getWorkspace, me } from "@/lib/api";
 
 type WorkspaceState = {
@@ -12,6 +12,7 @@ type WorkspaceState = {
   killSwitch: boolean;
   canMutate: boolean;
   canApprove: boolean;
+  applyOn: boolean;
   workspaceName: string | null;
   modules: ModuleFlags;
   capabilities: CapabilityFlags;
@@ -29,7 +30,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
   const [killSwitch, setKillSwitch] = useState(true);
   const [canMutate, setCanMutate] = useState(false);
-  const [canApprove, setCanApprove] = useState(false);
+  const [operatorCanApprove, setOperatorCanApprove] = useState(false);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleFlags>(unboardedModules());
   const [capabilities, setCapabilities] = useState<CapabilityFlags>(defaultCapabilityFlags());
@@ -44,7 +45,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setWorkspace(result.workspace);
     setKillSwitch(result.workspace?.applyKillSwitch ?? true);
     setCanMutate(result.canMutate);
-    setCanApprove(Boolean(result.canApprove));
+    setOperatorCanApprove(Boolean(result.canApprove));
     setWorkspaceName(result.workspace?.name ?? null);
     setModules(result.workspace?.modules ?? unboardedModules());
     setCapabilities(result.workspace?.capabilities ?? defaultCapabilityFlags());
@@ -72,6 +73,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [refresh, router]);
 
+  const applyOn = isApplyEnabled(capabilities);
+  const canApprove = canApproveWithApply(operatorCanApprove, capabilities);
+
   const value = useMemo(
     () => ({
       user,
@@ -79,6 +83,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       killSwitch,
       canMutate,
       canApprove,
+      applyOn,
       workspaceName,
       modules,
       capabilities,
@@ -87,7 +92,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       error,
       refresh,
     }),
-    [user, workspace, killSwitch, canMutate, canApprove, workspaceName, modules, capabilities, onboardingComplete, loading, error, refresh],
+    [user, workspace, killSwitch, canMutate, canApprove, applyOn, workspaceName, modules, capabilities, onboardingComplete, loading, error, refresh],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

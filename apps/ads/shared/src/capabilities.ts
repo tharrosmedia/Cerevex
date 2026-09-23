@@ -33,6 +33,10 @@ export {
   isCapabilityState,
   isCapabilityVisible,
   isCapabilityWritable,
+  isLegacyAdsWebAllowed,
+  isApplyEnabled,
+  canApproveWithApply,
+  legacyAdsWebGate,
   mergeCapabilityFlags,
   parseCapabilityOverrides,
   resolveWorkspaceCapabilities,
@@ -44,6 +48,7 @@ export type {
   CapabilityId,
   CapabilityOverrides,
   CapabilityState,
+  LegacyAdsWebGate,
 } from "@shopify-brain/contracts";
 
 export function readWorkspaceCapabilities(settingsJson: unknown): CapabilityFlags {
