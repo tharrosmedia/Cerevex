@@ -1,4 +1,6 @@
+import type { CapabilityFlags } from "@shopify-brain/contracts";
 import type { ApplyMutation } from "../audit-schemas";
+import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
 import { mockPull } from "../platforms";
@@ -75,9 +77,9 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     return isGoogleConfigured();
   }
 
-  isLiveAllowed(tokens?: StoredOAuthTokens | null): boolean {
+  isLiveAllowed(tokens?: StoredOAuthTokens | null, flags?: CapabilityFlags): boolean {
     if (tokens?.mock) return false;
-    if (process.env.PLATFORM_SYNC_LIVE === "0") return false;
+    if (!platformSyncLiveEnabled(flags)) return false;
     return this.isConfigured();
   }
 

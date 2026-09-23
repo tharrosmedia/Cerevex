@@ -69,7 +69,7 @@ export default async function RootLayout({
                   Cerevex
                 </Link>
                 <SiteNav
-                  adsOrigin={adsModuleOrigin()}
+                  adsOrigin={adsModuleOrigin(capabilities)}
                   modules={modules}
                   capabilities={capabilities}
                   railExtra={

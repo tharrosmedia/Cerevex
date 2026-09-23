@@ -7,6 +7,7 @@ import type {
   AdPlatformConnectorId,
   AnalyticsConnectorId,
   CallTrackingConnectorId,
+  CapabilityFlags,
   CapabilityId,
   ConnectorImplementation,
   ConnectorKind,
@@ -71,7 +72,7 @@ export interface AdPlatformConnector extends Connector {
   readonly platform: Platform;
   readonly connectCapability: Extract<CapabilityId, "connect.meta" | "connect.google">;
   authorizeUrl(state: string): string;
-  isLiveAllowed(tokens?: StoredOAuthTokens | null): boolean;
+  isLiveAllowed(tokens?: StoredOAuthTokens | null, flags?: CapabilityFlags): boolean;
   pull(input: ConnectorPullInput): Promise<PullResult>;
   refreshTokens(tokens: StoredOAuthTokens): Promise<StoredOAuthTokens>;
   exchangeCode(code: string): Promise<ConnectorExchangeResult>;

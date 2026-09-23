@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   OPERATOR_CAPABILITY_CATALOG_LIST,
   applyEnvKills,
+  approveOperatorEmails,
+  canApproveApply,
   canApproveWithApply,
   capabilityOnBlockedReason,
+  DEFAULT_APPROVE_OPERATOR_EMAIL,
   defaultCapabilityFlags,
   defaultModulesFor,
   envCapabilityKills,
@@ -12,8 +15,11 @@ import {
   isLeadsSurfaceVisible,
   isLegacyAdsWebAllowed,
   isMutationFamilyEnabled,
+  isPlatformSyncLiveOn,
+  legacyAdsChromeLinksAllowed,
   legacyAdsWebGate,
   MUTATION_FAMILIES,
+  OPS_ENV_REGISTRY,
   resolveAdsNav,
   resolveWorkspaceCapabilities,
   settingsJsonWithCapabilityOverrides,
@@ -26,6 +32,8 @@ describe("capability registry", () => {
     CAPABILITY_KILL_APPLY: process.env.CAPABILITY_KILL_APPLY,
     FEATURE_BID_MUTATIONS: process.env.FEATURE_BID_MUTATIONS,
     FEATURE_BUDGET_MUTATIONS: process.env.FEATURE_BUDGET_MUTATIONS,
+    PLATFORM_SYNC_LIVE: process.env.PLATFORM_SYNC_LIVE,
+    NEXT_PUBLIC_ADS_LEGACY_CHROME: process.env.NEXT_PUBLIC_ADS_LEGACY_CHROME,
   };
 
   afterEach(() => {
@@ -43,6 +51,7 @@ describe("capability registry", () => {
     expect(flags["connect.google"]).toBe("on");
     expect(flags.audits).toBe("on");
     expect(flags["apply.create_entity"]).toBe("hidden");
+    expect(flags["sync.live"]).toBe("on");
     expect(flags["shell.legacy_ads_web"]).toBe("hidden");
     expect(flags["m51.budget_shift"]).toBe("hidden");
     expect(flags["m51.ga4_connect"]).toBe("hidden");
@@ -83,20 +92,65 @@ describe("capability registry", () => {
     expect((next.capabilities as { audits: string }).audits).toBe("hidden");
   });
 
-  it("applies env global kill and legacy bid/budget flags", () => {
+  it("applies env global kill and legacy bid/budget/sync-live flags", () => {
     const env = {
       CAPABILITY_KILL: "audits",
       CAPABILITY_KILL_APPLY: "1",
       FEATURE_BID_MUTATIONS: "0",
       FEATURE_BUDGET_MUTATIONS: "false",
+      PLATFORM_SYNC_LIVE: "0",
     };
-    expect(envCapabilityKills(env).sort()).toEqual(["apply", "apply.bid", "apply.budget", "audits"]);
+    expect(envCapabilityKills(env).sort()).toEqual(["apply", "apply.bid", "apply.budget", "audits", "sync.live"]);
     const flags = applyEnvKills(defaultCapabilityFlags(), env);
     expect(flags.apply).toBe("hidden");
     expect(flags.audits).toBe("hidden");
     expect(flags["apply.bid"]).toBe("hidden");
     expect(flags["apply.budget"]).toBe("hidden");
+    expect(flags["sync.live"]).toBe("hidden");
     expect(flags.cockpit).toBe("on");
+  });
+
+  it("maps PLATFORM_SYNC_LIVE=0 onto sync.live without treating secrets as flags", () => {
+    expect(isPlatformSyncLiveOn(defaultCapabilityFlags())).toBe(true);
+    expect(
+      isPlatformSyncLiveOn(resolveWorkspaceCapabilities({ capabilities: { "sync.live": "hidden" } })),
+    ).toBe(false);
+    expect(resolveWorkspaceCapabilities({}, { PLATFORM_SYNC_LIVE: "0" })["sync.live"]).toBe("hidden");
+    expect(resolveWorkspaceCapabilities({}, { PLATFORM_SYNC_LIVE: "1" })["sync.live"]).toBe("on");
+    expect(OPS_ENV_REGISTRY.filter((entry) => entry.kind === "secret").every((entry) => !entry.capability)).toBe(true);
+    expect(OPS_ENV_REGISTRY.find((entry) => entry.env === "APPROVE_OPERATOR_EMAILS")?.kind).toBe("identity");
+    expect(OPS_ENV_REGISTRY.find((entry) => entry.env === "PLATFORM_SYNC_LIVE")?.capability).toBe("sync.live");
+  });
+
+  it("requires shell.legacy_ads_web and NEXT_PUBLIC_ADS_LEGACY_CHROME for leftover chrome links", () => {
+    const flags = defaultCapabilityFlags();
+    expect(legacyAdsChromeLinksAllowed(flags, { NEXT_PUBLIC_ADS_LEGACY_CHROME: "1" })).toBe(false);
+    expect(
+      legacyAdsChromeLinksAllowed({ ...flags, "shell.legacy_ads_web": "on" }, { NEXT_PUBLIC_ADS_LEGACY_CHROME: "1" }),
+    ).toBe(true);
+    expect(
+      legacyAdsChromeLinksAllowed({ ...flags, "shell.legacy_ads_web": "on" }, { NEXT_PUBLIC_ADS_LEGACY_CHROME: "0" }),
+    ).toBe(false);
+    expect(
+      legacyAdsChromeLinksAllowed({ ...flags, "shell.legacy_ads_web": "recommend_only" }, {
+        NEXT_PUBLIC_ADS_LEGACY_CHROME: "1",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps Approve identity on APPROVE_OPERATOR_EMAILS (Adam default)", () => {
+    expect(approveOperatorEmails({})).toEqual([DEFAULT_APPROVE_OPERATOR_EMAIL]);
+    expect(approveOperatorEmails({ APPROVE_OPERATOR_EMAILS: "" })).toEqual([DEFAULT_APPROVE_OPERATOR_EMAIL]);
+    expect(approveOperatorEmails({ SEED_OWNER_EMAIL: "other@tharrosmedia.com" })).toEqual([
+      DEFAULT_APPROVE_OPERATOR_EMAIL,
+    ]);
+    expect(approveOperatorEmails({ APPROVE_OPERATOR_EMAILS: "adam@tharrosmedia.com, ops@tharrosmedia.com" })).toEqual([
+      "adam@tharrosmedia.com",
+      "ops@tharrosmedia.com",
+    ]);
+    expect(canApproveApply("adam@tharrosmedia.com", {})).toBe(true);
+    expect(canApproveApply("operator@tharrosmedia.com", {})).toBe(false);
+    expect(canApproveApply("ops@tharrosmedia.com", { APPROVE_OPERATOR_EMAILS: "ops@tharrosmedia.com" })).toBe(true);
   });
 
   it("never throws on garbage settings_json", () => {

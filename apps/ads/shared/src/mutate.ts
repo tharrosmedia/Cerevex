@@ -180,7 +180,7 @@ export async function executeMutation(input: {
   }
 
   const connector = getAdPlatformConnector(input.platform);
-  if (!connector.isLiveAllowed(tokens)) {
+  if (!connector.isLiveAllowed(tokens, input.capabilities ?? resolveWorkspaceCapabilities({}))) {
     return applyMockMutation(input.adAccountId, input.mutation);
   }
 

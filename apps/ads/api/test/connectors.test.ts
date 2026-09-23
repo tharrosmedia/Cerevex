@@ -10,6 +10,7 @@ import {
   mockAdPlatformConnector,
   type Connector,
 } from "@tharros/ads-shared/connectors";
+import { defaultCapabilityFlags } from "@tharros/ads-shared";
 import { applyViaConnector } from "@tharros/ads-shared/mutate";
 import { exchangeCode } from "../src/oauth-exchange";
 
@@ -37,6 +38,15 @@ describe("connector interfaces", () => {
     expect(mockAdPlatformConnector.implementation).toBe("mock");
     expect(typeof metaAdPlatformConnector.authorizeUrl).toBe("function");
     expect(typeof metaAdPlatformConnector.pull).toBe("function");
+  });
+
+  it("refuses live pull when sync.live is hidden even if tokens look live", () => {
+    const flags = { ...defaultCapabilityFlags(), "sync.live": "hidden" as const };
+    expect(metaAdPlatformConnector.isLiveAllowed({ accessToken: "tok", mock: false }, flags)).toBe(false);
+    expect(googleAdPlatformConnector.isLiveAllowed({ accessToken: "tok", mock: false }, flags)).toBe(false);
+    expect(metaAdPlatformConnector.isLiveAllowed({ accessToken: "tok", mock: true }, defaultCapabilityFlags())).toBe(
+      false,
+    );
   });
 
   it("exposes pull, mutate, refresh, and exchange on Meta/Google connectors", () => {

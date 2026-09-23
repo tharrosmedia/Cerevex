@@ -13,6 +13,7 @@
  * - CAPABILITY_KILL=apply,connect.meta
  * - CAPABILITY_KILL_APPLY=1  (dots → underscores, uppercased)
  * - FEATURE_BID_MUTATIONS=0 / FEATURE_BUDGET_MUTATIONS=0 (legacy → apply.bid / apply.budget)
+ * - PLATFORM_SYNC_LIVE=0 (legacy → sync.live)
  */
 
 export const CAPABILITY_STATES = ["on", "hidden", "recommend_only"] as const;
@@ -27,6 +28,7 @@ export const CAPABILITY_IDS = [
   "apply.bid",
   "apply.budget",
   "apply.create_entity",
+  "sync.live",
   "shell.legacy_ads_web",
   "m51.budget_shift",
   "m51.grok_creatives",
@@ -112,6 +114,14 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: true,
     group: "apply",
+  },
+  "sync.live": {
+    id: "sync.live",
+    label: "Live platform sync",
+    help: "Allow Meta/Google live pull and apply when app keys are set. Off degrades to mock. Legacy env: PLATFORM_SYNC_LIVE=0.",
+    defaultState: "on",
+    unfinished: false,
+    group: "product",
   },
   "shell.legacy_ads_web": {
     id: "shell.legacy_ads_web",
@@ -230,15 +240,15 @@ function envExplicitOff(raw: string | undefined): boolean {
   return value === "0" || value === "false" || value === "off";
 }
 
-type EnvMap = Record<string, string | undefined>;
+export type ProcessEnvMap = Record<string, string | undefined>;
 
 /** Browser-safe. Reads process.env when present — no node:fs, no @types/node. */
-export function readProcessEnv(): EnvMap {
-  const runtime = globalThis as { process?: { env?: EnvMap } };
+export function readProcessEnv(): ProcessEnvMap {
+  const runtime = globalThis as { process?: { env?: ProcessEnvMap } };
   return runtime.process?.env ?? {};
 }
 
-export function envCapabilityKills(env: EnvMap = readProcessEnv()): CapabilityId[] {
+export function envCapabilityKills(env: ProcessEnvMap = readProcessEnv()): CapabilityId[] {
   const kills = new Set<CapabilityId>();
   const list = env.CAPABILITY_KILL ?? "";
   for (const part of list.split(",")) {
@@ -250,6 +260,7 @@ export function envCapabilityKills(env: EnvMap = readProcessEnv()): CapabilityId
   }
   if (envExplicitOff(env.FEATURE_BID_MUTATIONS)) kills.add("apply.bid");
   if (envExplicitOff(env.FEATURE_BUDGET_MUTATIONS)) kills.add("apply.budget");
+  if (envExplicitOff(env.PLATFORM_SYNC_LIVE)) kills.add("sync.live");
   return [...kills];
 }
 
@@ -277,7 +288,7 @@ export function mergeCapabilityFlags(
 
 export function applyEnvKills(
   flags: CapabilityFlags,
-  env: EnvMap = readProcessEnv(),
+  env: ProcessEnvMap = readProcessEnv(),
 ): CapabilityFlags {
   const next = { ...flags };
   for (const id of envCapabilityKills(env)) {
@@ -292,7 +303,7 @@ export function applyEnvKills(
  */
 export function resolveWorkspaceCapabilities(
   settingsJson: unknown,
-  env: EnvMap = readProcessEnv(),
+  env: ProcessEnvMap = readProcessEnv(),
 ): CapabilityFlags {
   const obj = settingsJson && typeof settingsJson === "object" && !Array.isArray(settingsJson)
     ? (settingsJson as Record<string, unknown>)
@@ -327,6 +338,27 @@ export function isCapabilityWritable(id: CapabilityId, flags: CapabilityFlags): 
 /** Leftover ads-web chrome is break-glass only. Default hidden. */
 export function isLegacyAdsWebAllowed(flags: CapabilityFlags): boolean {
   return isCapabilityWritable("shell.legacy_ads_web", flags);
+}
+
+/** Live Meta/Google pull + apply. Env PLATFORM_SYNC_LIVE=0 is a global kill. */
+export function isPlatformSyncLiveOn(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("sync.live", flags);
+}
+
+/** Deploy-time companion for leftover chrome links. Not a second product flag. */
+export function isLegacyAdsChromeEnvEnabled(env: ProcessEnvMap = readProcessEnv()): boolean {
+  return env.NEXT_PUBLIC_ADS_LEGACY_CHROME === "1";
+}
+
+/**
+ * Console may emit NEXT_PUBLIC_ADS_ORIGIN only when leftover chrome is on
+ * AND the deploy-time env companion is set. G2 still hard-blocks /app/*.
+ */
+export function legacyAdsChromeLinksAllowed(
+  flags: CapabilityFlags,
+  env: ProcessEnvMap = readProcessEnv(),
+): boolean {
+  return isLegacyAdsWebAllowed(flags) && isLegacyAdsChromeEnvEnabled(env);
 }
 
 /** Approve may queue writes only when apply is on (not hidden / recommend_only). */

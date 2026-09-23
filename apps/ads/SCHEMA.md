@@ -35,6 +35,7 @@ The kill switch is a hard product control (default **true** / ON). Approve is bl
     "apply.bid": "on",
     "apply.budget": "on",
     "apply.create_entity": "hidden",
+    "sync.live": "on",
     "shell.legacy_ads_web": "hidden",
     "m51.budget_shift": "hidden",
     "m51.grok_creatives": "hidden",
@@ -49,7 +50,7 @@ Defaults: Leads ON for all; Clients ON only for agency; Sales ON only for ecomme
 
 `modules.leads` is IA only. The Leads / leftover brainstorm placeholder (`/ads/leads`, `/app/brainstorm`) also requires `capabilities["m51.brainstorm"]` to be `on` or `recommend_only`. While that capability is unfinished, Settings hides the Leads toggle (value is preserved) and hides all unfinished `m51.*` flags. `PATCH /workspace` refuses `m51.*: "on"` until `unfinished` is cleared.
 
-Capability states are `on` | `hidden` | `recommend_only`. Unfinished / M5.1 units stay hidden. Optional env global kill (`CAPABILITY_KILL=apply,connect.meta` or `CAPABILITY_KILL_APPLY=1`) hides a capability for every workspace without redeploying Site Brain. Legacy `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` map to `apply.bid` / `apply.budget`. Core GET paths (cockpit, clients, audits, recommendations) never throw when a flag is off.
+Capability states are `on` | `hidden` | `recommend_only`. Unfinished / M5.1 units stay hidden. Optional env global kill (`CAPABILITY_KILL=apply,connect.meta` or `CAPABILITY_KILL_APPLY=1`) hides a capability for every workspace without redeploying Site Brain. Legacy `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` map to `apply.bid` / `apply.budget`. Legacy `PLATFORM_SYNC_LIVE=0` maps to `sync.live`. `NEXT_PUBLIC_ADS_LEGACY_CHROME=1` is the deploy-time companion for `shell.legacy_ads_web` (console leftover-chrome links need both). `APPROVE_OPERATOR_EMAILS` is the Adam-only identity allowlist — not a capability. `APP_PASSWORD`, `JWT_SECRET`, `ADS_INTERNAL_KEY`, and `TOKEN_ENCRYPTION_KEY` stay env secrets (not flags). Core GET paths (cockpit, clients, audits, recommendations) never throw when a flag is off. See `docs/modularity-retrofit.md` G8 and `OPS_ENV_REGISTRY`.
 
 ### users
 `id`, `email` (unique), `name`, `password_hash`, `created_at`

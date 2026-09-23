@@ -12,7 +12,7 @@ Stored on `os.workspaces.settings_json.capabilities` (same JSON as Modules & Nav
 | `hidden` | Unfinished / off. UI hides. Writes return 409. Reads never throw. |
 | `recommend_only` | Visible as a recommendation. No writes. |
 
-Seeded ids: `cockpit`, `apply`, `connect.meta`, `connect.google`, `audits`. Dark placeholders: `m51.budget_shift`, `m51.grok_creatives`, `m51.lp_congruence`, `m51.ga4_connect`, `m51.brainstorm`. R3/R4 also register `apply.bid`, `apply.budget`, `apply.create_entity`, `shell.legacy_ads_web`.
+Seeded ids: `cockpit`, `apply`, `connect.meta`, `connect.google`, `audits`, `sync.live`. Dark placeholders: `m51.budget_shift`, `m51.grok_creatives`, `m51.lp_congruence`, `m51.ga4_connect`, `m51.brainstorm`. R3/R4 also register `apply.bid`, `apply.budget`, `apply.create_entity`, `shell.legacy_ads_web`.
 
 Resolution: catalog default → workspace override → env global kill.
 
@@ -21,6 +21,7 @@ Env kills (no Site Brain redeploy):
 - `CAPABILITY_KILL=apply,connect.meta`
 - `CAPABILITY_KILL_AUDITS=1` (dots become underscores)
 - `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` (legacy → `apply.bid` / `apply.budget`)
+- `PLATFORM_SYNC_LIVE=0` (legacy → `sync.live`)
 
 `GET`/`PATCH /workspace` returns `workspace.capabilities`, `capabilityCatalog`, and `capabilityKills`. Settings → Capabilities (in-shell and leftover ads-web) flips live product flags only. Unfinished `m51.*` stay out of the operator catalog. `PATCH` still accepts `hidden` / `recommend_only` for those ids; `on` is 409 until `unfinished` is cleared.
 
@@ -55,17 +56,36 @@ Sync (`runAdAccountSync`) and live apply (`executeMutation` / `applyViaConnector
 ## R4 (same PR)
 
 - One ads-nav catalog in `@shopify-brain/contracts` (`resolveAdsNav`). In-shell `/ads` is the operator path.
-- Leftover `apps/ads/web` is hard-blocked unless `shell.legacy_ads_web` is on (default hidden). Authenticated `/app/*` redirects to in-shell `/ads`. `NEXT_PUBLIC_ADS_LEGACY_CHROME=1` remains the console cross-origin link gate.
-- Cross-origin `NEXT_PUBLIC_ADS_ORIGIN` is ignored unless `NEXT_PUBLIC_ADS_LEGACY_CHROME=1`.
+- Leftover `apps/ads/web` is hard-blocked unless `shell.legacy_ads_web` is on (default hidden). Authenticated `/app/*` redirects to in-shell `/ads`.
+- Console leftover-chrome links require **both** `shell.legacy_ads_web=on` and `NEXT_PUBLIC_ADS_LEGACY_CHROME=1`. `NEXT_PUBLIC_ADS_ORIGIN` is ignored unless that pair is on. The env is a deploy-time companion, not a second product flag.
 
 ## Deferred
 
 - **R5** — no deploy/naming quarantine, no Neon `os` rename, no `@shopify-brain` package rename.
 - **M5.1 Brief 1.6** — no budget-shift UI, Grok creatives, LP congruence, GA4 connect UX, or brainstorm product.
 - **M5.2** — no heatmaps, CallRail product, CRM, weekly narrative.
-- **G7 / G8 / G10 / R5** — Inngest/package rename, leftover env knobs, Neon `os` / `@shopify-brain` rename. Not this PR.
+- **G7 / G10 / R5** — Inngest/package rename, Neon `os` / `@shopify-brain` rename. Not this PR.
 
 ## G6 + G9 (follow-up)
 
 - **G6** — Operator Settings lists `OPERATOR_CAPABILITY_CATALOG_LIST` (no unfinished `group: "m51"`). Nav still has no `m51.*` items except the mapped Leads row, which stays hidden while `m51.brainstorm` is hidden.
 - **G9** — IA module `leads` maps to capability `m51.brainstorm`. `resolveAdsNav`, in-shell `/ads/leads`, and leftover `/app/brainstorm` require both `modules.leads` and a visible `m51.brainstorm`. Modules Settings shows Leads as “Not live” while the capability is unfinished so enablement cannot diverge. No brainstorm product UI.
+
+## G8 (ops / env leftovers)
+
+Canonical map lives in `@shopify-brain/contracts` (`OPS_ENV_REGISTRY`).
+
+| Env | Kind | Capability / dest | Notes |
+|---|---|---|---|
+| `FEATURE_BID_MUTATIONS=0` | capability kill | `apply.bid` | Already mapped. Do not regress. |
+| `FEATURE_BUDGET_MUTATIONS=0` | capability kill | `apply.budget` | Already mapped. Do not regress. |
+| `PLATFORM_SYNC_LIVE=0` | capability kill | `sync.live` | Default `on`. Off degrades Meta/Google pull + apply to mock. Prefer Settings or `CAPABILITY_KILL_SYNC_LIVE=1`. |
+| `NEXT_PUBLIC_ADS_LEGACY_CHROME=1` | capability companion | `shell.legacy_ads_web` | Deploy-time console link allow. G2 still hard-blocks leftover `/app/*` unless the capability is `on`. |
+| `APPROVE_OPERATOR_EMAILS` | identity | — | Adam-only soft-launch allowlist. Default `adam@tharrosmedia.com`. Not a capability. `SEED_OWNER_EMAIL` is seed-only. Still ANDed with `apply` + kill switch + freeze. |
+| `APP_PASSWORD` | secret | Brain console session | Not ads JWT. Not a feature flag. |
+| `JWT_SECRET` | secret | Ads user sessions | Separate from Brain login. |
+| `ADS_INTERNAL_KEY` | secret | Brain BFF → ads API | `x-cerevex-internal-key`. Acts as seeded owner. |
+| `ADS_API_TOKEN` | secret | Optional BFF Bearer | Not a feature flag. |
+| `TOKEN_ENCRYPTION_KEY` | secret | OAuth at rest | Not a feature flag. |
+
+Do not put secrets or operator emails in `settings_json`.

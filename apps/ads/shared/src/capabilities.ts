@@ -38,6 +38,9 @@ export {
   isCapabilityVisible,
   isCapabilityWritable,
   isLegacyAdsWebAllowed,
+  isPlatformSyncLiveOn,
+  isLegacyAdsChromeEnvEnabled,
+  legacyAdsChromeLinksAllowed,
   isApplyEnabled,
   canApproveWithApply,
   legacyAdsWebGate,
@@ -45,6 +48,9 @@ export {
   parseCapabilityOverrides,
   resolveWorkspaceCapabilities,
   settingsJsonWithCapabilityOverrides,
+  OPS_ENV_REGISTRY,
+  opsEnvSecrets,
+  opsEnvCapabilityKills,
 } from "@shopify-brain/contracts";
 export type {
   CapabilityCatalogEntry,
@@ -53,6 +59,9 @@ export type {
   CapabilityOverrides,
   CapabilityState,
   LegacyAdsWebGate,
+  OpsEnvEntry,
+  OpsEnvKind,
+  ProcessEnvMap,
 } from "@shopify-brain/contracts";
 
 export function readWorkspaceCapabilities(settingsJson: unknown): CapabilityFlags {

@@ -102,6 +102,7 @@ export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<A
   if (!headers.has("content-type") && init.body) {
     headers.set("content-type", "application/json");
   }
+  // Service secrets only — not product flags. APP_PASSWORD is Brain console session.
   const internalKey = process.env.ADS_INTERNAL_KEY;
   const token = process.env.ADS_API_TOKEN;
   if (internalKey) headers.set("x-cerevex-internal-key", internalKey);
