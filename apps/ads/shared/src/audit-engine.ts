@@ -7,6 +7,8 @@ import {
 } from "./audit-schemas";
 import type { BookedJob, CallRecord } from "./attribution";
 import { summarizeAttribution } from "./attribution";
+import { getDefaultSiteConnector } from "./connectors/site";
+import { recsFromSessionSignals, type AggregatedSessionSignal } from "./lp-intelligence";
 import type { Platform, RecommendationType } from "./types";
 
 export const AUDIT_THRESHOLDS = {
@@ -51,6 +53,8 @@ export type EvaluateAccountInput = {
     bundledEnabled?: boolean;
     crmEnabled?: boolean;
     sourceLabel?: string;
+    lpSignals?: AggregatedSessionSignal[];
+    lpIntelligenceEnabled?: boolean;
   };
 };
 
@@ -417,6 +421,55 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
             bookedJobLabel: booked?.bookedJobLabel,
           },
           mutations: target ? [mutation(input.platform, "review", target, { action: "crm_join_review_only" })] : [],
+        }),
+      );
+    }
+  }
+
+  if (offline?.lpIntelligenceEnabled && (offline.lpSignals?.length ?? 0) > 0) {
+    const site = getDefaultSiteConnector();
+    const drafts = recsFromSessionSignals(offline.lpSignals ?? [], site);
+    const target = campaigns[0];
+    findings.push(
+      finding(input, "lp_intelligence", "info", "Landing-page session signals from Clarity", {
+        hint: drafts[0]?.why,
+        signalCount: drafts.length,
+        siteApply: site.supportsLandingPageMutation ? "ready" : "later",
+        capture: false,
+      }),
+    );
+    for (const draft of drafts) {
+      recommendations.push(
+        recommendation(input, {
+          type: "lp_intelligence",
+          ruleId: `lp_${draft.kind}`,
+          title: draft.title,
+          rationale: draft.rationale,
+          estimatedImpactUsd: null,
+          risk: "low",
+          confidence: confidence(0.62),
+          evidence: {
+            inbox: "lp_intelligence",
+            kind: draft.kind,
+            why: draft.why,
+            siteApply: draft.siteApply,
+            capture: false,
+            writes: false,
+            landingPageUrl: draft.signal.pageUrl,
+            metric: draft.signal.metric,
+            value: draft.signal.value,
+            details: draft.signal.details,
+            sessionCount: draft.signal.details.sessionCount,
+          },
+          mutations: target
+            ? [
+                mutation(input.platform, "review", target, {
+                  action: "lp_intelligence",
+                  kind: draft.kind,
+                  siteApply: draft.siteApply,
+                }),
+              ]
+            : [],
         }),
       );
     }

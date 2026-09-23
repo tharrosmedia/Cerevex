@@ -40,8 +40,9 @@ Runtime: `@tharros/ads-shared/connectors` (Node-only — do not import from ads-
 | Kind | Ids | Implementation |
 |---|---|---|
 | `AdPlatformConnector` | `meta`, `google`, `mock` | Exclusive path for pull, token refresh, OAuth exchange, live read/apply. Meta/Google branches live in `connectors/meta.ts` and `connectors/google.ts`. |
-| `AnalyticsConnector` | `ga4`, `first_party` | Stub — compiles only |
+| `AnalyticsConnector` | `ga4`, `first_party`, `clarity` | GA4 + first-party live; Clarity Connect pulls aggregated session signals |
 | `CallTrackingConnector` | `callrail` (connect), `bundled` | CallRail live connect; bundled is Twilio-class lean |
+| `SiteConnector` | `wordpress` | Stub — `supportsLandingPageMutation: false`. LP recs stay Site apply later |
 
 Shared `Connector` surface: `isConfigured`, `connect`, `disconnect`. Meta + CallRail both satisfy it. No real GA4/CallRail product work.
 
@@ -119,9 +120,19 @@ If Railway Site Brain start/build uses `--workspace=@shopify-brain/brain`, chang
 - Will not buy a number or change call routing. CallRail stays selected when both are connected.
 - Connect customers are untouched when this flag is hidden.
 
+## M5.2 Phase C (Clarity + LP intelligence)
+
+`m52.clarity_connect` and `m52.lp_intelligence` are live product flags (`unfinished: false`). Default `hidden`. Env kills: `CAPABILITY_KILL_M52_CLARITY_CONNECT=1`, `CAPABILITY_KILL_M52_LP_INTELLIGENCE=1`.
+
+- Clarity sits on `AnalyticsConnector` with `pullSessionSignals`. Mock-connect for QA. Live project id / API token via `CLARITY_*` env or encrypted workspace settings.
+- Aggregated heatmap / session signals only. No in-house Hotjar-class recorder. No raw PII dump.
+- Recs: hero / structure / copy / wizard with a plain-language why. Metrics stay behind Details.
+- Site connector (`wordpress`) is a stub (`supportsLandingPageMutation: false`). Approve → apply_jobs stays review-only + “Site apply later”. Deny/Snooze never write.
+- Core ads/cockpit stays healthy when both flags are hidden.
+
 ## Out of scope (still deferred)
 
-- **M5.2 later phases** — heatmaps / Clarity, deep CRM write-backs, weekly narrative.
+- **M5.2 later phases** — deep CRM write-backs, weekly narrative, seasonality.
 - Dropping the one-release Inngest `LEGACY_ADS_*` listeners.
 - Railway service / DNS / domain cutover. Live Inngest app id `shopify-brain`. Neon schema rename.
 

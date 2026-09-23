@@ -328,6 +328,41 @@ export async function connectCrmMock(clientId: string): Promise<{ ok: boolean; w
   return api("/connectors/crm/connect", { method: "POST", body: JSON.stringify({ clientId, mock: true }) });
 }
 
+export type LpIntelligenceResponse = {
+  visible: boolean;
+  clarity: {
+    connected: boolean;
+    mock: boolean;
+    projectId: string | null;
+    lastPulledAt: string | null;
+    lastError: string | null;
+    sessionCount: number;
+    signalCount: number;
+    signals: { kind: string; why: string; metric: string; value: number }[];
+  };
+  siteApply: "later" | "ready";
+  capture: false;
+  writes: false;
+};
+
+export async function getLpIntelligence(clientId: string): Promise<LpIntelligenceResponse> {
+  return api(`/clients/${clientId}/lp-intelligence`);
+}
+
+export async function connectClarity(input: {
+  clientId: string;
+  mock?: boolean;
+  useEnv?: boolean;
+  apiKey?: string;
+  projectId?: string;
+}): Promise<{ ok: boolean; writes: false; capture: false }> {
+  return api("/connectors/clarity/connect", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function pullClarity(clientId: string): Promise<{ ok: boolean; writes: false; capture: false }> {
+  return api("/connectors/clarity/pull", { method: "POST", body: JSON.stringify({ clientId }) });
+}
+
 export async function setAdAccountFrozen(
   adAccountId: string,
   frozen: boolean,

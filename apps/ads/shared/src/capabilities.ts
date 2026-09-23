@@ -38,6 +38,8 @@ export {
   isCapabilityState,
   isCapabilityVisible,
   isCallAttributionVisible,
+  isLpIntelligenceVisible,
+  isLpIntelligenceWritable,
   isCapabilityWritable,
   isLegacyAdsWebAllowed,
   isPlatformSyncLiveOn,

@@ -1,6 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { budgetShiftWriteBlockedReason, isCapabilityOn, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
+import { getDefaultSiteConnector } from "./connectors/site";
+import { siteApplyBlockedReason } from "./lp-intelligence";
 import { parseApplyMutations } from "./audit-schemas";
 import { getDb } from "./db";
 import { executeMutation, type MutationOutcome } from "./mutate";
@@ -187,6 +189,35 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
       outcomes: [],
       writes: false,
       blocked: "capability_apply",
+    };
+  }
+
+  const siteBlocked = siteApplyBlockedReason(getDefaultSiteConnector(), recommendation.type);
+  if (siteBlocked) {
+    const response = {
+      writes: false,
+      outcomes: [],
+      blocked: siteBlocked,
+      jobType,
+      mode: "mock",
+      reason: "LP intelligence is recommend-only. Site apply later — nothing writes the website.",
+      siteApply: "later",
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "succeeded",
+        error: null,
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: siteBlocked,
     };
   }
 

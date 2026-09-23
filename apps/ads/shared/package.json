@@ -28,6 +28,7 @@
     "./m51-engine": "./src/m51-engine.ts",
     "./creative-analysis": "./src/creative-analysis.ts",
     "./lp-congruence": "./src/lp-congruence.ts",
+    "./lp-intelligence": "./src/lp-intelligence.ts",
     "./funnel": "./src/funnel.ts",
     "./analytics": "./src/analytics.ts",
     "./grok-creatives": "./src/grok-creatives.ts",

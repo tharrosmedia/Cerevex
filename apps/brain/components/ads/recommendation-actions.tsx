@@ -104,7 +104,7 @@ export function RecommendationActions({
               ? 'This will change live budgets. Applying… starts after you confirm.'
               : suggestion.type === 'create_alternative'
                 ? 'This will create a paused ad after Grok. Brainstorm did not write live.'
-                : suggestion.type === 'lp_congruence'
+                : suggestion.type === 'lp_congruence' || suggestion.type === 'lp_intelligence'
                   ? 'This suggestion is recommend-only. Site apply later — nothing writes the website.'
                   : 'This will change live ads.'}
           </p>

@@ -16,6 +16,8 @@ assert.equal(suggestionLabel('budget_shift'), 'Shift the budget');
 assert.equal(suggestionWhy('create_alternative').toLowerCase().includes('approve'), true);
 assert.equal(suggestionLabel('call_attribution'), 'Calls joined to a campaign');
 assert.equal(suggestionWhy('crm_booked_job'), 'A call matches a booked job. Nothing was written to the CRM.');
+assert.equal(suggestionLabel('lp_intelligence'), 'Improve the landing page');
+assert.ok(suggestionWhy('lp_intelligence').toLowerCase().includes('site apply later'));
 assert.equal(suggestionWhy('improve_ctr'), 'People are seeing the ad but not clicking it.');
 assert.ok(!suggestionWhy('improve_ctr').toLowerCase().includes('ctr'));
 assert.ok(!suggestionWhy('review_cpa').toLowerCase().includes('roas'));
@@ -45,5 +47,8 @@ assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/callrail/pull'), true
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/bundled/connect'), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/bundled/pull'), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/crm/connect'), true);
+assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/lp-intelligence`), true);
+assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/connect'), true);
+assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/pull'), true);
 
 console.log('ads-copy: ok');

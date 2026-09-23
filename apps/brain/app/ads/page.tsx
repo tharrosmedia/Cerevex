@@ -19,6 +19,7 @@ import {
 import { adsCapabilityOn, adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { OfflineAttribution, type OfflineAttributionView } from '@/components/ads/offline-attribution';
+import { LpIntelligence, type LpIntelligenceView } from '@/components/ads/lp-intelligence';
 import { adsApi } from '@/lib/ads-bff';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 import { getActiveStoreId, listStores } from '@/src/lib/db/stores';
@@ -80,10 +81,17 @@ export default async function AdsCockpitPage({
   const callrailVisible = adsCapabilityVisible(cockpit.workspace, 'm52.callrail_connect');
   const bundledVisible = adsCapabilityVisible(cockpit.workspace, 'm52.bundled_call_tracking');
   const crmVisible = adsCapabilityVisible(cockpit.workspace, 'm52.crm_join');
+  const clarityVisible = adsCapabilityVisible(cockpit.workspace, 'm52.clarity_connect');
+  const lpVisible = adsCapabilityVisible(cockpit.workspace, 'm52.lp_intelligence');
   let offline: OfflineAttributionView | null = null;
+  let lpIntel: LpIntelligenceView | null = null;
   if ((callrailVisible || bundledVisible || crmVisible) && selectedClient) {
     const result = await adsApi<OfflineAttributionView>(`/clients/${selectedClient.id}/offline-attribution`);
     offline = result.ok ? result.data : null;
+  }
+  if ((clarityVisible || lpVisible) && selectedClient) {
+    const result = await adsApi<LpIntelligenceView>(`/clients/${selectedClient.id}/lp-intelligence`);
+    lpIntel = result.ok ? result.data : null;
   }
 
   if (!cockpitVisible) {
@@ -175,6 +183,7 @@ export default async function AdsCockpitPage({
       </section>
 
       {offline?.visible ? <OfflineAttribution client={selectedClient ?? null} view={offline} /> : null}
+      {lpIntel?.visible ? <LpIntelligence client={selectedClient ?? null} view={lpIntel} /> : null}
 
       <section className="cx-panel">
         <h2>Check ads</h2>

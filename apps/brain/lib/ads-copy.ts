@@ -14,6 +14,7 @@ const FINDING_LABELS: Record<string, string> = {
   budget_shift_cross_platform: "Winning platform",
   creative_cross_platform: "Winning ad on one platform",
   lp_mismatch: "Ad and page do not match",
+  lp_intelligence: "Landing-page session signals",
 };
 
 const SUGGESTION_LABELS: Record<string, string> = {
@@ -29,6 +30,7 @@ const SUGGESTION_LABELS: Record<string, string> = {
   create_alternative: "Create the Grok alternative",
   call_attribution: "Calls joined to a campaign",
   crm_booked_job: "Call booked a job",
+  lp_intelligence: "Improve the landing page",
 };
 
 const SUGGESTION_WHY: Record<string, string> = {
@@ -44,6 +46,7 @@ const SUGGESTION_WHY: Record<string, string> = {
   create_alternative: "Grok made an alternative. Approve creates the ad. Generate did not write live.",
   call_attribution: "Calls joined to a campaign in plain language.",
   crm_booked_job: "A call matches a booked job. Nothing was written to the CRM.",
+  lp_intelligence: "Session signals show where the landing page loses people. Site apply later.",
 };
 
 const AUDIT_STATUS_LABELS: Record<string, string> = {
@@ -208,7 +211,12 @@ export function metricLines(record: Record<string, unknown> | null | undefined):
   }
   if (typeof record.sourcePlatform === "string") lines.push(`Winning platform: ${titleCase(record.sourcePlatform)}`);
   if (typeof record.landingPageUrl === "string") lines.push(`Page: ${record.landingPageUrl}`);
+  if (typeof record.kind === "string") lines.push(`Change: ${titleCase(record.kind)}`);
+  if (typeof record.metric === "string") lines.push(`Signal: ${record.metric}`);
+  if (typeof record.value === "number") lines.push(`Signal value: ${record.value}`);
+  if (typeof record.sessionCount === "number") lines.push(`Sessions in summary: ${record.sessionCount}`);
   if (record.siteApply === "later") lines.push("Site apply later — Cerevex cannot change the website in this slice.");
+  if (record.capture === false) lines.push("No in-house session recorder. Signals come from Clarity.");
   return lines;
 }
 
@@ -216,6 +224,7 @@ export const REC_INBOX_KINDS = [
   { value: "budget_shift", label: "Budget" },
   { value: "creative_test", label: "Creative test" },
   { value: "lp_congruence", label: "Landing page" },
+  { value: "lp_intelligence", label: "LP structure" },
   { value: "create_alternative", label: "Create alternative" },
 ] as const;
 
@@ -223,6 +232,7 @@ export function suggestionInboxKind(type: string | null | undefined): string {
   if (type === "budget_shift") return "Budget";
   if (type === "creative_test") return "Creative test";
   if (type === "lp_congruence") return "Landing page";
+  if (type === "lp_intelligence") return "LP structure";
   if (type === "create_alternative") return "Create alternative";
   return "Check";
 }

@@ -125,6 +125,10 @@ Append-only: `UPDATE` and `DELETE` are blocked by database rules.
 - `funnel_events` — page_view / generate_lead / purchase. 90-day product retention. Last-touch utm/gclid/fbclid only. No PII required.
 - `lp_snapshots` — optional fetched landing-page text. Recommend-only. No Site write.
 
+## M5.2 Phase C (no ALTER)
+
+Clarity Connect and LP intelligence snapshots live in `workspaces.settings_json.connectors.clarity` (encrypted API token). No new tables. Site apply is later — the WordPress Site connector is a stub and does not mutate pages.
+
 ## Stub tables
 
 Present so later milestones do not require a new tenancy pass:

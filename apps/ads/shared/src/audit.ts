@@ -193,6 +193,7 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       ? resolveCallTrackingForClient(connectors, run.clientId, flags)
       : { source: null, calls: [] as CallRecord[], callrail: undefined, bundled: undefined, sourceLabel: "CallRail" };
     const crm = run.clientId ? connectors.crm[run.clientId] : undefined;
+    const clarity = run.clientId ? connectors.clarity[run.clientId] : undefined;
     const offlineSignals = {
       calls: tracking.calls,
       bookedJobs: crm?.bookedJobs ?? [],
@@ -200,6 +201,9 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       bundledEnabled: tracking.source === "bundled",
       sourceLabel: tracking.sourceLabel,
       crmEnabled: isCapabilityVisible("m52.crm_join", flags) && Boolean(crm?.connected),
+      lpSignals: clarity?.snapshot?.signals ?? [],
+      lpIntelligenceEnabled:
+        isCapabilityVisible("m52.lp_intelligence", flags) && Boolean(clarity?.connected),
     };
 
     for (const account of accountRows) {

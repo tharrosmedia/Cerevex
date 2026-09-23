@@ -1,16 +1,17 @@
 /**
  * Connector identity catalog. Runtime interfaces live in @tharros/ads-shared/connectors.
  * Meta/Google/mock implement AdPlatformConnector. CallRail is the M5.2 connect path.
- * Bundled is the Twilio-class lean add-on. HCP is recommend+join only.
+ * Bundled is the Twilio-class lean add-on. Clarity is the analytics/session path.
+ * HCP is recommend+join only. Site (WordPress) is stub — no LP mutation in v0.
  */
 
-export const CONNECTOR_KINDS = ["ad_platform", "analytics", "call_tracking", "crm"] as const;
+export const CONNECTOR_KINDS = ["ad_platform", "analytics", "call_tracking", "crm", "site"] as const;
 export type ConnectorKind = (typeof CONNECTOR_KINDS)[number];
 
 export const AD_PLATFORM_CONNECTOR_IDS = ["meta", "google", "mock"] as const;
 export type AdPlatformConnectorId = (typeof AD_PLATFORM_CONNECTOR_IDS)[number];
 
-export const ANALYTICS_CONNECTOR_IDS = ["ga4", "first_party"] as const;
+export const ANALYTICS_CONNECTOR_IDS = ["ga4", "first_party", "clarity"] as const;
 export type AnalyticsConnectorId = (typeof ANALYTICS_CONNECTOR_IDS)[number];
 
 export const CALL_TRACKING_CONNECTOR_IDS = ["callrail", "bundled"] as const;
@@ -19,11 +20,15 @@ export type CallTrackingConnectorId = (typeof CALL_TRACKING_CONNECTOR_IDS)[numbe
 export const CRM_CONNECTOR_IDS = ["hcp"] as const;
 export type CrmConnectorId = (typeof CRM_CONNECTOR_IDS)[number];
 
+export const SITE_CONNECTOR_IDS = ["wordpress"] as const;
+export type SiteConnectorId = (typeof SITE_CONNECTOR_IDS)[number];
+
 export type ConnectorId =
   | AdPlatformConnectorId
   | AnalyticsConnectorId
   | CallTrackingConnectorId
-  | CrmConnectorId;
+  | CrmConnectorId
+  | SiteConnectorId;
 
 export type ConnectorImplementation = "live" | "mock" | "stub";
 
@@ -91,5 +96,19 @@ export const CONNECTOR_CATALOG: ConnectorCatalogEntry[] = [
     label: "Housecall Pro",
     implementation: "stub",
     help: "Soft CRM join for booked-job status. Recommend + join only. No write-backs.",
+  },
+  {
+    kind: "analytics",
+    id: "clarity",
+    label: "Microsoft Clarity",
+    implementation: "live",
+    help: "Connect Clarity for aggregated heatmap and session signals. No in-house recorder. No raw PII dump.",
+  },
+  {
+    kind: "site",
+    id: "wordpress",
+    label: "WordPress / Site",
+    implementation: "stub",
+    help: "Landing-page apply when a Site connector can mutate. v0 is recommend-only — Site apply later.",
   },
 ];

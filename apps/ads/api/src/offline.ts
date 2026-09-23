@@ -6,6 +6,8 @@ import { z } from "zod";
 import {
   isCallAttributionVisible,
   isCapabilityVisible,
+  isLpIntelligenceRecommendationType,
+  isLpIntelligenceVisible,
   isOfflineRecommendationType,
   type CapabilityFlags,
 } from "@tharros/ads-shared";
@@ -77,6 +79,7 @@ export function filterOfflineRecommendations<T extends { type: string }>(
     if (!isOfflineRecommendationType(row.type)) return true;
     if (row.type === "call_attribution") return isCallAttributionVisible(flags);
     if (row.type === "crm_booked_job") return isCapabilityVisible("m52.crm_join", flags);
+    if (isLpIntelligenceRecommendationType(row.type)) return isLpIntelligenceVisible(flags);
     return true;
   });
 }

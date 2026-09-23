@@ -120,6 +120,8 @@ export {
   isCapabilityOn,
   isCapabilityVisible,
   isCallAttributionVisible,
+  isLpIntelligenceVisible,
+  isLpIntelligenceWritable,
   isCapabilityWritable,
   isLegacyAdsWebAllowed,
   isPlatformSyncLiveOn,
@@ -179,6 +181,7 @@ export {
   ANALYTICS_CONNECTOR_IDS,
   CALL_TRACKING_CONNECTOR_IDS,
   CRM_CONNECTOR_IDS,
+  SITE_CONNECTOR_IDS,
   CONNECTOR_CATALOG,
 } from "./connectors";
 export type {
@@ -187,6 +190,7 @@ export type {
   AnalyticsConnectorId,
   CallTrackingConnectorId,
   CrmConnectorId,
+  SiteConnectorId,
   ConnectorId,
   ConnectorImplementation,
   ConnectorCatalogEntry,

@@ -95,6 +95,16 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
     kind: "secret",
     help: "Optional Twilio Auth Token companion for TWILIO_ACCOUNT_SID. Not a feature flag.",
   },
+  {
+    env: "CLARITY_API_KEY",
+    kind: "secret",
+    help: "Optional workspace-wide Microsoft Clarity Data Export token. Prefer the per-client encrypted store. Never put in settings_json in the clear.",
+  },
+  {
+    env: "CLARITY_PROJECT_ID",
+    kind: "secret",
+    help: "Optional Clarity project id companion for CLARITY_API_KEY. Not a feature flag.",
+  },
 ];
 
 export function opsEnvSecrets(): readonly OpsEnvEntry[] {

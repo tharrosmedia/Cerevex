@@ -13,6 +13,7 @@ import { SEORulesEditor } from '@/components/SEORulesEditor';
 import { WorkspaceCapabilitiesSettings } from '@/components/workspace-capabilities-settings';
 import { WorkspaceCallRailSettings } from '@/components/workspace-callrail-settings';
 import { WorkspaceBundledCallTrackingSettings } from '@/components/workspace-bundled-call-tracking';
+import { WorkspaceClaritySettings } from '@/components/workspace-clarity-settings';
 import { WorkspaceModulesSettings } from '@/components/workspace-modules-settings';
 
 async function resyncInngest() {
@@ -438,8 +439,8 @@ async function syncCatalogAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string };
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string };
   let store = null;
   try {
     store = await getActiveStore();
@@ -485,11 +486,18 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
       {params.bundled === 'error' && (
         <div className="mb-4 p-3 border text-sm">Could not update bundled call tracking. Disconnect CallRail first if it is connected, then try again.</div>
       )}
+      {params.clarity === 'saved' && (
+        <div className="mb-4 p-3 border text-sm">Clarity saved. Aggregated session signals only — nothing was written to the website.</div>
+      )}
+      {params.clarity === 'error' && (
+        <div className="mb-4 p-3 border text-sm">Could not update Clarity. Check the capability flag and try again.</div>
+      )}
 
       <WorkspaceModulesSettings />
       <WorkspaceCapabilitiesSettings />
       <WorkspaceCallRailSettings />
       <WorkspaceBundledCallTrackingSettings />
+      <WorkspaceClaritySettings />
 
       {params.resync === 'success' && (
         <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Inngest resync successful.</div>

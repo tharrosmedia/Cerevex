@@ -12,9 +12,11 @@ import type {
   ConnectorImplementation,
   ConnectorKind,
   CrmConnectorId,
+  SiteConnectorId,
 } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import type { BookedJob, CallRecord } from "../attribution";
+import type { AggregatedSessionSignal } from "../lp-intelligence";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import type { PullResult } from "../platforms";
 import type { Platform, StoredOAuthTokens } from "../types";
@@ -25,6 +27,7 @@ export type ConnectorConnectInput = {
   externalId?: string;
   label?: string;
   apiKey?: string;
+  projectId?: string;
   accountId?: string;
   companyId?: string;
   accountSid?: string;
@@ -48,6 +51,7 @@ export type ConnectorConnectResult = {
   trackingNumber?: string;
   purchased?: false;
   routingChanged?: false;
+  capture?: false;
 };
 
 export type CallTrackingPullInput = {
@@ -85,6 +89,26 @@ export type CrmJoinResult = {
   mock: boolean;
   bookedJobs: BookedJob[];
   writes: false;
+  reason?: string;
+};
+
+export type SessionSignalsPullInput = {
+  workspaceId: string;
+  clientId: string;
+  clientName: string;
+  projectId?: string;
+  apiKey?: string;
+  mock?: boolean;
+};
+
+export type SessionSignalsPullResult = {
+  ok: boolean;
+  mock: boolean;
+  connectorId: string;
+  signals: AggregatedSessionSignal[];
+  sessionCount: number;
+  writes: false;
+  capture: false;
   reason?: string;
 };
 
@@ -142,6 +166,9 @@ export interface AdPlatformConnector extends Connector {
 export interface AnalyticsConnector extends Connector {
   readonly kind: "analytics";
   readonly id: AnalyticsConnectorId;
+  readonly connectCapability?: Extract<CapabilityId, "m51.ga4_connect" | "m52.clarity_connect">;
+  readonly capture?: false;
+  pullSessionSignals?(input: SessionSignalsPullInput): Promise<SessionSignalsPullResult>;
 }
 
 export interface CallTrackingConnector extends Connector {
@@ -160,4 +187,16 @@ export interface CrmConnector extends Connector {
   listBookedJobs(input: CrmJoinInput): Promise<CrmJoinResult>;
 }
 
-export type AnyConnector = AdPlatformConnector | AnalyticsConnector | CallTrackingConnector | CrmConnector;
+export interface SiteConnector extends Connector {
+  readonly kind: "site";
+  readonly id: SiteConnectorId;
+  readonly connectCapability?: Extract<CapabilityId, "m52.lp_intelligence">;
+  readonly supportsLandingPageMutation: boolean;
+}
+
+export type AnyConnector =
+  | AdPlatformConnector
+  | AnalyticsConnector
+  | CallTrackingConnector
+  | CrmConnector
+  | SiteConnector;

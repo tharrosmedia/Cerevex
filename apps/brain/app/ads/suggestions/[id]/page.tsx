@@ -61,9 +61,9 @@ export default async function AdsSuggestionDetailPage({
       <p className="cx-lede">
         Approve applies this change. Deny and Snooze never write Meta or Google.
       </p>
-      {suggestion.type === 'lp_congruence' ? (
+      {suggestion.type === 'lp_congruence' || suggestion.type === 'lp_intelligence' ? (
         <p className="cx-banner">
-          Landing-page match is recommend-only. Cerevex cannot change the website in this slice — Site apply later.
+          Landing-page work is recommend-only. Cerevex cannot change the website in this slice — Site apply later.
         </p>
       ) : null}
       {suggestion.type === 'create_alternative' ? (
