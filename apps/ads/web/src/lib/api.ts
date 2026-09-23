@@ -267,6 +267,43 @@ export async function disconnectAdAccount(adAccountId: string): Promise<{ adAcco
   return api(`/ad-accounts/${adAccountId}/disconnect`, { method: "POST" });
 }
 
+export type OfflineAttributionResponse = {
+  visible: boolean;
+  callrail: {
+    connected: boolean;
+    mock: boolean;
+    callCount: number;
+    lastPulledAt: string | null;
+    lastError: string | null;
+  };
+  crm: { connected: boolean; mock: boolean; bookedJobCount: number };
+  sentences: string[];
+  joins: { callId: string; sentence: string }[];
+  writes: false;
+};
+
+export async function getOfflineAttribution(clientId: string): Promise<OfflineAttributionResponse> {
+  return api(`/clients/${clientId}/offline-attribution`);
+}
+
+export async function connectCallRail(input: {
+  clientId: string;
+  mock?: boolean;
+  useEnv?: boolean;
+  apiKey?: string;
+  accountId?: string;
+}): Promise<{ ok: boolean; writes: false }> {
+  return api("/connectors/callrail/connect", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function pullCallRail(clientId: string): Promise<{ ok: boolean; sentences: string[]; writes: false }> {
+  return api("/connectors/callrail/pull", { method: "POST", body: JSON.stringify({ clientId }) });
+}
+
+export async function connectCrmMock(clientId: string): Promise<{ ok: boolean; writes: false }> {
+  return api("/connectors/crm/connect", { method: "POST", body: JSON.stringify({ clientId, mock: true }) });
+}
+
 export async function setAdAccountFrozen(
   adAccountId: string,
   frozen: boolean,

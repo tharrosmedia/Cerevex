@@ -33,7 +33,7 @@ class StubCallTrackingConnector implements CallTrackingConnector {
     return stubResult(
       this.id,
       true,
-      `${this.label} is a compile-time stub (${this.mode}). No CallRail product work in this retrofit.`,
+      `${this.label} is a compile-time stub (${this.mode}). Bundled telephony is Phase B.`,
     );
   }
 
@@ -42,5 +42,4 @@ class StubCallTrackingConnector implements CallTrackingConnector {
   }
 }
 
-export const callRailConnector = new StubCallTrackingConnector("callrail", "CallRail", "connect");
 export const bundledCallTrackingConnector = new StubCallTrackingConnector("bundled", "Bundled call tracking", "bundled");

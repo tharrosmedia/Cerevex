@@ -5,6 +5,8 @@ import {
   type ProposedMutation,
   type RecommendationDraft,
 } from "./audit-schemas";
+import type { BookedJob, CallRecord } from "./attribution";
+import { summarizeAttribution } from "./attribution";
 import type { Platform, RecommendationType } from "./types";
 
 export const AUDIT_THRESHOLDS = {
@@ -42,6 +44,12 @@ export type EvaluateAccountInput = {
   platform: Platform;
   entities: AuditEntity[];
   metrics: AuditMetric[];
+  offlineSignals?: {
+    calls?: CallRecord[];
+    bookedJobs?: BookedJob[];
+    callrailEnabled?: boolean;
+    crmEnabled?: boolean;
+  };
 };
 
 export type EvaluateAccountResult = {
@@ -326,6 +334,87 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
         ],
       }),
     );
+  }
+
+  const offline = input.offlineSignals;
+  if (offline?.callrailEnabled && (offline.calls?.length ?? 0) > 0) {
+    const summary = summarizeAttribution({
+      calls: offline.calls ?? [],
+      campaigns: campaigns.map((campaign) => ({
+        entityType: campaign.entityType,
+        externalId: campaign.externalId,
+        name: campaign.name,
+        platform: input.platform,
+      })),
+      bookedJobs: offline.bookedJobs,
+      crmEnabled: Boolean(offline.crmEnabled),
+    });
+    const joined = summary.joins.filter((row) => row.matchedOn !== "unmatched");
+    if (joined.length > 0) {
+      const first = joined[0]!;
+      const target =
+        campaigns.find((campaign) => campaign.externalId === first.campaignExternalId) ?? campaigns[0];
+      findings.push(
+        finding(input, "call_attribution", "info", `${summary.answeredCount} answered CallRail calls joined to campaigns`, {
+          hint: summary.sentences[0],
+          callCount: offline.calls?.length ?? 0,
+          answeredCount: summary.answeredCount,
+          conversionCount: summary.conversionCount,
+        }),
+      );
+      recommendations.push(
+        recommendation(input, {
+          type: "call_attribution",
+          ruleId: "call_attribution",
+          title: joined.length === 1 ? `Call joined to ${first.campaignName}` : "Calls joined to campaigns",
+          rationale: summary.sentences.join(" "),
+          estimatedImpactUsd: null,
+          risk: "low",
+          confidence: confidence(0.7),
+          evidence: {
+            source: "callrail",
+            writes: false,
+            sentences: summary.sentences,
+            joinCount: joined.length,
+            unmatchedCount: summary.unmatchedCount,
+            conversionCount: summary.conversionCount,
+          },
+          mutations: target ? [mutation(input.platform, "review", target, { action: "call_attribution_review_only" })] : [],
+        }),
+      );
+    }
+    if (offline.crmEnabled && summary.bookedJoinCount > 0) {
+      const booked = summary.joins.find((row) => row.bookedJobId);
+      const target =
+        campaigns.find((campaign) => campaign.externalId === booked?.campaignExternalId) ?? campaigns[0];
+      findings.push(
+        finding(input, "crm_booked_job", "info", "CallRail call soft-joined to a booked job", {
+          hint: "Recommend + join only. Nothing was written to Housecall Pro.",
+          bookedJoinCount: summary.bookedJoinCount,
+        }),
+      );
+      recommendations.push(
+        recommendation(input, {
+          type: "crm_booked_job",
+          ruleId: "crm_booked_job",
+          title: booked?.bookedJobLabel
+            ? `Booked job: ${booked.bookedJobLabel}`
+            : "Call soft-joined to a booked job",
+          rationale:
+            "A CallRail call matches a Housecall Pro booked job. This is a join signal only — Cerevex did not write the CRM.",
+          estimatedImpactUsd: null,
+          risk: "low",
+          confidence: confidence(0.6),
+          evidence: {
+            source: "hcp",
+            writes: false,
+            bookedJoinCount: summary.bookedJoinCount,
+            bookedJobLabel: booked?.bookedJobLabel,
+          },
+          mutations: target ? [mutation(input.platform, "review", target, { action: "crm_join_review_only" })] : [],
+        }),
+      );
+    }
   }
 
   if (campaigns.length === 1 && spend30 > 0) {

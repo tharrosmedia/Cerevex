@@ -17,7 +17,10 @@ const ALLOWED: Array<{ method: "GET" | "POST"; pattern: RegExp }> = [
   { method: "GET", pattern: new RegExp(`^/findings/${UUID}$`) },
   { method: "GET", pattern: new RegExp(`^/oauth/config$`) },
   { method: "GET", pattern: new RegExp(`^/oauth/(meta|google)/start$`) },
+  { method: "GET", pattern: new RegExp(`^/clients/${UUID}/offline-attribution$`) },
   { method: "POST", pattern: new RegExp(`^/clients/${UUID}/audits$`) },
+  { method: "POST", pattern: new RegExp(`^/connectors/callrail/(connect|disconnect|pull)$`) },
+  { method: "POST", pattern: new RegExp(`^/connectors/crm/(connect|disconnect)$`) },
 ];
 
 const BLOCKED = [/decide/i, /apply/i, /mock/i, /jobs/i];

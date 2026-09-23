@@ -11,8 +11,10 @@ import type {
   CapabilityId,
   ConnectorImplementation,
   ConnectorKind,
+  CrmConnectorId,
 } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
+import type { BookedJob, CallRecord } from "../attribution";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import type { PullResult } from "../platforms";
 import type { Platform, StoredOAuthTokens } from "../types";
@@ -22,6 +24,11 @@ export type ConnectorConnectInput = {
   clientId?: string;
   externalId?: string;
   label?: string;
+  apiKey?: string;
+  accountId?: string;
+  companyId?: string;
+  mock?: boolean;
+  useEnv?: boolean;
 };
 
 export type ConnectorConnectResult = {
@@ -30,6 +37,41 @@ export type ConnectorConnectResult = {
   connectorId: string;
   reason?: string;
   externalId?: string;
+  mock?: boolean;
+};
+
+export type CallTrackingPullInput = {
+  workspaceId: string;
+  clientId: string;
+  clientName: string;
+  accountId?: string;
+  apiKey?: string;
+  mock?: boolean;
+};
+
+export type CallTrackingPullResult = {
+  ok: boolean;
+  mock: boolean;
+  connectorId: string;
+  calls: CallRecord[];
+  reason?: string;
+};
+
+export type CrmJoinInput = {
+  workspaceId: string;
+  clientId: string;
+  clientName: string;
+  mock?: boolean;
+};
+
+export type CrmJoinResult = {
+  ok: boolean;
+  stub: boolean;
+  connectorId: string;
+  mock: boolean;
+  bookedJobs: BookedJob[];
+  writes: false;
+  reason?: string;
 };
 
 export type ConnectorPullInput = {
@@ -92,6 +134,16 @@ export interface CallTrackingConnector extends Connector {
   readonly kind: "call_tracking";
   readonly id: CallTrackingConnectorId;
   readonly mode: "connect" | "bundled";
+  readonly connectCapability?: Extract<CapabilityId, "m52.callrail_connect">;
+  pullCalls?(input: CallTrackingPullInput): Promise<CallTrackingPullResult>;
 }
 
-export type AnyConnector = AdPlatformConnector | AnalyticsConnector | CallTrackingConnector;
+export interface CrmConnector extends Connector {
+  readonly kind: "crm";
+  readonly id: CrmConnectorId;
+  readonly connectCapability?: Extract<CapabilityId, "m52.crm_join">;
+  readonly writes: false;
+  listBookedJobs(input: CrmJoinInput): Promise<CrmJoinResult>;
+}
+
+export type AnyConnector = AdPlatformConnector | AnalyticsConnector | CallTrackingConnector | CrmConnector;

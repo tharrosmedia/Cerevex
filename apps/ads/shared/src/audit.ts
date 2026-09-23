@@ -1,9 +1,11 @@
+import { isCapabilityVisible } from "@cerevex/contracts";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { loadFunnelSignal } from "./analytics";
 import { evaluateAccount } from "./audit-engine";
 import { evaluateClientM51 } from "./m51-engine";
-import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { auditRunSummarySchema, parseFindingDraft, parseRecommendationDraft } from "./audit-schemas";
+import { readWorkspaceCapabilities } from "./capabilities";
+import { readConnectorSettings } from "./connector-settings";
 import { getDb } from "./db";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
 import { inferApplyJobType } from "./mutation-families";
@@ -181,6 +183,20 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
     const ruleIds = new Set<string>();
     const m51Slices = [];
 
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.id, run.workspaceId),
+    });
+    const flags = readWorkspaceCapabilities(workspace?.settingsJson);
+    const connectors = readConnectorSettings(workspace?.settingsJson);
+    const callrail = run.clientId ? connectors.callrail[run.clientId] : undefined;
+    const crm = run.clientId ? connectors.crm[run.clientId] : undefined;
+    const offlineSignals = {
+      calls: callrail?.snapshot?.calls ?? [],
+      bookedJobs: crm?.bookedJobs ?? [],
+      callrailEnabled: isCapabilityVisible("m52.callrail_connect", flags) && Boolean(callrail?.connected),
+      crmEnabled: isCapabilityVisible("m52.crm_join", flags) && Boolean(crm?.connected),
+    };
+
     for (const account of accountRows) {
       const entityRows = await db.select().from(adEntities).where(eq(adEntities.adAccountId, account.id));
       const metricRows = await db.select().from(adMetrics).where(eq(adMetrics.adAccountId, account.id));
@@ -210,6 +226,7 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
         auditRunId: run.id,
         adAccountId: account.id,
         platform: account.platform,
+        offlineSignals,
         entities,
         metrics,
       });
@@ -234,17 +251,13 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       }
     }
 
-    const workspace = await db.query.workspaces.findFirst({
-      where: eq(workspaces.id, run.workspaceId),
-    });
-    const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
     const funnel = await loadFunnelSignal(run.workspaceId, run.clientId).catch(() => null);
     const m51 = evaluateClientM51({
       workspaceId: run.workspaceId,
       clientId: run.clientId,
       auditRunId: run.id,
       accounts: m51Slices,
-      capabilities,
+      capabilities: flags,
       funnel,
     });
     for (const draft of m51.findings) {

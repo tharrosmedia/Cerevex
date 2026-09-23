@@ -11,7 +11,7 @@ import type {
   Platform,
   RecommendationPublic,
 } from "@tharros/ads-shared";
-import { MODULE_COPY } from "@tharros/ads-shared";
+import { MODULE_COPY, isCapabilityVisible } from "@tharros/ads-shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,8 +30,12 @@ import {
   getClient,
   listClientAudits,
   listClientRecommendations,
+  connectCallRail,
+  connectCrmMock,
   disconnectAdAccount,
+  getOfflineAttribution,
   mockConnect,
+  pullCallRail,
   setAdAccountFrozen,
   startInlineAudit,
   startOAuth,
@@ -51,7 +55,7 @@ type RecFilter = (typeof REC_FILTERS)[number];
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { killSwitch, canMutate, canApprove, modules, loading: workspaceLoading } = useWorkspace();
+  const { killSwitch, canMutate, canApprove, modules, capabilities, loading: workspaceLoading } = useWorkspace();
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [accounts, setAccounts] = useState<AdAccountPublic[]>([]);
   const [canManage, setCanManage] = useState(false);
@@ -67,6 +71,9 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [advancedConnect, setAdvancedConnect] = useState(false);
+  const [offlineSentences, setOfflineSentences] = useState<string[]>([]);
+  const callrailOn = isCapabilityVisible("m52.callrail_connect", capabilities);
+  const crmOn = isCapabilityVisible("m52.crm_join", capabilities);
   const [approveId, setApproveId] = useState<string | null>(null);
   const selectedAuditIdRef = useRef<string | null>(null);
   selectedAuditIdRef.current = selectedAuditId;
@@ -87,7 +94,12 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         }),
     );
     setEntities(next);
-    const [recs, runs] = await Promise.all([listClientRecommendations(id), listClientAudits(id)]);
+    const [recs, runs, offline] = await Promise.all([
+      listClientRecommendations(id),
+      listClientAudits(id),
+      getOfflineAttribution(id).catch(() => null),
+    ]);
+    setOfflineSentences(offline?.sentences ?? []);
     setRecommendations(recs);
     setAudits(runs);
     const current = selectedAuditIdRef.current;
@@ -435,6 +447,77 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           );
         })}
       </section>
+
+      {callrailOn || crmOn ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>CallRail and booked jobs</CardTitle>
+            <CardDescription>
+              Calls join to campaigns in plain language. Mock is QA-safe. Nothing is written to CallRail or Housecall Pro.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm">
+            {offlineSentences.length > 0 ? (
+              <ul className="space-y-1 text-muted-foreground">
+                {offlineSentences.map((sentence) => (
+                  <li key={sentence}>{sentence}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">Connect CallRail, then pull calls to see joins.</p>
+            )}
+            {canManage ? (
+              <div className="flex flex-wrap gap-2">
+                {callrailOn ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      disabled={busy === "callrail"}
+                      onClick={async () => {
+                        setBusy("callrail");
+                        setError(null);
+                        try {
+                          await connectCallRail({ clientId: id, mock: true });
+                          await pullCallRail(id);
+                          await refresh();
+                          setNotice("CallRail mock connected. Calls joined in plain language.");
+                        } catch (err) {
+                          setError(err instanceof ApiError ? err.message : "CallRail connect failed.");
+                        } finally {
+                          setBusy(null);
+                        }
+                      }}
+                    >
+                      Connect CallRail (mock)
+                    </Button>
+                  </>
+                ) : null}
+                {crmOn ? (
+                  <Button
+                    variant="outline"
+                    disabled={busy === "crm"}
+                    onClick={async () => {
+                      setBusy("crm");
+                      setError(null);
+                      try {
+                        await connectCrmMock(id);
+                        await refresh();
+                        setNotice("Housecall Pro mock-joined. No CRM write.");
+                      } catch (err) {
+                        setError(err instanceof ApiError ? err.message : "CRM join failed.");
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    Soft-join Housecall Pro
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

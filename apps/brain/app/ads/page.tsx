@@ -18,6 +18,8 @@ import {
 } from '@/lib/ads-query';
 import { adsCapabilityOn, adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
+import { OfflineAttribution, type OfflineAttributionView } from '@/components/ads/offline-attribution';
+import { adsApi } from '@/lib/ads-bff';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 import { getActiveStoreId, listStores } from '@/src/lib/db/stores';
 
@@ -75,6 +77,13 @@ export default async function AdsCockpitPage({
   const auditsOn = adsCapabilityWritable(cockpit.workspace, 'audits');
   const connectMeta = adsCapabilityWritable(cockpit.workspace, 'connect.meta');
   const connectGoogle = adsCapabilityWritable(cockpit.workspace, 'connect.google');
+  const callrailVisible = adsCapabilityVisible(cockpit.workspace, 'm52.callrail_connect');
+  const crmVisible = adsCapabilityVisible(cockpit.workspace, 'm52.crm_join');
+  let offline: OfflineAttributionView | null = null;
+  if ((callrailVisible || crmVisible) && selectedClient) {
+    const result = await adsApi<OfflineAttributionView>(`/clients/${selectedClient.id}/offline-attribution`);
+    offline = result.ok ? result.data : null;
+  }
 
   if (!cockpitVisible) {
     return (
@@ -164,6 +173,8 @@ export default async function AdsCockpitPage({
         ) : null}
       </section>
 
+      {offline?.visible ? <OfflineAttribution client={selectedClient ?? null} view={offline} /> : null}
+
       <section className="cx-panel">
         <h2>Check ads</h2>
         <p className="cx-help">Starts a check and keeps this page usable while it runs.</p>
@@ -215,6 +226,7 @@ export default async function AdsCockpitPage({
         <Link href="/ads/creatives">Creatives</Link>
         <Link href="/ads/funnel">Funnel</Link>
         <Link href="/settings#modules">Modules</Link>
+        {callrailVisible || crmVisible ? <Link href="/settings#callrail">CallRail</Link> : null}
       </nav>
     </div>
   );
