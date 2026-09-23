@@ -80,7 +80,7 @@ describe("capability registry", () => {
   });
 });
 
-describe("PATCH /workspace capabilities", () => {
+describe.skipIf(!process.env.DATABASE_URL)("PATCH /workspace capabilities", () => {
   it("flips a workspace flag and keeps the read path up", async () => {
     const { token } = await login("adam@tharrosmedia.com", "local-dev-only");
     const before = await app.request("/workspace", { headers: { authorization: `Bearer ${token}` } });

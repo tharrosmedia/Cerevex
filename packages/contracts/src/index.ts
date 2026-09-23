@@ -100,6 +100,7 @@ export {
   isCapabilityState,
   defaultCapabilityFlags,
   capabilityEnvKillKey,
+  readProcessEnv,
   envCapabilityKills,
   parseCapabilityOverrides,
   mergeCapabilityFlags,

@@ -199,8 +199,15 @@ function envExplicitOff(raw: string | undefined): boolean {
   return value === "0" || value === "false" || value === "off";
 }
 
-/** Browser-safe. Reads process.env only — no node:fs. */
-export function envCapabilityKills(env: Record<string, string | undefined> = process.env): CapabilityId[] {
+type EnvMap = Record<string, string | undefined>;
+
+/** Browser-safe. Reads process.env when present — no node:fs, no @types/node. */
+export function readProcessEnv(): EnvMap {
+  const runtime = globalThis as { process?: { env?: EnvMap } };
+  return runtime.process?.env ?? {};
+}
+
+export function envCapabilityKills(env: EnvMap = readProcessEnv()): CapabilityId[] {
   const kills = new Set<CapabilityId>();
   const list = env.CAPABILITY_KILL ?? "";
   for (const part of list.split(",")) {
@@ -239,7 +246,7 @@ export function mergeCapabilityFlags(
 
 export function applyEnvKills(
   flags: CapabilityFlags,
-  env: Record<string, string | undefined> = process.env,
+  env: EnvMap = readProcessEnv(),
 ): CapabilityFlags {
   const next = { ...flags };
   for (const id of envCapabilityKills(env)) {
@@ -254,7 +261,7 @@ export function applyEnvKills(
  */
 export function resolveWorkspaceCapabilities(
   settingsJson: unknown,
-  env: Record<string, string | undefined> = process.env,
+  env: EnvMap = readProcessEnv(),
 ): CapabilityFlags {
   const obj = settingsJson && typeof settingsJson === "object" && !Array.isArray(settingsJson)
     ? (settingsJson as Record<string, unknown>)
