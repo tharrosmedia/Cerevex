@@ -34,7 +34,7 @@ describe("connector interfaces", () => {
     expect(callrail.ok).toBe(true);
     expect(callrail.stub).toBe(true);
     expect(callrail.reason).toMatch(/stub/i);
-    expect(ga4AnalyticsConnector.implementation).toBe("stub");
+    expect(ga4AnalyticsConnector.implementation).toBe("live");
     expect(mockAdPlatformConnector.implementation).toBe("mock");
     expect(typeof metaAdPlatformConnector.authorizeUrl).toBe("function");
     expect(typeof metaAdPlatformConnector.pull).toBe("function");

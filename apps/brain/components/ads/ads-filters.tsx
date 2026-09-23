@@ -4,6 +4,7 @@ export type AdsFilterState = {
   client?: string;
   platform?: string;
   status?: string;
+  kind?: string;
 };
 
 export function AdsFilters({
@@ -11,11 +12,13 @@ export function AdsFilters({
   clients,
   value,
   statusOptions,
+  kindOptions,
 }: {
   action: string;
   clients: AdsClient[];
   value: AdsFilterState;
   statusOptions: Array<{ value: string; label: string }>;
+  kindOptions?: Array<{ value: string; label: string }>;
 }) {
   return (
     <form className="cx-filters" action={action} method="get">
@@ -40,6 +43,19 @@ export function AdsFilters({
           <option value="google">Google</option>
         </select>
       </label>
+      {kindOptions && kindOptions.length > 0 ? (
+        <label>
+          Type
+          <select name="kind" defaultValue={value.kind ?? ''}>
+            <option value="">All types</option>
+            {kindOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {statusOptions.length > 0 ? (
         <label>
           Status

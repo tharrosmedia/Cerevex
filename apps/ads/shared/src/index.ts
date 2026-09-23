@@ -29,6 +29,16 @@ export type {
 // `/app/page` build failure).
 export { mockPull } from "./platforms";
 export { evaluateAccount, AUDIT_THRESHOLDS } from "./audit-engine";
+export { evaluateClientM51, M51_THRESHOLDS } from "./m51-engine";
+export {
+  analyzeCopySentiment,
+  compareAdsInGroup,
+  creativeFromRaw,
+  otherPlatform,
+  platformLabel as creativePlatformLabel,
+} from "./creative-analysis";
+export { compareAdToLanding, landingFromCreative } from "./lp-congruence";
+export { summarizeFunnel, funnelStrengthFor, inferPlatformFromClick, FUNNEL_EVENT_NAMES } from "./funnel";
 export { evaluateApplyGate, applyBlockMessage, APPLY_BLOCK_REASONS } from "./apply-gate";
 export {
   findingDraftSchema,

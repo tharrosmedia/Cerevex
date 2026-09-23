@@ -19,7 +19,7 @@ describe("M5 mutation classes", () => {
     });
     expect(skipped?.status).toBe("skipped");
     expect(skipped?.writes).toBe(false);
-    expect(skipped?.reason).toMatch(/Create-new/i);
+    expect(skipped?.reason).toMatch(/apply\.create_entity|Create-entity/i);
   });
 
   it("summarizes bid and budget changes in plain language", () => {

@@ -1,5 +1,8 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { loadFunnelSignal } from "./analytics";
 import { evaluateAccount } from "./audit-engine";
+import { evaluateClientM51 } from "./m51-engine";
+import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { auditRunSummarySchema, parseFindingDraft, parseRecommendationDraft } from "./audit-schemas";
 import { getDb } from "./db";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
@@ -176,35 +179,45 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
     const allFindings = [];
     const allRecommendations = [];
     const ruleIds = new Set<string>();
+    const m51Slices = [];
 
     for (const account of accountRows) {
       const entityRows = await db.select().from(adEntities).where(eq(adEntities.adAccountId, account.id));
       const metricRows = await db.select().from(adMetrics).where(eq(adMetrics.adAccountId, account.id));
+      const entities = entityRows.map((row) => ({
+        entityType: row.entityType,
+        externalId: row.externalId,
+        name: row.name,
+        status: row.status,
+        parentExternalId: row.parentExternalId,
+        raw: (row.rawJson as Record<string, unknown>) ?? {},
+      }));
+      const metrics = metricRows.map((row) => {
+        const entity = entityRows.find((item) => item.id === row.entityId);
+        return {
+          entityExternalId: entity?.externalId ?? row.entityId,
+          entityType: entity?.entityType ?? "unknown",
+          window: row.window,
+          spendUsd: String(row.spendUsd),
+          impressions: row.impressions,
+          clicks: row.clicks,
+          conversions: String(row.conversions),
+        };
+      });
       const evaluated = evaluateAccount({
         workspaceId: run.workspaceId,
         clientId: run.clientId,
         auditRunId: run.id,
         adAccountId: account.id,
         platform: account.platform,
-        entities: entityRows.map((row) => ({
-          entityType: row.entityType,
-          externalId: row.externalId,
-          name: row.name,
-          status: row.status,
-          parentExternalId: row.parentExternalId,
-        })),
-        metrics: metricRows.map((row) => {
-          const entity = entityRows.find((item) => item.id === row.entityId);
-          return {
-            entityExternalId: entity?.externalId ?? row.entityId,
-            entityType: entity?.entityType ?? "unknown",
-            window: row.window,
-            spendUsd: String(row.spendUsd),
-            impressions: row.impressions,
-            clicks: row.clicks,
-            conversions: String(row.conversions),
-          };
-        }),
+        entities,
+        metrics,
+      });
+      m51Slices.push({
+        adAccountId: account.id,
+        platform: account.platform,
+        entities,
+        metrics,
       });
 
       for (const draft of evaluated.findings) {
@@ -219,6 +232,32 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
         const [inserted] = await db.insert(recommendations).values(parsed).returning();
         allRecommendations.push(inserted);
       }
+    }
+
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.id, run.workspaceId),
+    });
+    const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
+    const funnel = await loadFunnelSignal(run.workspaceId, run.clientId).catch(() => null);
+    const m51 = evaluateClientM51({
+      workspaceId: run.workspaceId,
+      clientId: run.clientId,
+      auditRunId: run.id,
+      accounts: m51Slices,
+      capabilities,
+      funnel,
+    });
+    for (const draft of m51.findings) {
+      const parsed = parseFindingDraft(draft);
+      ruleIds.add(String(parsed.bodyJson.ruleId));
+      const [inserted] = await db.insert(findings).values(parsed).returning();
+      allFindings.push(inserted);
+    }
+    for (const draft of m51.recommendations) {
+      const parsed = parseRecommendationDraft(draft);
+      ruleIds.add(String(parsed.evidenceJson.ruleId));
+      const [inserted] = await db.insert(recommendations).values(parsed).returning();
+      allRecommendations.push(inserted);
     }
 
     if (accountRows.length === 0) {

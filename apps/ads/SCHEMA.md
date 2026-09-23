@@ -50,9 +50,9 @@ The kill switch is a hard product control (default **true** / ON). Approve is bl
 
 Defaults: Leads ON for all; Clients ON only for agency; Sales ON only for ecommerce; Workflows ON for v1. Settings can override flags later. Existing keys such as `vertical` stay in the same JSON object.
 
-`modules.leads` is IA only. The Leads / leftover brainstorm placeholder (`/ads/leads`, `/app/brainstorm`) also requires `capabilities["m51.brainstorm"]` to be `on` or `recommend_only`. While that capability is unfinished, Settings hides the Leads toggle (value is preserved) and hides all unfinished `m51.*` flags. `PATCH /workspace` refuses `m51.*: "on"` until `unfinished` is cleared.
+`modules.leads` is IA only. The Leads / brainstorm surface (`/ads/leads`, leftover `/app/brainstorm`) also requires `capabilities["m51.brainstorm"]` to be `on` or `recommend_only`. M5.1 Brief 1.6 cleared `unfinished` on `m51.*` and `apply.create_entity` so operators can turn them on. Defaults stay `hidden`.
 
-Capability states are `on` | `hidden` | `recommend_only`. Unfinished / M5.1 units stay hidden. Optional env global kill (`CAPABILITY_KILL=apply,connect.meta` or `CAPABILITY_KILL_APPLY=1`) hides a capability for every workspace without redeploying Site Brain. Legacy `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` map to `apply.bid` / `apply.budget`. Legacy `PLATFORM_SYNC_LIVE=0` maps to `sync.live`. `NEXT_PUBLIC_ADS_LEGACY_CHROME=1` is the deploy-time companion for `shell.legacy_ads_web` (console leftover-chrome links need both). `APPROVE_OPERATOR_EMAILS` is the Adam-only identity allowlist — not a capability. `APP_PASSWORD`, `JWT_SECRET`, `ADS_INTERNAL_KEY`, and `TOKEN_ENCRYPTION_KEY` stay env secrets (not flags). Core GET paths (cockpit, clients, audits, recommendations) never throw when a flag is off. See `docs/modularity-retrofit.md` G8 and `OPS_ENV_REGISTRY`.
+Capability states are `on` | `hidden` | `recommend_only`. M5.1 product flags default hidden (safe soft-launch). Optional env global kill (`CAPABILITY_KILL=apply,connect.meta` or `CAPABILITY_KILL_APPLY=1`) hides a capability for every workspace without redeploying Site Brain. Legacy `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` map to `apply.bid` / `apply.budget`. Legacy `PLATFORM_SYNC_LIVE=0` maps to `sync.live`. `NEXT_PUBLIC_ADS_LEGACY_CHROME=1` is the deploy-time companion for `shell.legacy_ads_web` (console leftover-chrome links need both). `APPROVE_OPERATOR_EMAILS` is the Adam-only identity allowlist — not a capability. `APP_PASSWORD`, `JWT_SECRET`, `ADS_INTERNAL_KEY`, and `TOKEN_ENCRYPTION_KEY` stay env secrets (not flags). Core GET paths (cockpit, clients, audits, recommendations) never throw when a flag is off. See `docs/modularity-retrofit.md` G8 and `OPS_ENV_REGISTRY`.
 
 ### users
 `id`, `email` (unique), `name`, `password_hash`, `created_at`
@@ -109,18 +109,24 @@ Validated with Zod (`schema_version = 1`) before insert. Every proposed mutation
 ### apply_jobs
 `id`, `workspace_id`, `client_id`, `authorization_id`, `status`, `attempts`, `request_json`, `response_json`, `error`, `created_at`, `finished_at`
 
-HTTP Approve and Inngest `ads/apply.requested` (legacy alias `os/apply.requested` for one release) run `evaluateApplyGate`: kill switch ON (default) blocks; frozen ad account blocks; missing/revoked/expired authorization blocks. When the gate allows, the worker executes schema-valid mutate-existing `proposed_mutations` (pause, negatives, placement exclude, bid, budget). Create-new (`create_ad`, `add_keyword`) is skipped. Job statuses: `queued` / `applying` / `succeeded` / `failed`. `idempotency_key` is unique (`apply:<recommendationId>`).
+HTTP Approve and Inngest `ads/apply.requested` (legacy alias `os/apply.requested` for one release) run `evaluateApplyGate`: kill switch ON (default) blocks; frozen ad account blocks; missing/revoked/expired authorization blocks. When the gate allows, the worker executes schema-valid `proposed_mutations` (pause, negatives, placement exclude, bid, budget). Create-new (`create_ad`, `add_keyword`) runs only when `apply.create_entity` is on (Grok Promote → Approve). Job statuses: `queued` / `applying` / `succeeded` / `failed`. `idempotency_key` is unique (`apply:<recommendationId>`).
 
 ### audit_log
 `id`, `workspace_id`, `actor_type`, `actor_id`, `action`, `entity_type`, `entity_id`, `payload_json`, `created_at`
 
 Append-only: `UPDATE` and `DELETE` are blocked by database rules.
 
+## M5.1 tables
+
+- `analytics_connections` — GA4 property / first-party pixel token (no OAuth secrets in this slice)
+- `funnel_events` — page_view / generate_lead / purchase. 90-day product retention. Last-touch utm/gclid/fbclid only. No PII required.
+- `lp_snapshots` — optional fetched landing-page text. Recommend-only. No Site write.
+
 ## Stub tables
 
 Present so later milestones do not require a new tenancy pass:
 
-- `brainstorm_sessions`, `brainstorm_ideas`
+- `brainstorm_sessions`, `brainstorm_ideas` — used by Grok alternatives (status `ready` when generated)
 - `workflows`, `workflow_runs`
 - `oauth_credentials` — used in M2; payload is encrypted, never committed in plaintext
 

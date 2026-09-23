@@ -10,6 +10,10 @@ const FINDING_LABELS: Record<string, string> = {
   single_ad: "Only one ad",
   thin_keywords: "Thin keyword coverage",
   spend_concentration: "Spend on one campaign",
+  budget_shift_gap: "Move money to the winner",
+  budget_shift_cross_platform: "Winning platform",
+  creative_cross_platform: "Winning ad on one platform",
+  lp_mismatch: "Ad and page do not match",
 };
 
 const SUGGESTION_LABELS: Record<string, string> = {
@@ -19,6 +23,10 @@ const SUGGESTION_LABELS: Record<string, string> = {
   add_creative: "Add another ad",
   expand_keywords: "Cover more search terms",
   spend_concentration: "Watch spend concentration",
+  budget_shift: "Shift the budget",
+  creative_test: "Test this ad on the other platform",
+  lp_congruence: "Match the landing page",
+  create_alternative: "Create the Grok alternative",
 };
 
 const SUGGESTION_WHY: Record<string, string> = {
@@ -28,6 +36,10 @@ const SUGGESTION_WHY: Record<string, string> = {
   add_creative: "One ad is carrying the campaign.",
   expand_keywords: "The search terms are too thin.",
   spend_concentration: "Almost all spend sits on one campaign.",
+  budget_shift: "The cheaper campaign or platform is winning. Approve moves spend there.",
+  creative_test: "What is winning on one platform can be tested on the other.",
+  lp_congruence: "The ad promise and the landing page do not match.",
+  create_alternative: "Grok made an alternative. Approve creates the ad. Generate did not write live.",
 };
 
 const AUDIT_STATUS_LABELS: Record<string, string> = {
@@ -178,5 +190,31 @@ export function metricLines(record: Record<string, unknown> | null | undefined):
   if (typeof record.entityExternalId === "string") lines.push(`Entity: ${record.entityExternalId}`);
   if (typeof record.adAccountId === "string") lines.push(`Account: ${record.adAccountId}`);
   if (typeof record.auditRunId === "string") lines.push(`Audit: ${record.auditRunId}`);
+  if (typeof record.winnerCpaUsd === "string" || typeof record.winnerCpaUsd === "number") {
+    const cost = formatMoney(record.winnerCpaUsd);
+    if (cost) lines.push(`Winning cost per lead: ${cost}`);
+  }
+  if (typeof record.loserCpaUsd === "string" || typeof record.loserCpaUsd === "number") {
+    const cost = formatMoney(record.loserCpaUsd);
+    if (cost) lines.push(`Weaker cost per lead: ${cost}`);
+  }
+  if (typeof record.sourcePlatform === "string") lines.push(`Winning platform: ${titleCase(record.sourcePlatform)}`);
+  if (typeof record.landingPageUrl === "string") lines.push(`Page: ${record.landingPageUrl}`);
+  if (record.siteApply === "later") lines.push("Site apply later — Cerevex cannot change the website in this slice.");
   return lines;
+}
+
+export const REC_INBOX_KINDS = [
+  { value: "budget_shift", label: "Budget" },
+  { value: "creative_test", label: "Creative test" },
+  { value: "lp_congruence", label: "Landing page" },
+  { value: "create_alternative", label: "Create alternative" },
+] as const;
+
+export function suggestionInboxKind(type: string | null | undefined): string {
+  if (type === "budget_shift") return "Budget";
+  if (type === "creative_test") return "Creative test";
+  if (type === "lp_congruence") return "Landing page";
+  if (type === "create_alternative") return "Create alternative";
+  return "Check";
 }

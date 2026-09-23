@@ -4,10 +4,11 @@ import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";
+import { isBudgetShiftWritable, isCapabilityOn } from "@cerevex/contracts";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { LiveEntityState, MutationOutcome } from "./mutate-types";
-import { adEntities } from "./schema";
+import { adAccounts, adEntities } from "./schema";
 import type { ApplyMutation } from "./audit-schemas";
 import type { Platform, StoredOAuthTokens } from "./types";
 
@@ -24,6 +25,59 @@ async function applyMockMutation(
       eq(adEntities.externalId, mutation.target.externalId),
     ),
   });
+
+  if (mutation.action === "create_ad") {
+    const account = await db.query.adAccounts.findFirst({ where: eq(adAccounts.id, adAccountId) });
+    if (!account && !entity) {
+      return {
+        action: mutation.action,
+        platform: mutation.platform,
+        target: mutation.target,
+        status: "failed",
+        mode: "mock",
+        writes: false,
+        reason: "Ad account missing for mock create.",
+      };
+    }
+    const proposedName =
+      typeof mutation.payload.proposedName === "string"
+        ? mutation.payload.proposedName
+        : `${mutation.target.name ?? "Ad"} — variant`;
+    const [created] = await db
+      .insert(adEntities)
+      .values({
+        workspaceId: entity?.workspaceId ?? account!.workspaceId,
+        clientId: entity?.clientId ?? account!.clientId,
+        adAccountId,
+        platform: mutation.platform,
+        entityType: "ad",
+        externalId: `mock-${mutation.platform}-${Date.now()}`,
+        name: proposedName,
+        status: "active",
+        parentExternalId: mutation.target.externalId,
+        rawJson: {
+          source: "m51-create-mock",
+          headline: mutation.payload.headline ?? null,
+          body: mutation.payload.body ?? null,
+          offer: mutation.payload.offer ?? null,
+          imageUrl: mutation.payload.imageUrl ?? null,
+          lastMutation: "create_ad",
+        },
+      })
+      .returning()
+      .catch(() => []);
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: created
+        ? { entityType: "ad", externalId: created.externalId, name: created.name }
+        : mutation.target,
+      status: "applied",
+      mode: "mock",
+      writes: true,
+      reason: "Mock create recorded a local ad. No live platform call.",
+    };
+  }
 
   if (mutation.action === "pause") {
     if (entity && ["paused", "paused"].includes(entity.status.toLowerCase())) {
@@ -93,6 +147,14 @@ export async function readLiveEntityState(input: {
   });
 }
 
+/** M5.1 budget-shift writes — not generic M5 high-CPA `update_budget`. */
+export function isM51BudgetShiftMutation(mutation: ApplyMutation): boolean {
+  const payload = mutation.payload ?? {};
+  if (payload.m51 === "budget_shift") return true;
+  const reason = payload.reason;
+  return mutation.action === "update_budget" && typeof reason === "string" && reason.startsWith("shift_");
+}
+
 /** Live apply/read always goes through the AdPlatform connector registry. */
 export async function applyViaConnector(input: {
   platform: Platform;
@@ -116,7 +178,7 @@ export function classifyMutation(
   mutation: ApplyMutation,
   flags: CapabilityFlags = resolveWorkspaceCapabilities({}),
 ): MutationOutcome | null {
-  if (isCreateNewMutationAction(mutation.action) || mutation.action === "review") {
+  if (isM51BudgetShiftMutation(mutation) && !isBudgetShiftWritable(flags)) {
     return {
       action: mutation.action,
       platform: mutation.platform,
@@ -124,11 +186,33 @@ export function classifyMutation(
       status: "skipped",
       mode: "mock",
       writes: false,
-      reason:
-        mutation.action === "review"
-          ? "Review-only mutation. No platform write."
-          : "Create-new entity path is out of M5 scope. Skipped — not applied.",
+      reason: "Budget shift is recommend-only or off (m51.budget_shift). No platform write.",
     };
+  }
+  if (mutation.action === "review") {
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: "Review-only mutation. No platform write.",
+    };
+  }
+  if (isCreateNewMutationAction(mutation.action)) {
+    if (!isCapabilityOn("apply.create_entity", flags)) {
+      return {
+        action: mutation.action,
+        platform: mutation.platform,
+        target: mutation.target,
+        status: "skipped",
+        mode: "mock",
+        writes: false,
+        reason: "Create-entity is off (apply.create_entity). Skipped — not applied.",
+      };
+    }
+    return null;
   }
   if (!isExecutableMutationAction(mutation.action)) {
     return {

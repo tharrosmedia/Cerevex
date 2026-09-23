@@ -5,6 +5,7 @@ import {
   platformFromRecord,
   platformLabel,
   riskLabel,
+  suggestionInboxKind,
   suggestionLabel,
   suggestionStatusLabel,
   suggestionWhy,
@@ -30,6 +31,7 @@ export function RecommendationCard({
       <div className="cx-card-kicker">
         {clientName ? <span>{clientName}</span> : null}
         {platform ? <span>{platform}</span> : null}
+        <span>{suggestionInboxKind(suggestion.type)}</span>
         <span>{suggestionStatusLabel(suggestion.status)}</span>
       </div>
       <h3 className="cx-card-title">{title}</h3>

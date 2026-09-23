@@ -212,6 +212,8 @@ export default async function AdsCockpitPage({
       <nav className="cx-inline-nav" aria-label="Ads sections">
         <Link href="/ads/audits">Audits</Link>
         <Link href="/ads/suggestions">Suggestions</Link>
+        <Link href="/ads/creatives">Creatives</Link>
+        <Link href="/ads/funnel">Funnel</Link>
         <Link href="/settings#modules">Modules</Link>
       </nav>
     </div>

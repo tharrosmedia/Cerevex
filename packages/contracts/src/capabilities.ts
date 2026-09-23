@@ -110,9 +110,9 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
   "apply.create_entity": {
     id: "apply.create_entity",
     label: "Create-entity apply",
-    help: "Sealed job type for later Grok create-ad / add-keyword. Off until that path ships.",
+    help: "Allow create_ad / add_keyword under Approve (Grok Promote path). Default hidden. Soft-launch stays off until Adam enables it.",
     defaultState: "hidden",
-    unfinished: true,
+    unfinished: false,
     group: "apply",
   },
   "sync.live": {
@@ -133,42 +133,42 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
   },
   "m51.budget_shift": {
     id: "m51.budget_shift",
-    label: "Budget shift (M5.1)",
-    help: "Dark placeholder. No budget-shift UI in this retrofit.",
+    label: "Budget shift",
+    help: "Recommend moving spend toward the winning platform or campaign. Approve applies budget mutations only when this is on. recommend_only shows the suggestion and writes nothing. Default hidden.",
     defaultState: "hidden",
-    unfinished: true,
+    unfinished: false,
     group: "m51",
   },
   "m51.grok_creatives": {
     id: "m51.grok_creatives",
-    label: "Grok creatives (M5.1)",
-    help: "Dark placeholder. No Grok creative work in this retrofit.",
+    label: "Grok creatives",
+    help: "See creatives, adapt with Grok, then Promote → Approve to create an ad. Generate never writes live. Default hidden.",
     defaultState: "hidden",
-    unfinished: true,
+    unfinished: false,
     group: "m51",
   },
   "m51.lp_congruence": {
     id: "m51.lp_congruence",
-    label: "Landing-page congruence (M5.1)",
-    help: "Dark placeholder. No LP analysis in this retrofit.",
+    label: "Landing-page match",
+    help: "Compare the ad promise to the landing page. Recommend-only — Site apply is not in this slice. Default hidden.",
     defaultState: "hidden",
-    unfinished: true,
+    unfinished: false,
     group: "m51",
   },
   "m51.ga4_connect": {
     id: "m51.ga4_connect",
-    label: "GA4 connect (M5.1)",
-    help: "Dark placeholder. Connector stub only — no GA4 connect UX.",
+    label: "Funnel (GA4 + pixel)",
+    help: "Connect GA4 and/or the Cerevex first-party pixel so funnel data can strengthen recommendations. Default hidden.",
     defaultState: "hidden",
-    unfinished: true,
+    unfinished: false,
     group: "m51",
   },
   "m51.brainstorm": {
     id: "m51.brainstorm",
-    label: "Brainstorm (M5.1)",
-    help: "Dark placeholder for the Leads / brainstorm surface. Nav and /ads/leads stay closed until this is live. modules.leads is IA only.",
+    label: "Brainstorm",
+    help: "Leads / brainstorm surface for Grok alternatives. Nav and /ads/leads need this visible. modules.leads is IA only. Default hidden.",
     defaultState: "hidden",
-    unfinished: true,
+    unfinished: false,
     group: "m51",
   },
 };
@@ -368,6 +368,22 @@ export function isApplyEnabled(flags: CapabilityFlags): boolean {
 
 export function canApproveWithApply(operatorCanApprove: boolean, flags: CapabilityFlags): boolean {
   return Boolean(operatorCanApprove) && isApplyEnabled(flags);
+}
+
+/** Budget-shift recs may write only when m51.budget_shift is on (not hidden / recommend_only). */
+export function isBudgetShiftWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m51.budget_shift", flags);
+}
+
+export function budgetShiftWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "budget_shift") return null;
+  if (isBudgetShiftWritable(flags)) return null;
+  return flags["m51.budget_shift"] === "recommend_only"
+    ? "capability_m51_budget_shift_recommend_only"
+    : "capability_m51_budget_shift";
 }
 
 export type LegacyAdsWebGate = "loading" | "unauthenticated" | "allow" | "block";

@@ -202,23 +202,35 @@ export async function listEntities(adAccountId: string): Promise<AdEntityPublic[
   const db = getDb();
   const entities = await db.select().from(adEntities).where(eq(adEntities.adAccountId, adAccountId));
   const metrics = await db.select().from(adMetrics).where(eq(adMetrics.adAccountId, adAccountId));
-  return entities.map((entity) => ({
-    id: entity.id,
-    entityType: entity.entityType,
-    externalId: entity.externalId,
-    name: entity.name,
-    status: entity.status,
-    parentExternalId: entity.parentExternalId,
-    metrics: metrics
-      .filter((m) => m.entityId === entity.id)
-      .map((m) => ({
-        window: m.window,
-        spendUsd: String(m.spendUsd),
-        impressions: m.impressions,
-        clicks: m.clicks,
-        conversions: String(m.conversions),
-      })),
-  }));
+  return entities.map((entity) => {
+    const raw = (entity.rawJson as Record<string, unknown>) ?? {};
+    return {
+      id: entity.id,
+      entityType: entity.entityType,
+      externalId: entity.externalId,
+      name: entity.name,
+      status: entity.status,
+      parentExternalId: entity.parentExternalId,
+      platform: entity.platform,
+      adAccountId: entity.adAccountId,
+      creative: {
+        headline: typeof raw.headline === "string" ? raw.headline : null,
+        body: typeof raw.body === "string" ? raw.body : null,
+        imageUrl: typeof raw.imageUrl === "string" ? raw.imageUrl : null,
+        landingPageUrl: typeof raw.landingPageUrl === "string" ? raw.landingPageUrl : null,
+        offer: typeof raw.offer === "string" ? raw.offer : null,
+      },
+      metrics: metrics
+        .filter((m) => m.entityId === entity.id)
+        .map((m) => ({
+          window: m.window,
+          spendUsd: String(m.spendUsd),
+          impressions: m.impressions,
+          clicks: m.clicks,
+          conversions: String(m.conversions),
+        })),
+    };
+  });
 }
 
 export async function clientConnectionSummary(clientId: string) {

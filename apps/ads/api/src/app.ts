@@ -12,6 +12,7 @@ import { checkInngest, sendStubPing } from "@tharros/ads-shared/inngest";
 import { auditLog } from "@tharros/ads-shared/schema";
 import { registerAuditRoutes } from "./audits";
 import { clientConnectionSummary, listPublicAdAccounts } from "./connect";
+import { registerM51Routes } from "./m51";
 import { registerConnectRoutes } from "./routes";
 import type { AppEnv } from "./types";
 import {
@@ -238,6 +239,7 @@ export function createApp() {
 
   registerConnectRoutes(app, requireAuth);
   registerAuditRoutes(app, requireAuth);
+  registerM51Routes(app, requireAuth);
 
   app.post("/jobs/stub", requireAuth, async (c) => {
     const auth = c.get("auth");

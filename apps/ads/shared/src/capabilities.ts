@@ -43,6 +43,8 @@ export {
   legacyAdsChromeLinksAllowed,
   isApplyEnabled,
   canApproveWithApply,
+  isBudgetShiftWritable,
+  budgetShiftWriteBlockedReason,
   legacyAdsWebGate,
   mergeCapabilityFlags,
   parseCapabilityOverrides,

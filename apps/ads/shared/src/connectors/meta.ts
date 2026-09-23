@@ -279,6 +279,42 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       await graphPost(id, tokens.accessToken, { bid_amount: String(Math.round(next * 100)) });
       return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
     }
+    if (mutation.action === "create_ad") {
+      const name =
+        typeof mutation.payload.proposedName === "string"
+          ? mutation.payload.proposedName
+          : `${mutation.target.name ?? "Ad"} — variant`;
+      const message = typeof mutation.payload.body === "string" ? mutation.payload.body : name;
+      const imageUrl = typeof mutation.payload.imageUrl === "string" ? mutation.payload.imageUrl : null;
+      const accountId = input.accountExternalId.replace(/^act_/, "");
+      const creative = (await graphPost(`act_${accountId}/adcreatives`, tokens.accessToken, {
+        name: `${name} creative`,
+        object_story_spec: JSON.stringify({
+          page_id: "page",
+          link_data: {
+            message,
+            name: typeof mutation.payload.headline === "string" ? mutation.payload.headline : name,
+            link: "https://example.com",
+            ...(imageUrl ? { picture: imageUrl } : {}),
+          },
+        }),
+      })) as { id?: string };
+      const created = (await graphPost(`act_${accountId}/ads`, tokens.accessToken, {
+        name,
+        adset_id: mutation.target.externalId,
+        creative: JSON.stringify({ creative_id: creative.id }),
+        status: "PAUSED",
+      })) as { id?: string };
+      return {
+        action: mutation.action,
+        platform: "meta",
+        target: { entityType: "ad", externalId: created.id ?? mutation.target.externalId, name },
+        status: "applied",
+        mode: "live",
+        writes: true,
+        reason: "Created a paused Meta ad. It stays off until you turn it on in Meta.",
+      };
+    }
     if (mutation.action === "exclude_placement") {
       const placement = typeof mutation.payload.placement === "string" ? mutation.payload.placement : "audience_network";
       await graphPost(id, tokens.accessToken, {

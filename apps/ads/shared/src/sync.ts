@@ -79,7 +79,7 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
           name: entity.name,
           status: entity.status,
           parentExternalId: entity.parentExternalId,
-          rawJson: { source: pulled.mode },
+          rawJson: { source: pulled.mode, ...(entity.raw ?? {}) },
         })
         .returning();
       inserted.push(row);

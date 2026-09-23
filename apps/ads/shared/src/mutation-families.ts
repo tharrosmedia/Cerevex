@@ -2,7 +2,7 @@
  * Apply mutation-family registry. Families sit behind capability flags.
  * FEATURE_BID_MUTATIONS / FEATURE_BUDGET_MUTATIONS map to apply.bid / apply.budget.
  *
- * create_entity is a sealed apply job type for a later Grok path — no UI sync writes.
+ * create_entity is gated by apply.create_entity (Grok Promote → Approve). No sync UI writes.
  */
 
 import type { CapabilityFlags, CapabilityId } from "@cerevex/contracts";
@@ -72,7 +72,7 @@ export const MUTATION_FAMILIES: Record<MutationFamilyId, MutationFamily> = {
     actions: ["create_ad", "add_keyword"],
     capability: "apply.create_entity",
     sealed: true,
-    help: "Sealed create-new path (create_ad / add_keyword). Later Grok job type. No sync UI writes.",
+    help: "Create-new path (create_ad / add_keyword) after Grok Promote → Approve. Off until apply.create_entity is on. No sync UI writes.",
   },
 };
 
@@ -121,7 +121,7 @@ export function mutationFamilySkipReason(family: MutationFamily): string {
 export function executableActionsFor(flags: CapabilityFlags): MutationAction[] {
   const out: MutationAction[] = [];
   for (const family of Object.values(MUTATION_FAMILIES)) {
-    if (family.sealed) continue;
+    if (family.sealed && !isMutationFamilyEnabled(family, flags)) continue;
     if (!isMutationFamilyEnabled(family, flags)) continue;
     for (const action of family.actions) {
       if (isExecutableMutationAction(action)) out.push(action);
