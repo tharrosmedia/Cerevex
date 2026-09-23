@@ -76,10 +76,10 @@ export function filterOfflineRecommendations<T extends { type: string }>(
   flags: CapabilityFlags,
 ): T[] {
   return rows.filter((row) => {
+    if (isLpIntelligenceRecommendationType(row.type)) return isLpIntelligenceVisible(flags);
     if (!isOfflineRecommendationType(row.type)) return true;
     if (row.type === "call_attribution") return isCallAttributionVisible(flags);
     if (row.type === "crm_booked_job") return isCapabilityVisible("m52.crm_join", flags);
-    if (isLpIntelligenceRecommendationType(row.type)) return isLpIntelligenceVisible(flags);
     return true;
   });
 }
