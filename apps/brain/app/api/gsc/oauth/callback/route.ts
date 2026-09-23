@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { publicRedirect } from '@/lib/public-url';
 import { exchangeCode, isGscConfigured } from '@/src/lib/gsc/client';
 import { getStore, updateStore } from '@/src/lib/db/stores';
 import { encrypt } from '@/src/lib/encryption';
@@ -28,9 +29,9 @@ export async function GET(req: NextRequest) {
       config: { ...current, gsc },
     });
     await logEvent(state, 'system', 'gsc.connected', { property: current.gsc?.propertyUrl || 'pending' });
-    return Response.redirect(new URL(`/settings?gsc=connected`, req.url));
+    return Response.redirect(publicRedirect('/settings?gsc=connected', req));
   } catch (e: any) {
     console.error('gsc callback', e);
-    return Response.redirect(new URL(`/settings?gsc=error&message=${encodeURIComponent(e?.message || 'oauth failed')}`, req.url));
+    return Response.redirect(publicRedirect(`/settings?gsc=error&message=${encodeURIComponent(e?.message || 'oauth failed')}`, req));
   }
 }
