@@ -98,7 +98,7 @@ const BLOCK_CLAIMS = [
 
 const WARN_CLAIMS = ["act now", "limited time", "urgent", "cheap", "exclusive", "lowest"];
 
-function num(value: string | number | null | undefined): number {
+function num(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
