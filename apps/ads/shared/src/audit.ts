@@ -1,4 +1,4 @@
-import { isCapabilityVisible } from "@cerevex/contracts";
+import { isCapabilityOn, isCapabilityVisible } from "@cerevex/contracts";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { loadFunnelSignal } from "./analytics";
 import { evaluateAccount } from "./audit-engine";
@@ -7,6 +7,7 @@ import { auditRunSummarySchema, parseFindingDraft, parseRecommendationDraft } fr
 import { readWorkspaceCapabilities } from "./capabilities";
 import type { CallRecord } from "./attribution";
 import { readConnectorSettings, resolveCallTrackingForClient } from "./connector-settings";
+import { seasonalityFromSettings } from "./seasonality-calendar";
 import { getDb } from "./db";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
 import { inferApplyJobType } from "./mutation-families";
@@ -215,6 +216,11 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       geoDisciplineWritable: flags["m52.geo_discipline"] === "on",
       brandGuardrailsEnabled: isCapabilityVisible("m52.brand_guardrails", flags),
       brandGuardrailsWritable: flags["m52.brand_guardrails"] === "on",
+      seasonalityEnabled: isCapabilityVisible("m52.seasonality_calendar", flags),
+      seasonalityWritable: isCapabilityOn("m52.seasonality_calendar", flags),
+      seasonalityCalendar: seasonalityFromSettings(workspace?.settingsJson),
+      weeklyNarrativeEnabled: isCapabilityVisible("m52.owner_weekly_narrative", flags),
+      weeklyNarrativeWritable: isCapabilityOn("m52.owner_weekly_narrative", flags),
     };
 
     for (const account of accountRows) {

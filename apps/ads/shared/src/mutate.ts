@@ -12,7 +12,9 @@ import {
   isBudgetShiftWritable,
   isCapabilityOn,
   isGeoDisciplineWritable,
+  isOwnerWeeklyNarrativeWritable,
   isSearchNegativesWritable,
+  isSeasonalityCalendarWritable,
 } from "@cerevex/contracts";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
 import {
@@ -22,6 +24,8 @@ import {
   isM52GeoDisciplineMutation,
   isM52SearchNegativeMutation,
 } from "./operator-hygiene";
+import { isM52WeeklyNarrativeMutation } from "./owner-weekly-narrative";
+import { isM52SeasonalityMutation } from "./seasonality-calendar";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { LiveEntityState, MutationOutcome } from "./mutate-types";
@@ -168,6 +172,8 @@ export async function readLiveEntityState(input: {
 export function isM51BudgetShiftMutation(mutation: ApplyMutation): boolean {
   const payload = mutation.payload ?? {};
   if (payload.m52 === "booked_job") return false;
+  if (payload.m52 === "seasonality_calendar") return false;
+  if (payload.m52 === "owner_weekly_narrative") return false;
   if (payload.m51 === "budget_shift") return true;
   const reason = payload.reason;
   return mutation.action === "update_budget" && typeof reason === "string" && reason.startsWith("shift_");
@@ -297,6 +303,28 @@ export function classifyMutation(
       mode: "mock",
       writes: false,
       reason: "Brand guardrails are recommend-only or off (m52.brand_guardrails). No platform write.",
+    };
+  }
+  if (isM52SeasonalityMutation(mutation) && !isSeasonalityCalendarWritable(flags)) {
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: "Seasonality calendar is recommend-only or off (m52.seasonality_calendar). No platform write.",
+    };
+  }
+  if (isM52WeeklyNarrativeMutation(mutation) && !isOwnerWeeklyNarrativeWritable(flags)) {
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: "Owner weekly narrative is recommend-only or off (m52.owner_weekly_narrative). No platform write.",
     };
   }
   if (mutation.action === "review") {

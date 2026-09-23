@@ -34,7 +34,8 @@
     "./analytics": "./src/analytics.ts",
     "./grok-creatives": "./src/grok-creatives.ts",
     "./attribution": "./src/attribution.ts",
-    "./connector-settings": "./src/connector-settings.ts"
+    "./connector-settings": "./src/connector-settings.ts",
+    "./planning-settings": "./src/planning-settings.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",

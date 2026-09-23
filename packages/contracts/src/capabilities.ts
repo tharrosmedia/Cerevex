@@ -46,6 +46,8 @@ export const CAPABILITY_IDS = [
   "m52.search_negatives",
   "m52.geo_discipline",
   "m52.brand_guardrails",
+  "m52.seasonality_calendar",
+  "m52.owner_weekly_narrative",
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -266,6 +268,22 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     id: "m52.brand_guardrails",
     label: "Claim & brand guardrails (M5.2)",
     help: "Block or warn on risky claims and brand language. Never silently allow unsupervised spend past a guardrail. Pause writes only when this is on. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.seasonality_calendar": {
+    id: "m52.seasonality_calendar",
+    label: "Seasonality + offer calendar (M5.2)",
+    help: "Plan seasonal offers and see calendar-driven recs. Live campaign changes stay Approve-gated. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.owner_weekly_narrative": {
+    id: "m52.owner_weekly_narrative",
+    label: "Owner weekly narrative (M5.2)",
+    help: "In-app weekly AM-style brief grounded in synced spend, leads, and waste. Read-only unless you Approve a recommended action. Default hidden.",
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
@@ -517,6 +535,46 @@ export function brandGuardrailsWriteBlockedReason(
   return flags["m52.brand_guardrails"] === "recommend_only"
     ? "capability_m52_brand_guardrails_recommend_only"
     : "capability_m52_brand_guardrails";
+}
+
+export function isSeasonalityCalendarVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.seasonality_calendar", flags);
+}
+
+export function isSeasonalityCalendarWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m52.seasonality_calendar", flags);
+}
+
+export function isOwnerWeeklyNarrativeVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.owner_weekly_narrative", flags);
+}
+
+export function isOwnerWeeklyNarrativeWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m52.owner_weekly_narrative", flags);
+}
+
+/** Calendar→campaign writes only when m52.seasonality_calendar is on. */
+export function seasonalityWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "seasonality") return null;
+  if (isSeasonalityCalendarWritable(flags)) return null;
+  return flags["m52.seasonality_calendar"] === "recommend_only"
+    ? "capability_m52_seasonality_calendar_recommend_only"
+    : "capability_m52_seasonality_calendar";
+}
+
+/** Weekly narrative nested actions write only when m52.owner_weekly_narrative is on. */
+export function ownerWeeklyNarrativeWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "weekly_narrative") return null;
+  if (isOwnerWeeklyNarrativeWritable(flags)) return null;
+  return flags["m52.owner_weekly_narrative"] === "recommend_only"
+    ? "capability_m52_owner_weekly_narrative_recommend_only"
+    : "capability_m52_owner_weekly_narrative";
 }
 
 export function isLeadLifecycleVisible(flags: CapabilityFlags): boolean {

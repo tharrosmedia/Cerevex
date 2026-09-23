@@ -54,12 +54,16 @@ The kill switch is a hard product control (default **true** / ON). Approve is bl
     "m52.creative_fatigue": "hidden",
     "m52.search_negatives": "hidden",
     "m52.geo_discipline": "hidden",
-    "m52.brand_guardrails": "hidden"
+    "m52.brand_guardrails": "hidden",
+    "m52.seasonality_calendar": "hidden",
+    "m52.owner_weekly_narrative": "hidden"
   }
 }
 ```
 
-Defaults: Leads ON for all; Clients ON only for agency; Sales ON only for ecommerce; Workflows ON for v1. Settings can override flags later. Existing keys such as `vertical` stay in the same JSON object.
+`settings_json.planning.seasonality` holds offer-calendar windows (no extra table). Missing or empty windows fall back to the default HVAC year. Existing keys such as `vertical` stay in the same JSON object.
+
+Defaults: Leads ON for all; Clients ON only for agency; Sales ON only for ecommerce; Workflows ON for v1. Settings can override flags later.
 
 `modules.leads` is IA only. The Leads / brainstorm surface (`/ads/leads`, leftover `/app/brainstorm`) also requires `capabilities["m51.brainstorm"]` to be `on` or `recommend_only`. M5.1 Brief 1.6 cleared `unfinished` on `m51.*` and `apply.create_entity` so operators can turn them on. Defaults stay `hidden`.
 

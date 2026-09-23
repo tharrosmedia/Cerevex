@@ -40,6 +40,8 @@ assert.equal(flags['m52.creative_fatigue'], 'hidden');
 assert.equal(flags['m52.search_negatives'], 'hidden');
 assert.equal(flags['m52.geo_discipline'], 'hidden');
 assert.equal(flags['m52.brand_guardrails'], 'hidden');
+assert.equal(flags['m52.seasonality_calendar'], 'hidden');
+assert.equal(flags['m52.owner_weekly_narrative'], 'hidden');
 assert.equal(flags['sync.live'], 'on');
 assert.equal(flags['shell.legacy_ads_web'], 'hidden');
 assert.equal(isPlatformSyncLiveOn(flags), true);
@@ -58,6 +60,8 @@ assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.cre
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.search_negatives'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.geo_discipline'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.brand_guardrails'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.seasonality_calendar'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.owner_weekly_narrative'));
 assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), null);
 assert.equal(capabilityOnBlockedReason('m51.budget_shift', 'recommend_only'), null);
 assert.equal(capabilityOnBlockedReason('cockpit', 'on'), null);

@@ -6,8 +6,10 @@ import {
   creativeFatigueWriteBlockedReason,
   geoDisciplineWriteBlockedReason,
   isCapabilityOn,
+  ownerWeeklyNarrativeWriteBlockedReason,
   resolveWorkspaceCapabilities,
   searchNegativesWriteBlockedReason,
+  seasonalityWriteBlockedReason,
 } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { getDefaultSiteConnector } from "./connectors/site";
@@ -304,6 +306,14 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
     {
       blocked: brandGuardrailsWriteBlockedReason(capabilities, recommendation.type),
       reason: "Brand guardrails are recommend-only or off. No platform write.",
+    },
+    {
+      blocked: seasonalityWriteBlockedReason(capabilities, recommendation.type),
+      reason: "Seasonality calendar is recommend-only or off. No platform write.",
+    },
+    {
+      blocked: ownerWeeklyNarrativeWriteBlockedReason(capabilities, recommendation.type),
+      reason: "Owner weekly narrative is recommend-only or off. The digest does not write live ads.",
     },
   ];
   for (const row of hygieneBlocks) {

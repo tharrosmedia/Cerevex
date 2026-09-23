@@ -17,7 +17,10 @@ import {
   isLpIntelligenceRecommendationType,
   isLpIntelligenceVisible,
   isOfflineRecommendationType,
+  isOwnerWeeklyNarrativeVisible,
+  isPlanningRecommendationType,
   isSearchNegativesVisible,
+  isSeasonalityCalendarVisible,
   summarizeLeadLifecycle,
   type CapabilityFlags,
 } from "@tharros/ads-shared";
@@ -103,6 +106,10 @@ export function filterOfflineRecommendations<T extends { type: string }>(
       if (row.type === "search_negatives") return isSearchNegativesVisible(flags);
       if (row.type === "geo_discipline") return isGeoDisciplineVisible(flags);
       if (row.type === "brand_guardrails") return isBrandGuardrailsVisible(flags);
+    }
+    if (isPlanningRecommendationType(row.type)) {
+      if (row.type === "seasonality") return isSeasonalityCalendarVisible(flags);
+      if (row.type === "weekly_narrative") return isOwnerWeeklyNarrativeVisible(flags);
     }
     if (!isOfflineRecommendationType(row.type)) return true;
     if (row.type === "call_attribution") return isCallAttributionVisible(flags);

@@ -363,6 +363,36 @@ export async function pullClarity(clientId: string): Promise<{ ok: boolean; writ
   return api("/connectors/clarity/pull", { method: "POST", body: JSON.stringify({ clientId }) });
 }
 
+export type PlanningResponse = {
+  visible: boolean;
+  seasonality: {
+    windows: Array<{
+      id: string;
+      name: string;
+      when: string;
+      intent: string;
+      active: boolean;
+      upcoming: boolean;
+      offerCopy?: string | null;
+    }>;
+    source: "default" | "workspace";
+  } | null;
+  narrative: {
+    headline: string;
+    paragraphs: string[];
+    wins: string[];
+    risks: string[];
+    next: string[];
+    grounded: true;
+  } | null;
+  email: false;
+  writes: false;
+};
+
+export async function getPlanning(clientId: string): Promise<PlanningResponse> {
+  return api(`/clients/${clientId}/planning`);
+}
+
 export async function setAdAccountFrozen(
   adAccountId: string,
   frozen: boolean,

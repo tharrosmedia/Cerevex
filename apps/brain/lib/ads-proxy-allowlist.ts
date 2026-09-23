@@ -20,6 +20,8 @@ const ALLOWED: Array<{ method: "GET" | "POST"; pattern: RegExp }> = [
   { method: "GET", pattern: new RegExp(`^/clients/${UUID}/offline-attribution$`) },
   { method: "GET", pattern: new RegExp(`^/clients/${UUID}/lp-intelligence$`) },
   { method: "GET", pattern: new RegExp(`^/clients/${UUID}/lead-lifecycle$`) },
+  { method: "GET", pattern: new RegExp(`^/clients/${UUID}/planning$`) },
+  { method: "POST", pattern: new RegExp(`^/clients/${UUID}/planning/calendar$`) },
   { method: "POST", pattern: new RegExp(`^/clients/${UUID}/audits$`) },
   { method: "POST", pattern: new RegExp(`^/connectors/callrail/(connect|disconnect|pull)$`) },
   { method: "POST", pattern: new RegExp(`^/connectors/bundled/(connect|disconnect|pull)$`) },

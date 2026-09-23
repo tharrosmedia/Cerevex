@@ -37,6 +37,7 @@ import {
   disconnectAdAccount,
   getLpIntelligence,
   getOfflineAttribution,
+  getPlanning,
   mockConnect,
   pullBundledCallTracking,
   pullCallRail,
@@ -78,11 +79,14 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   const [advancedConnect, setAdvancedConnect] = useState(false);
   const [offlineSentences, setOfflineSentences] = useState<string[]>([]);
   const [lpSentences, setLpSentences] = useState<string[]>([]);
+  const [planningLines, setPlanningLines] = useState<string[]>([]);
   const callrailOn = isCapabilityVisible("m52.callrail_connect", capabilities);
   const bundledOn = isCapabilityVisible("m52.bundled_call_tracking", capabilities);
   const crmOn = isCapabilityVisible("m52.crm_join", capabilities);
   const clarityOn = isCapabilityVisible("m52.clarity_connect", capabilities);
   const lpOn = isCapabilityVisible("m52.lp_intelligence", capabilities);
+  const seasonalityOn = isCapabilityVisible("m52.seasonality_calendar", capabilities);
+  const narrativeOn = isCapabilityVisible("m52.owner_weekly_narrative", capabilities);
   const [approveId, setApproveId] = useState<string | null>(null);
   const selectedAuditIdRef = useRef<string | null>(null);
   selectedAuditIdRef.current = selectedAuditId;
@@ -103,14 +107,24 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         }),
     );
     setEntities(next);
-    const [recs, runs, offline, lpIntel] = await Promise.all([
+    const [recs, runs, offline, lpIntel, planning] = await Promise.all([
       listClientRecommendations(id),
       listClientAudits(id),
       getOfflineAttribution(id).catch(() => null),
       getLpIntelligence(id).catch(() => null),
+      getPlanning(id).catch(() => null),
     ]);
     setOfflineSentences(offline?.sentences ?? []);
     setLpSentences(lpIntel?.clarity.signals.map((row) => row.why) ?? []);
+    const lines: string[] = [];
+    for (const window of planning?.seasonality?.windows ?? []) {
+      if (window.active || window.upcoming) {
+        lines.push(`${window.name} (${window.when}) — ${window.intent}${window.offerCopy ? `. ${window.offerCopy}` : ""}`);
+      }
+    }
+    if (planning?.narrative?.headline) lines.push(planning.narrative.headline);
+    for (const paragraph of planning?.narrative?.paragraphs ?? []) lines.push(paragraph);
+    setPlanningLines(lines);
     setRecommendations(recs);
     setAudits(runs);
     const current = selectedAuditIdRef.current;
@@ -600,6 +614,30 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 </Button>
               </div>
             ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {seasonalityOn || narrativeOn ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Planning and owner brief</CardTitle>
+            <CardDescription>
+              Seasonal windows and the weekly owner brief. In-app only — no new email. Live campaign changes still need Approve.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm">
+            {planningLines.length > 0 ? (
+              <ul className="space-y-1 text-muted-foreground">
+                {planningLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">
+                Run a check after the flags are visible to see the calendar window and this week&apos;s brief.
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : null}

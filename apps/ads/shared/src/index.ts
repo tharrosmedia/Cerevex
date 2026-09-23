@@ -52,6 +52,37 @@ export {
   isBroadGeo,
 } from "./operator-hygiene";
 export type { HygieneRecDraft, HygieneEntity, HygieneMetric, SearchTermRow, ClaimHit } from "./operator-hygiene";
+export {
+  DEFAULT_HVAC_WINDOWS,
+  SEASONALITY_LOOKAHEAD_DAYS,
+  classifyWindows,
+  defaultSeasonalityCalendar,
+  daysUntilWindow,
+  intentWhy,
+  isM52SeasonalityMutation,
+  parseOfferWindow,
+  parseSeasonalityCalendar,
+  publicSeasonalityView,
+  recsFromSeasonality,
+  seasonalityFromSettings,
+  windowContains,
+  windowLabel,
+} from "./seasonality-calendar";
+export type { OfferIntent, OfferKind, OfferWindow, SeasonalityCalendar, SeasonalityRecDraft } from "./seasonality-calendar";
+export {
+  WEEKLY_NARRATIVE_SHIFT_PERCENT,
+  buildWeeklyNarrative,
+  isM52WeeklyNarrativeMutation,
+  isWeeklyNarrativeNestedAction,
+  publicWeeklyNarrativeView,
+  recsFromWeeklyNarrative,
+  summarizeWeeklyMetrics,
+} from "./owner-weekly-narrative";
+export type {
+  WeeklyNarrativeBrief,
+  WeeklyNarrativeMetrics,
+  WeeklyNarrativeRecDraft,
+} from "./owner-weekly-narrative";
 export { evaluateClientM51, M51_THRESHOLDS } from "./m51-engine";
 export {
   analyzeCopySentiment,
