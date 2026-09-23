@@ -2,8 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import type { ModuleFlags, SessionUser, WorkspaceSummary } from "@tharros/ads-shared";
-import { unboardedModules } from "@tharros/ads-shared";
+import type { CapabilityFlags, ModuleFlags, SessionUser, WorkspaceSummary } from "@tharros/ads-shared";
+import { defaultCapabilityFlags, unboardedModules } from "@tharros/ads-shared";
 import { ApiError, getWorkspace, me } from "@/lib/api";
 
 type WorkspaceState = {
@@ -14,6 +14,7 @@ type WorkspaceState = {
   canApprove: boolean;
   workspaceName: string | null;
   modules: ModuleFlags;
+  capabilities: CapabilityFlags;
   onboardingComplete: boolean;
   loading: boolean;
   error: string | null;
@@ -31,6 +32,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [canApprove, setCanApprove] = useState(false);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleFlags>(unboardedModules());
+  const [capabilities, setCapabilities] = useState<CapabilityFlags>(defaultCapabilityFlags());
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setCanApprove(Boolean(result.canApprove));
     setWorkspaceName(result.workspace?.name ?? null);
     setModules(result.workspace?.modules ?? unboardedModules());
+    setCapabilities(result.workspace?.capabilities ?? defaultCapabilityFlags());
     setOnboardingComplete(Boolean(result.workspace?.onboardingComplete));
     setError(null);
   }, []);
@@ -78,12 +81,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       canApprove,
       workspaceName,
       modules,
+      capabilities,
       onboardingComplete,
       loading,
       error,
       refresh,
     }),
-    [user, workspace, killSwitch, canMutate, canApprove, workspaceName, modules, onboardingComplete, loading, error, refresh],
+    [user, workspace, killSwitch, canMutate, canApprove, workspaceName, modules, capabilities, onboardingComplete, loading, error, refresh],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

@@ -31,6 +31,7 @@ import {
 import { childLogger } from "./logger";
 import { exchangeCode } from "./oauth-exchange";
 import { signOAuthState, verifyOAuthState } from "./oauth-state";
+import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
 
@@ -69,7 +70,8 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       throw new HTTPException(400, { message: "clientId is required" });
     }
     const auth = c.get("auth");
-    await requireMutableClient(auth, clientId);
+    const client = await requireMutableClient(auth, clientId);
+    await requireWritableCapability(client.workspaceId, platform === "meta" ? "connect.meta" : "connect.google");
     if (!configured(platform)) {
       throw new HTTPException(409, {
         message: `${platform} OAuth is not configured. Use mock connect for local/dev, or set app credentials.`,
@@ -149,6 +151,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     const auth = c.get("auth");
     const client = await requireMutableClient(auth, parsed.data.clientId);
     const platform = parsed.data.platform;
+    await requireWritableCapability(client.workspaceId, platform === "meta" ? "connect.meta" : "connect.google");
     const slug = client.name.toLowerCase().replace(/\s+/g, "-");
     const row = await upsertConnectedAccount({
       workspaceId: client.workspaceId,

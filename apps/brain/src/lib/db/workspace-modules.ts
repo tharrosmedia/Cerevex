@@ -1,13 +1,22 @@
 import { cookies } from 'next/headers';
 import {
   parseWorkspaceModuleSettings,
+  resolveWorkspaceCapabilities,
   settingsJsonWithBusinessType,
+  settingsJsonWithCapabilityOverrides,
   settingsJsonWithModuleOverrides,
   type BusinessType,
+  type CapabilityFlags,
+  type CapabilityOverrides,
   type ModuleFlags,
   type WorkspaceModuleSettings,
 } from '@shopify-brain/contracts';
+import { adsApi } from '@/lib/ads-bff';
 import { getActiveStoreId, getStore, updateStore } from './stores';
+
+export type WorkspaceProductSettings = WorkspaceModuleSettings & {
+  capabilities: CapabilityFlags;
+};
 
 export const WORKSPACE_COOKIE = 'cerevex_workspace';
 
@@ -72,6 +81,46 @@ export async function saveModuleOverrides(overrides: Partial<ModuleFlags>) {
   const next = settingsJsonWithModuleOverrides(current, overrides);
   await persistSettings(next);
   return parseWorkspaceModuleSettings(next);
+}
+
+export async function saveCapabilityOverrides(overrides: CapabilityOverrides) {
+  const current = await currentSettingsRecord();
+  const next = settingsJsonWithCapabilityOverrides(current, overrides);
+  await persistSettings(next);
+  const patched = await adsApi<{ workspace: { capabilities?: CapabilityFlags } | null }>('/workspace', {
+    method: 'PATCH',
+    body: JSON.stringify({ capabilities: overrides }),
+  });
+  if (patched.ok && patched.data.workspace?.capabilities) {
+    return {
+      ...parseWorkspaceModuleSettings(next),
+      capabilities: patched.data.workspace.capabilities,
+    };
+  }
+  return {
+    ...parseWorkspaceModuleSettings(next),
+    capabilities: resolveWorkspaceCapabilities(next),
+  };
+}
+
+export async function getWorkspaceProductSettings(): Promise<WorkspaceProductSettings> {
+  const modules = await getWorkspaceModuleSettings();
+  const local = resolveWorkspaceCapabilities(await currentSettingsRecord());
+  try {
+    const fromApi = await Promise.race([
+      adsApi<{ workspace: { capabilities?: CapabilityFlags } | null }>("/workspace"),
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), 1500);
+      }),
+    ]);
+    const capabilities =
+      fromApi && fromApi.ok && fromApi.data.workspace?.capabilities
+        ? fromApi.data.workspace.capabilities
+        : local;
+    return { ...modules, capabilities };
+  } catch {
+    return { ...modules, capabilities: local };
+  }
 }
 
 async function currentSettingsRecord(): Promise<Record<string, unknown>> {

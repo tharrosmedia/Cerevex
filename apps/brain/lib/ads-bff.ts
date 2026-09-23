@@ -73,6 +73,7 @@ export type AdsWorkspace = {
   id: string;
   name: string;
   applyKillSwitch: boolean;
+  capabilities?: import('@shopify-brain/contracts').CapabilityFlags;
 };
 
 function adsApiUrl(): string {

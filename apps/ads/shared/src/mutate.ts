@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import { bidMutationsEnabled, budgetMutationsEnabled } from "./flags";
-import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
+import type { CapabilityFlags } from "@shopify-brain/contracts";
+import { resolveWorkspaceCapabilities } from "@shopify-brain/contracts";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";
+import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
+import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import { isGoogleConfigured, isMetaConfigured } from "./oauth";
 import { adEntities } from "./schema";
 import type { ApplyMutation } from "./audit-schemas";
@@ -354,7 +356,10 @@ async function applyGoogleLive(
   return { action: mutation.action, platform: "google", target: mutation.target, status: "applied", mode: "live", writes: true };
 }
 
-export function classifyMutation(mutation: ApplyMutation): MutationOutcome | null {
+export function classifyMutation(
+  mutation: ApplyMutation,
+  flags: CapabilityFlags = resolveWorkspaceCapabilities({}),
+): MutationOutcome | null {
   if (isCreateNewMutationAction(mutation.action) || mutation.action === "review") {
     return {
       action: mutation.action,
@@ -380,7 +385,8 @@ export function classifyMutation(mutation: ApplyMutation): MutationOutcome | nul
       reason: `Mutation class ${mutation.action} is not executable under Approve.`,
     };
   }
-  if (mutation.action === "update_bid" && !bidMutationsEnabled()) {
+  const family = mutationFamilyForAction(mutation.action);
+  if (family && !isMutationFamilyEnabled(family, flags)) {
     return {
       action: mutation.action,
       platform: mutation.platform,
@@ -388,18 +394,7 @@ export function classifyMutation(mutation: ApplyMutation): MutationOutcome | nul
       status: "skipped",
       mode: "mock",
       writes: false,
-      reason: "Bid mutations are rolled back (FEATURE_BID_MUTATIONS off).",
-    };
-  }
-  if (mutation.action === "update_budget" && !budgetMutationsEnabled()) {
-    return {
-      action: mutation.action,
-      platform: mutation.platform,
-      target: mutation.target,
-      status: "skipped",
-      mode: "mock",
-      writes: false,
-      reason: "Budget mutations are rolled back (FEATURE_BUDGET_MUTATIONS off).",
+      reason: mutationFamilySkipReason(family),
     };
   }
   return null;
@@ -410,8 +405,9 @@ export async function executeMutation(input: {
   platform: Platform;
   accountExternalId: string;
   mutation: ApplyMutation;
+  capabilities?: CapabilityFlags;
 }): Promise<MutationOutcome> {
-  const skipped = classifyMutation(input.mutation);
+  const skipped = classifyMutation(input.mutation, input.capabilities ?? resolveWorkspaceCapabilities({}));
   if (skipped) return skipped;
 
   const tokens = await loadTokens(input.adAccountId);

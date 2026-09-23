@@ -5,16 +5,20 @@ export function ConnectEmpty({
   body,
   clientId,
   showCheckHint,
+  allowMeta = true,
+  allowGoogle = true,
 }: {
   title: string;
   body: string;
   clientId?: string;
   showCheckHint?: boolean;
+  allowMeta?: boolean;
+  allowGoogle?: boolean;
 }) {
-  const metaHref = clientId
+  const metaHref = allowMeta && clientId
     ? `/api/ads/connect?platform=meta&clientId=${encodeURIComponent(clientId)}`
     : undefined;
-  const googleHref = clientId
+  const googleHref = allowGoogle && clientId
     ? `/api/ads/connect?platform=google&clientId=${encodeURIComponent(clientId)}`
     : undefined;
 
@@ -23,15 +27,23 @@ export function ConnectEmpty({
       <h2 className="cx-card-title">{title}</h2>
       <p className="cx-help">{body}</p>
       <div className="cx-actions">
-        {metaHref ? (
-          <a className="btn-cta" href={metaHref}>Connect Meta</a>
+        {allowMeta ? (
+          metaHref ? (
+            <a className="btn-cta" href={metaHref}>Connect Meta</a>
+          ) : (
+            <span className="btn-cta" aria-disabled="true">Connect Meta</span>
+          )
         ) : (
-          <span className="btn-cta" aria-disabled="true">Connect Meta</span>
+          <span className="btn-secondary" aria-disabled="true">Meta connect is off</span>
         )}
-        {googleHref ? (
-          <a className="btn-secondary" href={googleHref}>Connect Google</a>
+        {allowGoogle ? (
+          googleHref ? (
+            <a className="btn-secondary" href={googleHref}>Connect Google</a>
+          ) : (
+            <span className="btn-secondary" aria-disabled="true">Connect Google</span>
+          )
         ) : (
-          <span className="btn-secondary" aria-disabled="true">Connect Google</span>
+          <span className="btn-secondary" aria-disabled="true">Google connect is off</span>
         )}
       </div>
       {!clientId ? (

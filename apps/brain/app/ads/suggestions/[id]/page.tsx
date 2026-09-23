@@ -41,9 +41,16 @@ export default async function AdsSuggestionDetailPage({
   const client = suggestion.clientId
     ? await adsApi<{ client: AdsClient }>(`/clients/${suggestion.clientId}`)
     : null;
-  const workspace = await adsApi<{ workspace: { applyKillSwitch: boolean } | null; canApprove?: boolean }>('/workspace');
+  const workspace = await adsApi<{
+    workspace: { applyKillSwitch: boolean; capabilities?: import('@shopify-brain/contracts').CapabilityFlags } | null;
+    canApprove?: boolean;
+  }>('/workspace');
   const killSwitchOn = Boolean(workspace.ok && workspace.data.workspace?.applyKillSwitch);
-  const canApprove = Boolean(result.data.canApprove ?? (workspace.ok && workspace.data.canApprove));
+  const applyOn = workspace.ok
+    ? workspace.data.workspace?.capabilities?.apply !== 'hidden' &&
+      workspace.data.workspace?.capabilities?.apply !== 'recommend_only'
+    : true;
+  const canApprove = Boolean(result.data.canApprove ?? (workspace.ok && workspace.data.canApprove)) && applyOn;
 
   return (
     <div className="cx-page">
@@ -54,6 +61,9 @@ export default async function AdsSuggestionDetailPage({
       </p>
       {killSwitchOn ? (
         <p className="cx-banner cx-banner-warn">Ads are paused. Approve cannot apply until the pause is off.</p>
+      ) : null}
+      {!applyOn ? (
+        <p className="cx-banner">Apply is off for this workspace. Deny and Snooze still work. Nothing will write platforms.</p>
       ) : null}
       <RecommendationCard
         suggestion={suggestion}

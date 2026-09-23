@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import type { ModuleFlags } from '@shopify-brain/contracts';
+import type { CapabilityFlags, ModuleFlags } from '@shopify-brain/contracts';
 import { adsSub } from '@/lib/ads-nav';
 import { navSectionFromPath, railItemsForSection } from '@/lib/nav-section';
 
@@ -130,16 +130,18 @@ function NavMenu({
 export default function SiteNav({
   adsOrigin = '',
   modules = null,
+  capabilities = null,
   railExtra,
 }: {
   adsOrigin?: string;
   modules?: ModuleFlags | null;
+  capabilities?: CapabilityFlags | null;
   railExtra?: ReactNode;
 }) {
   const pathname = usePathname();
   const section = navSectionFromPath(pathname);
   const [open, setOpen] = useState(false);
-  const adsItems = adsSub(adsOrigin, modules);
+  const adsItems = adsSub(adsOrigin, modules, capabilities);
   const rail = railItemsForSection(section, SEO_SUB, adsItems);
 
   useEffect(() => {

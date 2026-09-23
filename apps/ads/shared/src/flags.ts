@@ -1,23 +1,24 @@
 /**
- * M5 feature flags. Bid/budget mutations are ON under Approve.
- * Set FEATURE_BID_MUTATIONS=0 or FEATURE_BUDGET_MUTATIONS=0 to roll back.
+ * Apply mutation flags. Bid/budget now resolve through the capability registry.
+ * FEATURE_BID_MUTATIONS=0 / FEATURE_BUDGET_MUTATIONS=0 still roll back (env kill).
  * Browser-safe: process.env only — do not import node:fs.
  */
 
-function flagOn(name: string, defaultOn = true): boolean {
-  const raw = process.env[name];
-  if (raw == null || raw === "") return defaultOn;
-  return raw !== "0" && raw.toLowerCase() !== "false" && raw.toLowerCase() !== "off";
+import {
+  isCapabilityOn,
+  resolveWorkspaceCapabilities,
+  type CapabilityFlags,
+} from "@shopify-brain/contracts";
+
+export function bidMutationsEnabled(flags?: CapabilityFlags): boolean {
+  return isCapabilityOn("apply.bid", flags ?? resolveWorkspaceCapabilities({}));
 }
 
-export function bidMutationsEnabled(): boolean {
-  return flagOn("FEATURE_BID_MUTATIONS", true);
+export function budgetMutationsEnabled(flags?: CapabilityFlags): boolean {
+  return isCapabilityOn("apply.budget", flags ?? resolveWorkspaceCapabilities({}));
 }
 
-export function budgetMutationsEnabled(): boolean {
-  return flagOn("FEATURE_BUDGET_MUTATIONS", true);
-}
-
-export function applyFeatureFlags(): { bid: boolean; budget: boolean } {
-  return { bid: bidMutationsEnabled(), budget: budgetMutationsEnabled() };
+export function applyFeatureFlags(flags?: CapabilityFlags): { bid: boolean; budget: boolean } {
+  const resolved = flags ?? resolveWorkspaceCapabilities({});
+  return { bid: bidMutationsEnabled(resolved), budget: budgetMutationsEnabled(resolved) };
 }

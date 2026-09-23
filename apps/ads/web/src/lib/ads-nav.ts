@@ -1,5 +1,6 @@
-import type { AdsModuleId, ModuleFlags } from "@tharros/ads-shared";
-import { filterItemsByModules } from "@tharros/ads-shared";
+import type { AdsModuleId, CapabilityFlags, ModuleFlags } from "@tharros/ads-shared";
+import { resolveAdsNav, unboardedModules } from "@tharros/ads-shared";
+import { consoleHref } from "@/lib/console-origin";
 
 export type AdsNavItem = {
   href: string;
@@ -9,25 +10,43 @@ export type AdsNavItem = {
   match?: (path: string) => boolean;
 };
 
-export const ADS_NAV: AdsNavItem[] = [
-  { href: "/app", label: "Overview", match: (path) => path === "/app" },
-  {
-    href: "/app/clients",
-    label: "Clients",
-    rail: "Clients",
-    module: "clients",
-    match: (path) => path === "/app/clients" || path.startsWith("/app/clients/"),
-  },
-  { href: "/app/brainstorm", label: "Leads", rail: "Leads", module: "leads" },
-  { href: "/app/sales", label: "Sales", rail: "Sales", module: "sales" },
-  { href: "/app/workflows", label: "Workflows", rail: "Workflows", module: "workflows" },
-  { href: "/app/settings", label: "Modules" },
-];
+const LEGACY_MATCH: Partial<Record<string, (path: string) => boolean>> = {
+  "/app": (path) => path === "/app",
+  "/app/clients": (path) => path === "/app/clients" || path.startsWith("/app/clients/"),
+};
 
-export function adsNavFor(modules: ModuleFlags | null | undefined): AdsNavItem[] {
-  return filterItemsByModules(ADS_NAV, modules ?? { leads: true, clients: false, sales: false, workflows: true });
+/**
+ * One ads-nav catalog. Leftover ads-web maps local /app routes; Audits and
+ * Suggestions send the operator to in-shell /ads (console).
+ */
+export function adsNavFor(
+  modules: ModuleFlags | null | undefined,
+  capabilities?: CapabilityFlags | null,
+): AdsNavItem[] {
+  return resolveAdsNav({
+    shell: "legacyWeb",
+    modules: modules ?? unboardedModules(),
+    capabilities: capabilities ?? null,
+  }).map((item) => {
+    const href =
+      item.id === "audits" || item.id === "suggestions" || item.id === "overview"
+        ? item.id === "overview"
+          ? "/app"
+          : consoleHref(item.href)
+        : item.href;
+    return {
+      href,
+      label: item.label,
+      rail: item.rail,
+      module: item.module,
+      match: LEGACY_MATCH[item.href],
+    };
+  });
 }
 
-export function adsRailFor(modules: ModuleFlags | null | undefined): AdsNavItem[] {
-  return adsNavFor(modules).filter((item) => Boolean(item.rail));
+export function adsRailFor(
+  modules: ModuleFlags | null | undefined,
+  capabilities?: CapabilityFlags | null,
+): AdsNavItem[] {
+  return adsNavFor(modules, capabilities).filter((item) => Boolean(item.rail));
 }

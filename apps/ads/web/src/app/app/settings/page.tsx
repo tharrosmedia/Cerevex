@@ -5,9 +5,12 @@ import {
   ADS_MODULE_IDS,
   BUSINESS_TYPE_LABELS,
   BUSINESS_TYPES,
+  CAPABILITY_CATALOG_LIST,
   MODULE_COPY,
   type AdsModuleId,
   type BusinessType,
+  type CapabilityId,
+  type CapabilityState,
 } from "@tharros/ads-shared";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +18,7 @@ import { useWorkspace } from "@/components/cockpit/workspace-context";
 import { ApiError, patchWorkspace } from "@/lib/api";
 
 export default function AdsModulesSettingsPage() {
-  const { workspace, modules, canMutate, killSwitch, refresh } = useWorkspace();
+  const { workspace, modules, capabilities, canMutate, killSwitch, refresh } = useWorkspace();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +105,56 @@ export default function AdsModulesSettingsPage() {
                 disabled={!canMutate || pending}
                 onChange={(event) => toggle(id, event.target.checked)}
               />
+            </label>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Capabilities</CardTitle>
+          <CardDescription>
+            Per-workspace product flags. Unfinished work stays hidden or recommend-only.
+            Flip a flag here — Site Brain does not need a redeploy.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {CAPABILITY_CATALOG_LIST.map((entry) => (
+            <label key={entry.id} className="flex items-start justify-between gap-4 border-b border-border pb-4 last:border-0 last:pb-0">
+              <span>
+                <span className="block font-medium">
+                  {entry.label}
+                  {entry.unfinished ? " · unfinished" : ""}
+                </span>
+                <span className="mt-1 block text-sm text-muted-foreground">{entry.help}</span>
+                <span className="mt-1 block text-xs text-muted-foreground">{entry.id}</span>
+              </span>
+              <select
+                className="mt-1 border border-border bg-background px-2 py-1 text-sm"
+                value={capabilities[entry.id]}
+                disabled={!canMutate || pending}
+                onChange={(event) => {
+                  const state = event.target.value as CapabilityState;
+                  void (async () => {
+                    setPending(true);
+                    setError(null);
+                    setMessage(null);
+                    try {
+                      await patchWorkspace({ capabilities: { [entry.id as CapabilityId]: state } });
+                      await refresh();
+                      setMessage(`${entry.label} is now ${state.replace(/_/g, " ")}.`);
+                    } catch (err) {
+                      setError(err instanceof ApiError ? err.message : "Could not save capability.");
+                    } finally {
+                      setPending(false);
+                    }
+                  })();
+                }}
+              >
+                <option value="on">On</option>
+                <option value="recommend_only">Recommend only</option>
+                <option value="hidden">Hidden</option>
+              </select>
             </label>
           ))}
         </CardContent>

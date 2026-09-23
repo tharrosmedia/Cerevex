@@ -19,17 +19,35 @@ A user with `client_readonly` on the workspace and a membership on Got Ductless 
 
 The kill switch is a hard product control (default **true** / ON). Approve is blocked while it is on. M5 apply executes only after Approve, with the switch off and the ad account not frozen.
 
-`settings_json` also holds Modules & Nav IA 1.1 workspace flags (no extra table, schema `os` only):
+`settings_json` also holds Modules & Nav IA 1.1 workspace flags **and** the modularity capability registry (no extra table, schema `os` only):
 
 ```json
 {
   "businessType": "home_service" | "agency" | "ecommerce",
   "modules": { "leads": true, "clients": false, "sales": false, "workflows": true },
-  "onboardingCompletedAt": "ISO-8601"
+  "onboardingCompletedAt": "ISO-8601",
+  "capabilities": {
+    "cockpit": "on",
+    "apply": "on",
+    "connect.meta": "on",
+    "connect.google": "on",
+    "audits": "on",
+    "apply.bid": "on",
+    "apply.budget": "on",
+    "apply.create_entity": "hidden",
+    "shell.legacy_ads_web": "hidden",
+    "m51.budget_shift": "hidden",
+    "m51.grok_creatives": "hidden",
+    "m51.lp_congruence": "hidden",
+    "m51.ga4_connect": "hidden",
+    "m51.brainstorm": "hidden"
+  }
 }
 ```
 
 Defaults: Leads ON for all; Clients ON only for agency; Sales ON only for ecommerce; Workflows ON for v1. Settings can override flags later. Existing keys such as `vertical` stay in the same JSON object.
+
+Capability states are `on` | `hidden` | `recommend_only`. Unfinished / M5.1 units stay hidden. Optional env global kill (`CAPABILITY_KILL=apply,connect.meta` or `CAPABILITY_KILL_APPLY=1`) hides a capability for every workspace without redeploying Site Brain. Legacy `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` map to `apply.bid` / `apply.budget`. Core GET paths (cockpit, clients, audits, recommendations) never throw when a flag is off.
 
 ### users
 `id`, `email` (unique), `name`, `password_hash`, `created_at`

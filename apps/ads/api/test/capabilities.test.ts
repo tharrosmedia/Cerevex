@@ -1,0 +1,146 @@
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  applyEnvKills,
+  defaultCapabilityFlags,
+  envCapabilityKills,
+  inferApplyJobType,
+  isMutationFamilyEnabled,
+  MUTATION_FAMILIES,
+  resolveWorkspaceCapabilities,
+  settingsJsonWithCapabilityOverrides,
+} from "@tharros/ads-shared";
+import { defaultModulesFor } from "@shopify-brain/contracts";
+import { app, json, login } from "./helpers";
+
+describe("capability registry", () => {
+  const prev = {
+    CAPABILITY_KILL: process.env.CAPABILITY_KILL,
+    CAPABILITY_KILL_APPLY: process.env.CAPABILITY_KILL_APPLY,
+    FEATURE_BID_MUTATIONS: process.env.FEATURE_BID_MUTATIONS,
+    FEATURE_BUDGET_MUTATIONS: process.env.FEATURE_BUDGET_MUTATIONS,
+  };
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(prev)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("defaults core product on and m51 / sealed paths hidden", () => {
+    const flags = defaultCapabilityFlags();
+    expect(flags.cockpit).toBe("on");
+    expect(flags.apply).toBe("on");
+    expect(flags["connect.meta"]).toBe("on");
+    expect(flags["connect.google"]).toBe("on");
+    expect(flags.audits).toBe("on");
+    expect(flags["apply.create_entity"]).toBe("hidden");
+    expect(flags["shell.legacy_ads_web"]).toBe("hidden");
+    expect(flags["m51.budget_shift"]).toBe("hidden");
+    expect(flags["m51.ga4_connect"]).toBe("hidden");
+  });
+
+  it("keeps other settings_json keys when writing capabilities", () => {
+    const next = settingsJsonWithCapabilityOverrides({ vertical: "hvac", modules: defaultModulesFor("agency") }, {
+      audits: "hidden",
+    });
+    expect(next.vertical).toBe("hvac");
+    expect((next.capabilities as { audits: string }).audits).toBe("hidden");
+  });
+
+  it("applies env global kill and legacy bid/budget flags", () => {
+    const env = {
+      CAPABILITY_KILL: "audits",
+      CAPABILITY_KILL_APPLY: "1",
+      FEATURE_BID_MUTATIONS: "0",
+      FEATURE_BUDGET_MUTATIONS: "false",
+    };
+    expect(envCapabilityKills(env).sort()).toEqual(["apply", "apply.bid", "apply.budget", "audits"]);
+    const flags = applyEnvKills(defaultCapabilityFlags(), env);
+    expect(flags.apply).toBe("hidden");
+    expect(flags.audits).toBe("hidden");
+    expect(flags["apply.bid"]).toBe("hidden");
+    expect(flags["apply.budget"]).toBe("hidden");
+    expect(flags.cockpit).toBe("on");
+  });
+
+  it("never throws on garbage settings_json", () => {
+    expect(() => resolveWorkspaceCapabilities(null)).not.toThrow();
+    expect(() => resolveWorkspaceCapabilities("nope")).not.toThrow();
+    expect(resolveWorkspaceCapabilities({ capabilities: { cockpit: "maybe" } }).cockpit).toBe("on");
+  });
+
+  it("maps bid/budget families onto the registry", () => {
+    const off = resolveWorkspaceCapabilities({ capabilities: { "apply.bid": "hidden", "apply.budget": "hidden" } });
+    expect(isMutationFamilyEnabled(MUTATION_FAMILIES.bid, off)).toBe(false);
+    expect(isMutationFamilyEnabled(MUTATION_FAMILIES.budget, off)).toBe(false);
+    expect(isMutationFamilyEnabled(MUTATION_FAMILIES.pause, off)).toBe(true);
+    expect(inferApplyJobType([{ action: "create_ad" }, { action: "add_keyword" }])).toBe("create_entity");
+    expect(inferApplyJobType([{ action: "pause" }, { action: "create_ad" }])).toBe("mutate_existing");
+  });
+});
+
+describe.skipIf(!process.env.DATABASE_URL)("PATCH /workspace capabilities", () => {
+  it("flips a workspace flag and keeps the read path up", async () => {
+    const { token } = await login("adam@tharrosmedia.com", "local-dev-only");
+    const before = await app.request("/workspace", { headers: { authorization: `Bearer ${token}` } });
+    const beforeBody = await json(before);
+    expect(before.status).toBe(200);
+    expect((beforeBody.workspace as { capabilities: { cockpit: string } }).capabilities.cockpit).toBe("on");
+    expect(beforeBody.capabilityCatalog).toBeTruthy();
+
+    const hidden = await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "m51.budget_shift": "recommend_only", audits: "hidden" } }),
+    });
+    const hiddenBody = await json(hidden);
+    expect(hidden.status).toBe(200);
+    const caps = (hiddenBody.workspace as { capabilities: Record<string, string> }).capabilities;
+    expect(caps["m51.budget_shift"]).toBe("recommend_only");
+    expect(caps.audits).toBe("hidden");
+    expect(caps.cockpit).toBe("on");
+
+    const read = await app.request("/workspace", { headers: { authorization: `Bearer ${token}` } });
+    expect(read.status).toBe(200);
+    const clients = await app.request("/clients", { headers: { authorization: `Bearer ${token}` } });
+    expect(clients.status).toBe(200);
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        capabilities: (beforeBody.workspace as { capabilities: Record<string, string> }).capabilities,
+      }),
+    });
+  });
+
+  it("refuses Meta mock connect when connect.meta is off without taking the read path down", async () => {
+    const { token } = await login("adam@tharrosmedia.com", "local-dev-only");
+    const clientsRes = await app.request("/clients", { headers: { authorization: `Bearer ${token}` } });
+    const clients = (await json(clientsRes)).clients as { id: string; name: string }[];
+    const clientId = clients.find((row) => row.name === "Got Ductless")?.id;
+    expect(clientId).toBeTruthy();
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "connect.meta": "hidden" } }),
+    });
+
+    const blocked = await app.request("/oauth/mock/connect", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ clientId, platform: "meta" }),
+    });
+    expect(blocked.status).toBe(409);
+    const stillReadable = await app.request("/clients", { headers: { authorization: `Bearer ${token}` } });
+    expect(stillReadable.status).toBe(200);
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "connect.meta": "on" } }),
+    });
+  });
+});

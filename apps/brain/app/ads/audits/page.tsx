@@ -13,6 +13,8 @@ import {
   parseAdsFilters,
   pickDefaultClient,
 } from '@/lib/ads-query';
+import { adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
+import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +38,15 @@ export default async function AdsAuditsPage({
   const accounts = await loadAccounts(cockpit.clients.map((client) => client.id));
   const audits = filterAudits(cockpit.audits, filters, accounts);
 
+  if (!adsCapabilityVisible(cockpit.workspace, 'audits')) {
+    return (
+      <AdsCapabilityOff
+        title="Audits are off"
+        body="This workspace hid audits. Existing checks stay in the API. Flip the audits flag to show them again."
+      />
+    );
+  }
+
   return (
     <div className="cx-page">
       <p className="cx-kicker">Ads</p>
@@ -43,7 +54,13 @@ export default async function AdsAuditsPage({
       <p className="cx-lede">Every check and how it finished. Open one to see findings.</p>
 
       {!cockpit.ok ? (
-        <ConnectEmpty title="Connect Meta to run your first check." body={cockpit.message} clientId={selected?.id} />
+        <ConnectEmpty
+          title="Connect Meta to run your first check."
+          body={cockpit.message}
+          clientId={selected?.id}
+          allowMeta={adsCapabilityWritable(cockpit.workspace, 'connect.meta')}
+          allowGoogle={adsCapabilityWritable(cockpit.workspace, 'connect.google')}
+        />
       ) : (
         <>
           <AdsFilters
@@ -60,7 +77,13 @@ export default async function AdsAuditsPage({
           <section className="cx-panel">
             <CheckAdsButton
               clientId={selected?.id ?? (filters.client || undefined)}
-              disabledReason={!selected && !filters.client ? 'Choose a client to run a check.' : undefined}
+              disabledReason={
+                !adsCapabilityWritable(cockpit.workspace, 'audits')
+                  ? 'Audits are off for this workspace.'
+                  : !selected && !filters.client
+                    ? 'Choose a client to run a check.'
+                    : undefined
+              }
             />
           </section>
         </>
