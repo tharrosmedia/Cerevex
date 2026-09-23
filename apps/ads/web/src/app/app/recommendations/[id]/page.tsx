@@ -15,7 +15,7 @@ import { asProposedMutations, formatMoney, platformLabel, titleCase } from "@/li
 
 export default function RecommendationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { killSwitch, canApprove, refresh } = useWorkspace();
+  const { killSwitch, canApprove, applyOn, refresh } = useWorkspace();
   const [data, setData] = useState<Awaited<ReturnType<typeof getRecommendation>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -171,7 +171,12 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
         </div>
       ) : null}
 
-      {!canApprove && open ? (
+      {!applyOn && open ? (
+        <p className="text-sm text-muted-foreground">
+          Apply is off for this workspace. Deny and Snooze still work. Nothing will write platforms.
+        </p>
+      ) : null}
+      {applyOn && !canApprove && open ? (
         <p className="text-sm text-muted-foreground">
           Approve is limited to Adam during soft-launch. Deny and Snooze still write nothing to the platforms.
         </p>

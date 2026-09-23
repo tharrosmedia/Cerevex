@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { RecommendationActions } from '@/components/ads/recommendation-actions';
 import { RecommendationCard } from '@/components/ads/recommendation-card';
+import { canApproveWithApply, defaultCapabilityFlags, isApplyEnabled } from '@shopify-brain/contracts';
 import { adsApi, type AdsClient, type AdsSuggestion } from '@/lib/ads-bff';
 import { applyStatusLabel } from '@/lib/ads-copy';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
@@ -46,11 +47,12 @@ export default async function AdsSuggestionDetailPage({
     canApprove?: boolean;
   }>('/workspace');
   const killSwitchOn = Boolean(workspace.ok && workspace.data.workspace?.applyKillSwitch);
-  const applyOn = workspace.ok
-    ? workspace.data.workspace?.capabilities?.apply !== 'hidden' &&
-      workspace.data.workspace?.capabilities?.apply !== 'recommend_only'
-    : true;
-  const canApprove = Boolean(result.data.canApprove ?? (workspace.ok && workspace.data.canApprove)) && applyOn;
+  const flags = workspace.ok
+    ? workspace.data.workspace?.capabilities ?? defaultCapabilityFlags()
+    : defaultCapabilityFlags();
+  const applyOn = workspace.ok ? isApplyEnabled(flags) : true;
+  const operatorCanApprove = Boolean(result.data.canApprove ?? (workspace.ok && workspace.data.canApprove));
+  const canApprove = workspace.ok ? canApproveWithApply(operatorCanApprove, flags) : operatorCanApprove;
 
   return (
     <div className="cx-page">

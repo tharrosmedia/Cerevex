@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { KillSwitchBanner, KillSwitchPill } from "@/components/cockpit/kill-switch-banner";
 import { useWorkspace } from "@/components/cockpit/workspace-context";
-import { isCapabilityOn } from "@tharros/ads-shared";
+import { legacyAdsWebGate } from "@tharros/ads-shared";
 import { adsNavFor, adsRailFor } from "@/lib/ads-nav";
 import { logout } from "@/lib/api";
 import { consoleHref } from "@/lib/console-origin";
@@ -19,24 +19,50 @@ function isOnboardingExempt(pathname: string | null) {
   return pathname === "/app/onboarding" || pathname === "/app/settings";
 }
 
+function LegacyAdsWebBlocked() {
+  const href = consoleHref("/ads");
+
+  useEffect(() => {
+    window.location.replace(href);
+  }, [href]);
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 text-foreground">
+      <p className="max-w-md text-sm leading-6">
+        Ads live in Cerevex under{" "}
+        <a href={href} className="underline">
+          /ads
+        </a>
+        . This leftover chrome is off for this workspace.
+      </p>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { killSwitch, workspaceName, error, modules, capabilities, onboardingComplete, loading } = useWorkspace();
+  const { killSwitch, workspaceName, error, modules, capabilities, onboardingComplete, loading, user } = useWorkspace();
   const [adsOpen, setAdsOpen] = useState(false);
   const adsMenuRef = useRef<HTMLDivElement>(null);
   const adsCurrent = isAdsPath(pathname);
   const adsItems = adsNavFor(modules, capabilities);
   const rail = adsCurrent ? adsRailFor(modules, capabilities) : [];
+  const gate = legacyAdsWebGate({
+    loading,
+    authenticated: Boolean(user),
+    capabilities,
+  });
 
   useEffect(() => {
     setAdsOpen(false);
   }, [pathname]);
 
   useEffect(() => {
+    if (gate === "block") return;
     if (loading || onboardingComplete || isOnboardingExempt(pathname)) return;
     router.replace("/app/onboarding");
-  }, [loading, onboardingComplete, pathname, router]);
+  }, [gate, loading, onboardingComplete, pathname, router]);
 
   useEffect(() => {
     if (!adsOpen) return;
@@ -60,6 +86,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   async function onLogout() {
     await logout();
     router.replace("/sign-in");
+  }
+
+  if (gate === "block") {
+    return <LegacyAdsWebBlocked />;
   }
 
   return (
@@ -141,16 +171,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
       <div className="border-b border-border px-4 py-3 md:px-8">
         <KillSwitchBanner on={killSwitch} />
-        {!isCapabilityOn("shell.legacy_ads_web", capabilities) ? (
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            Operator ads live in Cerevex under{" "}
-            <a href={consoleHref("/ads")} className="text-foreground underline">
-              /ads
-            </a>
-            . This leftover ads-web chrome is gated. Turn on{" "}
-            <code>shell.legacy_ads_web</code> only if you still need it.
-          </p>
-        ) : null}
       </div>
       <main className="flex-1 px-4 py-6 md:px-8">
         {error ? (
