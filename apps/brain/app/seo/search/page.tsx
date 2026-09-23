@@ -21,11 +21,15 @@ async function syncGsc() {
 export const dynamic = 'force-dynamic';
 
 export default async function SeoSearch() {
-  const storeId = await getActiveStoreId();
-  const store = storeId ? await getStore(storeId) : null;
-  const gsc = store?.config?.gsc || {};
+  let storeId: string | null = null;
+  let store: any = null;
   let rows: any[] = [];
-  try { if (storeId) rows = await listGscRows(storeId, 200); } catch {}
+  try {
+    storeId = await getActiveStoreId();
+    store = storeId ? await getStore(storeId) : null;
+    if (storeId) rows = await listGscRows(storeId, 200);
+  } catch {}
+  const gsc = store?.config?.gsc || {};
   const connected = !!gsc.refreshTokenEnc;
   const hostReady = isGscConfigured();
 

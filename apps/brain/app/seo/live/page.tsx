@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { SeoSubnav } from '@/components/seo-subnav';
+import { operatorLoadError } from '@/lib/ui-copy';
 
 async function syncNow() {
   'use server';
@@ -27,12 +28,13 @@ async function syncNow() {
 export const dynamic = 'force-dynamic';
 
 export default async function SeoLive() {
-  const storeId = await getActiveStoreId();
+  let storeId: string | null = null;
   let resources: any[] = [];
   let loadError: string | null = null;
   try {
+    storeId = await getActiveStoreId();
     if (storeId) resources = await listCatalogResources(storeId, 200);
-  } catch (e: any) { loadError = e.message || 'load failed'; }
+  } catch (e: any) { loadError = operatorLoadError(e.message) || 'Could not load catalog.'; }
 
   return (
     <div className="cx-page">
@@ -51,7 +53,7 @@ export default async function SeoLive() {
 
       {loadError ? <p className="cx-banner cx-banner-warn" role="status">Could not load catalog: {loadError}</p> : null}
 
-      {resources.length === 0 && !loadError ? (
+      {resources.length === 0 ? (
         <EmptyState
           message="No catalog pages synced yet. Sync now to load collections, pages, and articles."
           action={
@@ -60,7 +62,7 @@ export default async function SeoLive() {
             </form>
           }
         />
-      ) : resources.length > 0 ? (
+      ) : (
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -87,7 +89,7 @@ export default async function SeoLive() {
             </tbody>
           </table>
         </div>
-      ) : null}
+      )}
       <p className="cx-help">Articles are limited to the first blog.</p>
     </div>
   );

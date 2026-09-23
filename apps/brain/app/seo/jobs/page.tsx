@@ -10,9 +10,11 @@ import { jobTypeLabel } from '@/lib/job-labels';
 export const dynamic = 'force-dynamic';
 
 export default async function SeoJobs() {
-  const storeId = await getActiveStoreId();
   let jobs: any[] = [];
-  try { if (storeId) jobs = await listJobs(storeId, 50); } catch {}
+  try {
+    const storeId = await getActiveStoreId();
+    if (storeId) jobs = await listJobs(storeId, 50);
+  } catch {}
   const seoJobs = jobs.filter((j: any) => j.domain === 'seo' || true);
 
   return (

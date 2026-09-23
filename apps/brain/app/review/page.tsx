@@ -4,34 +4,36 @@ import { cookies } from 'next/headers';
 import { listStores, getActiveStoreId } from '@/src/lib/db/stores';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
+import { operatorLoadError } from '@/lib/ui-copy';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Review({ searchParams }: { searchParams: Promise<{ success?: string }> }) {
   const params = await searchParams;
-  let storeId = await getActiveStoreId();
-  const cookieStore = await cookies();
-  if (!storeId) {
-    const stores = await listStores();
-    if (stores.length > 0) {
-      storeId = stores[0].id;
-      if (storeId) {
-        cookieStore.set('activeStoreId', storeId, {
-          path: '/',
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-        });
-      }
-    }
-  }
+  let storeId: string | null = null;
   let drafts: any[] = [];
   let loadError: string | null = null;
   try {
+    storeId = await getActiveStoreId();
+    const cookieStore = await cookies();
+    if (!storeId) {
+      const stores = await listStores();
+      if (stores.length > 0) {
+        storeId = stores[0].id;
+        if (storeId) {
+          cookieStore.set('activeStoreId', storeId, {
+            path: '/',
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+          });
+        }
+      }
+    }
     if (storeId) {
       drafts = await listDrafts(storeId, undefined, 20);
     }
   } catch (e: any) {
-    loadError = e.message || 'Failed to load drafts';
+    loadError = operatorLoadError(e.message) || 'Could not load drafts.';
   }
 
   return (
@@ -52,13 +54,13 @@ export default async function Review({ searchParams }: { searchParams: Promise<{
         <p className="cx-banner cx-banner-warn" role="status">Could not load drafts: {loadError}</p>
       ) : null}
 
-      {drafts.length === 0 && !loadError ? (
+      {drafts.length === 0 ? (
         <EmptyState
           message="No drafts to review for this store."
           actionHref="/seo/create"
           actionLabel="Create"
         />
-      ) : drafts.length > 0 ? (
+      ) : (
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -85,7 +87,7 @@ export default async function Review({ searchParams }: { searchParams: Promise<{
             </tbody>
           </table>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

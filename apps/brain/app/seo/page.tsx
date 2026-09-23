@@ -13,12 +13,14 @@ import { jobTypeLabel } from '@/lib/job-labels';
 export const dynamic = 'force-dynamic';
 
 export default async function SeoOverview() {
-  const storeId = await getActiveStoreId();
-  const stores = await listStores();
+  let storeId: string | null = null;
+  let stores: any[] = [];
   let awaiting = 0;
   let findings = 0;
   let recent: any[] = [];
   try {
+    storeId = await getActiveStoreId();
+    stores = await listStores();
     if (storeId) {
       const jobs = await listJobs(storeId, 10);
       awaiting = jobs.filter((j: any) => j.status === 'awaiting_approval').length;
