@@ -3,7 +3,7 @@
  * (oauth → loadEnv → node:fs). Types are safe via `./types` / the root barrel.
  */
 
-import { CONNECTOR_CATALOG } from "@shopify-brain/contracts";
+import { CONNECTOR_CATALOG } from "@cerevex/contracts";
 import {
   googleAdPlatformConnector,
   metaAdPlatformConnector,

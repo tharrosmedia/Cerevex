@@ -3,7 +3,7 @@ import {
   capabilityOnBlockedReason,
   isCapabilityId,
   isCapabilityState,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 import { getWorkspaceProductSettings, saveCapabilityOverrides } from '@/src/lib/db/workspace-modules';
 
 async function saveCapabilityAction(formData: FormData) {

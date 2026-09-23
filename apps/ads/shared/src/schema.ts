@@ -1,3 +1,4 @@
+import { ADS_DB_SCHEMA } from "@cerevex/contracts";
 import {
   boolean,
   index,
@@ -12,8 +13,12 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-/** Isolated OS schema. Never Brain public / pgvector. */
-export const osSchema = pgSchema("os");
+/**
+ * Isolated Cerevex ads schema. Postgres name stays `os` (ADS_DB_SCHEMA).
+ * Never Brain public / pgvector. Do not ALTER SCHEMA.
+ */
+export const osSchema = pgSchema(ADS_DB_SCHEMA);
+export const adsSchema = osSchema;
 
 export const appRoleEnum = osSchema.enum("app_role", ["owner", "operator", "client_readonly"]);
 export const platformEnum = osSchema.enum("platform", ["meta", "google"]);

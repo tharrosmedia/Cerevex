@@ -1,5 +1,7 @@
 # Cerevex ads module schema (Neon `os`)
 
+The Postgres schema name is **`os`** and stays `os`. R5 quarantines that string as `ADS_DB_SCHEMA` in `@cerevex/contracts` (`OS_DB_SCHEMA` is a deprecated alias). Do not `ALTER SCHEMA os RENAME` — it would break Neon prod, Railway `DATABASE_URL`, and drizzle journals.
+
 Tenancy is two-level: **workspace** then **client**. Every business row carries `workspace_id`. Client-scoped rows also carry `client_id`. The API never trusts a client-supplied scope without checking memberships.
 
 ## Roles
@@ -19,7 +21,7 @@ A user with `client_readonly` on the workspace and a membership on Got Ductless 
 
 The kill switch is a hard product control (default **true** / ON). Approve is blocked while it is on. M5 apply executes only after Approve, with the switch off and the ad account not frozen.
 
-`settings_json` also holds Modules & Nav IA 1.1 workspace flags **and** the modularity capability registry (no extra table, schema `os` only):
+`settings_json` also holds Modules & Nav IA 1.1 workspace flags **and** the modularity capability registry (no extra table, sticky schema `os` / `ADS_DB_SCHEMA` only):
 
 ```json
 {
@@ -107,7 +109,7 @@ Validated with Zod (`schema_version = 1`) before insert. Every proposed mutation
 ### apply_jobs
 `id`, `workspace_id`, `client_id`, `authorization_id`, `status`, `attempts`, `request_json`, `response_json`, `error`, `created_at`, `finished_at`
 
-HTTP Approve and Inngest `os/apply.requested` run `evaluateApplyGate`: kill switch ON (default) blocks; frozen ad account blocks; missing/revoked/expired authorization blocks. When the gate allows, the worker executes schema-valid mutate-existing `proposed_mutations` (pause, negatives, placement exclude, bid, budget). Create-new (`create_ad`, `add_keyword`) is skipped. Job statuses: `queued` / `applying` / `succeeded` / `failed`. `idempotency_key` is unique (`apply:<recommendationId>`).
+HTTP Approve and Inngest `ads/apply.requested` (legacy alias `os/apply.requested` for one release) run `evaluateApplyGate`: kill switch ON (default) blocks; frozen ad account blocks; missing/revoked/expired authorization blocks. When the gate allows, the worker executes schema-valid mutate-existing `proposed_mutations` (pause, negatives, placement exclude, bid, budget). Create-new (`create_ad`, `add_keyword`) is skipped. Job statuses: `queued` / `applying` / `succeeded` / `failed`. `idempotency_key` is unique (`apply:<recommendationId>`).
 
 ### audit_log
 `id`, `workspace_id`, `actor_type`, `actor_id`, `action`, `entity_type`, `entity_id`, `payload_json`, `created_at`
@@ -131,6 +133,6 @@ Present so later milestones do not require a new tenancy pass:
 3. Otherwise return only clients in `client_memberships`.
 4. Direct `GET /clients/:id` uses the same rule and returns **404** (not 200 with another tenant's payload) on miss.
 
-Async work is Inngest events. `meta/ads/account.sync` and `google/ads/account.sync` pull entities (mock unless live app keys are set). Audits (`os/audit.requested`) read those local tables and emit findings + recommendations. Apply (`os/apply.requested`) still refuses without authorization and when the kill switch is on. No platform writes. No Zapier. No Tavily. No BullMQ/Redis.
+Async work is Inngest events. `ads/account.sync` pulls entities with `platform` in the payload (mock unless live app keys are set). Legacy `meta/ads/account.sync` and `google/ads/account.sync` stay as one-release listeners. Audits (`ads/audit.requested`) read those local tables and emit findings + recommendations. Apply (`ads/apply.requested`) still refuses without authorization and when the kill switch is on. No platform writes. No Zapier. No Tavily. No BullMQ/Redis.
 
-Migrations target isolated schema **`os`**. The schema name stays `os` (renaming would break Neon prod). Do not create these tables in Brain `public` / pgvector.
+Migrations target isolated schema **`os`** (`ADS_DB_SCHEMA`). The schema name stays `os` (renaming would break Neon prod). Do not create these tables in Brain `public` / pgvector.

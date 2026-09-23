@@ -2,7 +2,7 @@ import assert from 'assert';
 import { evaluate } from '../src/lib/agents/core/evaluate.js';
 import { createBrief } from '../src/lib/agents/seo/brief.js';
 import { selectProductsForCollection } from '../src/lib/agents/seo/select-products.js';
-import { functions } from '@shopify-brain/jobs-seo';
+import { functions } from '@cerevex/jobs-seo';
 
 // Basic smoke tests for upgraded agents (no real LLM calls in fallback paths)
 

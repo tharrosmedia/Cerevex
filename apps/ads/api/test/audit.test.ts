@@ -59,7 +59,7 @@ describe("M3 audit → findings → recommendations", () => {
     expect(res.status).toBe(200);
     expect(body.writes).toBe(false);
     expect(body.inline).toBe(true);
-    expect(body.name).toBe("os/audit.requested");
+    expect(body.name).toBe("ads/audit.requested");
     const findings = body.findings as { title: string; body: { writes?: boolean } }[];
     const recs = body.recommendations as {
       id: string;

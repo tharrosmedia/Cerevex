@@ -14,7 +14,7 @@ import {
   type CapabilityFlags,
   type CapabilityId,
   type CapabilityOverrides,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
 import { asSettingsRecord } from "./modules";
 
 export {
@@ -51,7 +51,7 @@ export {
   OPS_ENV_REGISTRY,
   opsEnvSecrets,
   opsEnvCapabilityKills,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
 export type {
   CapabilityCatalogEntry,
   CapabilityFlags,
@@ -62,7 +62,7 @@ export type {
   OpsEnvEntry,
   OpsEnvKind,
   ProcessEnvMap,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
 
 export function readWorkspaceCapabilities(settingsJson: unknown): CapabilityFlags {
   return resolveWorkspaceCapabilities(settingsJson);

@@ -11,8 +11,9 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.4",
-    "@shopify-brain/jobs-google-ads": "*",
-    "@shopify-brain/jobs-meta-ads": "*",
+    "@cerevex/contracts": "*",
+    "@cerevex/jobs-google-ads": "*",
+    "@cerevex/jobs-meta-ads": "*",
     "@tharros/ads-shared": "*",
     "drizzle-orm": "^0.44.7",
     "hono": "^4.9.9",

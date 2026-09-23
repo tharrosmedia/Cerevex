@@ -1,11 +1,11 @@
 # `jobs/meta/ads`
 
-Origin M2 Meta account sync, remapped to Plan 1.5 prefix **`meta/ads/*`**.
+Origin M2 Meta account sync. R5 / G7 canonical event is **`ads/account.sync`** with `platform: "meta"` in the payload (registered on the ads worker as `ads-account-sync`).
 
-| Event | Function ID |
+This package keeps the **legacy** listener for one release so in-flight jobs finish:
+
+| Legacy event | Legacy function id |
 |---|---|
 | `meta/ads/account.sync` | `meta-ads-account-sync` |
 
-Read / mock pull only. **No Meta mutate.** AdAccounts hang off Client, not `store_id`.
-
-Registered by `apps/ads/workers` `/api/inngest` (same serve URL as ads-module orchestration).
+Do not emit the legacy name from new producers. Folder path stays.

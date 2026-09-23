@@ -1,5 +1,5 @@
 {
-  "name": "@shopify-brain/contracts",
+  "name": "@cerevex/contracts",
   "version": "0.0.0",
   "private": true,
   "description": "Shared TypeScript contracts for Cerevex console + ads module (tenancy, authz envelopes, audit, Inngest prefixes).",

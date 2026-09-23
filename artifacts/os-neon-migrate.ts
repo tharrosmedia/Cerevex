@@ -58,6 +58,7 @@ type BunSqlLike = {
 };
 
 const JOURNAL_TABLE = "__drizzle_migrations";
+/** Sticky Neon schema name (`ADS_DB_SCHEMA`). Do not ALTER SCHEMA. Filename keeps os- for Railway. */
 const SCHEMA = "os";
 
 function hereDir(): string {

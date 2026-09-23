@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { resolveWorkspaceCapabilities } from "@shopify-brain/contracts";
+import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens, storeTokens, tokenNearExpiry } from "./credentials";
 import { getDb } from "./db";

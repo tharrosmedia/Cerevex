@@ -13,10 +13,10 @@ This environment typically does **not** have Brain production `DATABASE_URL`. Ru
 
 ## What this smoke proves
 
-1. Ads-module migrations land only in schema **`os`** (schema name stays — do not rename Neon `os`).
+1. Ads-module migrations land only in schema **`os`** (`ADS_DB_SCHEMA` — schema name stays; do not rename Neon `os`).
 2. Brain `public` + `vector` (pgvector) tables are untouched.
 3. A simple `SELECT` against `os` works (API `/health` if you start the ads API).
-4. Inngest apps stay split: Brain `shopify-brain` (`seo/*` / `seo-*`) vs ads module `cerevex-ads` (`os/*`, `meta/ads/*`, `google/ads/*`). Syncing ads must not overwrite SEO. Env key remains `OS_INNGEST_APP_ID`.
+4. Inngest apps stay split: Brain `shopify-brain` (`seo/*` / `seo-*`) vs ads module `cerevex-ads` (`ads/*`, plus one-release legacy `os/*` / `meta/ads/*` / `google/ads/*`). Syncing ads must not overwrite SEO. Env key remains `OS_INNGEST_APP_ID`.
 
 ---
 
@@ -24,12 +24,12 @@ This environment typically does **not** have Brain production `DATABASE_URL`. Ru
 
 | File | What it does |
 |---|---|
-| `apps/ads/shared/src/schema.ts` | `export const osSchema = pgSchema("os")` — every OS table/enum is in `os` |
-| `apps/ads/shared/drizzle.config.ts` | `schemaFilter: ["os"]` |
+| `apps/ads/shared/src/schema.ts` | `export const osSchema = pgSchema(ADS_DB_SCHEMA)` — every ads table/enum is in `os` |
+| `apps/ads/shared/drizzle.config.ts` | `schemaFilter: [ADS_DB_SCHEMA]` |
 | `apps/ads/shared/src/migrate.ts` | `CREATE SCHEMA IF NOT EXISTS "os"` then Drizzle migrate with `search_path=os,public` |
 | `apps/ads/shared/drizzle/0000_m1_spine.sql` | `CREATE SCHEMA IF NOT EXISTS "os"`; `CREATE TYPE "os".…`; `CREATE TABLE "os"."…"` |
 | `apps/ads/shared/drizzle/0001_m2_connect.sql` | `CREATE TABLE "os"."ad_entities"` / `"os"."ad_metrics"` + ALTERs on `"os".…` |
-| `packages/contracts/src/neon.ts` | `OS_DB_SCHEMA = "os"`; Brain forbidden: `public`, `pgvector` |
+| `packages/contracts/src/neon.ts` | `ADS_DB_SCHEMA = "os"` (`OS_DB_SCHEMA` alias); Brain forbidden: `public`, `pgvector` |
 | `apps/brain/db/migrations/0001_init.sql` | Brain `public` tables + `CREATE EXTENSION vector` (no schema `os`) |
 
 Exact SQL that creates the isolated schema (first statement of `0000_m1_spine.sql`, also issued by `migrate.ts`):
@@ -64,12 +64,12 @@ Drizzle also creates journal schema **`drizzle`** (`__drizzle_migrations`). That
 | Side | App id | Serve route | Function IDs | Events |
 |---|---|---|---|---|
 | Brain SEO | `INNGEST_APP_ID` **or** `shopify-brain` | Next: `apps/brain/app/api/inngest/route.ts` → `{PUBLIC_URL}/api/inngest` | `seo-*` (+ helpers `update-job-status`, `log-event`) | `seo/*` |
-| OS | `OS_INNGEST_APP_ID` **or else** `INNGEST_APP_ID` **or else** `cerevex-ads` | Worker: `apps/ads/workers/src/index.ts` → `http://<API_HOST>:<WORKER_PORT>/api/inngest` (local `:43182`) | `os-*`, `meta-ads-*`, `google-ads-*` | `os/*`, `meta/ads/*`, `google/ads/*` |
+| Ads | `OS_INNGEST_APP_ID` **or else** `INNGEST_APP_ID` **or else** `cerevex-ads` | Worker: `apps/ads/workers/src/index.ts` → `http://<API_HOST>:<WORKER_PORT>/api/inngest` (local `:43182`) | `ads-*` plus one-release `os-*` / `meta-ads-*` / `google-ads-*` | `ads/*` plus one-release `os/*` / `meta/ads/*` / `google/ads/*` |
 
 Wiring:
 
 - Brain client: `jobs/seo/src/client.ts` — `id: process.env.INNGEST_APP_ID \|\| 'shopify-brain'`
-- Brain register: `apps/brain/src/inngest/index.ts` re-exports `@shopify-brain/jobs-seo`
+- Brain register: `apps/brain/src/inngest/index.ts` re-exports `@cerevex/jobs-seo`
 - Brain Cloud resync: `apps/brain/scripts/sync-inngest.ts` → `POST https://api.inngest.com/v2/apps/${appId}/syncs` with `{ url: PUBLIC_URL + '/api/inngest' }` (`npm run inngest:sync`)
 - OS client: `apps/ads/shared/src/inngest.ts` — `id: OS_INNGEST_APP_ID \|\| INNGEST_APP_ID \|\| "cerevex-ads"`
 - OS serve: worker `GET/POST` `/api/inngest` (Inngest `serve` from `inngest/node`)
@@ -79,7 +79,11 @@ SEO IDs that must remain registered on **`shopify-brain`** (do not rename):
 
 `seo-job`, `seo-ensure-job`, `seo-research`, `seo-create-brief`, `seo-write-draft`, `seo-edit-draft`, `seo-optimize-draft`, `seo-evaluate`, `seo-grade-draft`, `seo-revise-draft`, `seo-save-draft`, `seo-save-approval`, `seo-publish`, `seo-catalog-sync`, `seo-gsc-sync`, `seo-audit`, plus helpers `update-job-status`, `log-event`.
 
-OS IDs that belong only on **`cerevex-ads`**:
+Ads IDs that belong only on **`cerevex-ads`**:
+
+`ads-stub-ping`, `ads-stub-sync`, `ads-audit-requested`, `ads-apply-requested`, `ads-account-sync`.
+
+One-release legacy aliases (same app; remove after in-flight jobs drain):
 
 `os-stub-ping`, `os-stub-sync`, `os-audit-requested`, `os-apply-requested`, `meta-ads-account-sync`, `google-ads-account-sync`.
 
@@ -313,7 +317,7 @@ Local (does not touch Cloud SEO):
 #   npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
 ```
 
-Cloud check (dashboard, after keys exist): app **`shopify-brain`** still lists `seo-job` / `seo-*`. App **`cerevex-ads`** lists `os-*` / `meta-ads-*` / `google-ads-*` only.
+Cloud check (dashboard, after keys exist): app **`shopify-brain`** still lists `seo-job` / `seo-*`. App **`cerevex-ads`** lists `ads-*` plus one-release `os-*` / `meta-ads-*` / `google-ads-*`.
 
 ---
 
@@ -419,7 +423,7 @@ curl -s -X POST "http://127.0.0.1:43180/clients/$CLIENT/audits" \
   -d '{}' | jq '{jobId, name, status, writes}'
 ```
 
-Event name is `os/audit.requested`. This does **not** clobber Brain `seo/*`.
+Event name is `ads/audit.requested` (legacy `os/audit.requested` still accepted). This does **not** clobber Brain `seo/*`.
 
 ## Automated smoke
 

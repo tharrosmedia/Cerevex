@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultCapabilityFlags } from '@shopify-brain/contracts';
+import { defaultCapabilityFlags } from '@cerevex/contracts';
 import { adsModuleHref, adsModuleOrigin } from '../lib/module-origins';
 
 const prevChrome = process.env.NEXT_PUBLIC_ADS_LEGACY_CHROME;

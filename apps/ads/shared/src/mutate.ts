@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import type { CapabilityFlags } from "@shopify-brain/contracts";
-import { resolveWorkspaceCapabilities } from "@shopify-brain/contracts";
+import type { CapabilityFlags } from "@cerevex/contracts";
+import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";

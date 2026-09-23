@@ -49,16 +49,16 @@ jobs:
         run: npm ci
       - name: Typecheck Brain
         if: needs.changes.outputs.brain == 'true'
-        run: npm run typecheck --workspace=@shopify-brain/brain
+        run: npm run typecheck --workspace=@cerevex/brain
       - name: Typecheck jobs/seo
         if: needs.changes.outputs.brain == 'true'
-        run: npm run typecheck --workspace=@shopify-brain/jobs-seo
+        run: npm run typecheck --workspace=@cerevex/jobs-seo
       - name: Typecheck contracts
         if: needs.changes.outputs.brain == 'true'
-        run: npm run typecheck --workspace=@shopify-brain/contracts
+        run: npm run typecheck --workspace=@cerevex/contracts
       - name: Test Brain
         if: needs.changes.outputs.brain == 'true'
-        run: npm run test --workspace=@shopify-brain/brain
+        run: npm run test --workspace=@cerevex/brain
       - name: Skip (no Brain / SEO changes)
         if: needs.changes.outputs.brain != 'true'
         run: echo "Skipped — apps/ads-only change. Brain + jobs/seo stay independently green."
@@ -97,9 +97,9 @@ jobs:
           npm run typecheck --workspace=@tharros/ads-shared
           npm run typecheck --workspace=@tharros/ads-api
           npm run typecheck --workspace=@tharros/ads-workers
-          npm run typecheck --workspace=@shopify-brain/jobs-meta-ads
-          npm run typecheck --workspace=@shopify-brain/jobs-google-ads
-          npm run typecheck --workspace=@shopify-brain/contracts
+          npm run typecheck --workspace=@cerevex/jobs-meta-ads
+          npm run typecheck --workspace=@cerevex/jobs-google-ads
+          npm run typecheck --workspace=@cerevex/contracts
           npm run typecheck --workspace=@tharros/ads-web
       - name: Migrate + seed + test ads module (schema os only)
         if: needs.changes.outputs.ads == 'true'

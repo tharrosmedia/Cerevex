@@ -6,14 +6,14 @@ import pino from "pino";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { checkDatabase } from "@tharros/ads-shared/db";
 import { checkInngest, inngest } from "@tharros/ads-shared/inngest";
-import { functions as googleAdsFunctions, FUNCTION_IDS as GOOGLE_ADS_IDS } from "@shopify-brain/jobs-google-ads";
-import { functions as metaAdsFunctions, FUNCTION_IDS as META_ADS_IDS } from "@shopify-brain/jobs-meta-ads";
-import { OS_FUNCTION_IDS, osFunctions } from "./functions";
+import { functions as googleAdsFunctions, FUNCTION_IDS as GOOGLE_ADS_IDS } from "@cerevex/jobs-google-ads";
+import { functions as metaAdsFunctions, FUNCTION_IDS as META_ADS_IDS } from "@cerevex/jobs-meta-ads";
+import { ADS_WORKER_FUNCTION_IDS, adsFunctions } from "./functions";
 
 loadEnv();
 
-const functions = [...osFunctions, ...metaAdsFunctions, ...googleAdsFunctions];
-const FUNCTION_IDS = [...OS_FUNCTION_IDS, ...META_ADS_IDS, ...GOOGLE_ADS_IDS];
+const functions = [...adsFunctions, ...metaAdsFunctions, ...googleAdsFunctions];
+const FUNCTION_IDS = [...ADS_WORKER_FUNCTION_IDS, ...META_ADS_IDS, ...GOOGLE_ADS_IDS];
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",

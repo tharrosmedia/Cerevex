@@ -21,7 +21,7 @@ import {
   legacyAdsWebGate,
   resolveAdsNav,
   resolveWorkspaceCapabilities,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 import { adsSub } from '../lib/ads-nav';
 
 const flags = defaultCapabilityFlags();

@@ -1,6 +1,6 @@
 {
-  "name": "@shopify-brain/db",
+  "name": "@cerevex/db",
   "version": "0.0.0",
   "private": true,
-  "description": "Reserved shared DB package. Brain Neon stays in apps/brain. Ads module uses isolated schema os."
+  "description": "Reserved shared DB package. Brain Neon stays in apps/brain. Ads module uses isolated schema os (ADS_DB_SCHEMA)."
 }

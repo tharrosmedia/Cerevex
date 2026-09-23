@@ -6,7 +6,7 @@ import {
   resolveWorkspaceCapabilities,
   type CapabilityFlags,
   type CapabilityId,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 import type { AdsWorkspace } from './ads-bff';
 
 export function capabilitiesFromWorkspace(workspace: AdsWorkspace | null | undefined): CapabilityFlags {

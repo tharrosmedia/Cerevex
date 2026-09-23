@@ -22,6 +22,6 @@ export const DAY1_MOVE = {
   nextRootToAppsBrain: "Next root → apps/brain",
   seoInngestToJobsSeo: "seo Inngest → jobs/seo (KEEP seo/* event names and seo-* function IDs)",
   osToAppsOs: "Origin tharros-os (now Cerevex ads module) M1/M2 → apps/ads",
-  metaAds: "jobs/meta/ads (meta/ads/*)",
-  googleAds: "jobs/google/ads (google/ads/*)",
+  metaAds: "jobs/meta/ads (legacy folder; emits/listens ads/account.sync, platform=meta)",
+  googleAds: "jobs/google/ads (legacy folder; emits/listens ads/account.sync, platform=google)",
 } as const;

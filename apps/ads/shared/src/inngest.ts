@@ -53,7 +53,7 @@ export async function sendStubSync(data: StubSyncPayload): Promise<string[]> {
 
 export async function sendApplyRequested(data: ApplyRequestedPayload): Promise<string[]> {
   const event = data.applyJobId
-    ? { id: `os-apply-${data.applyJobId}`, name: EVENTS.applyRequested, data }
+    ? { id: `ads-apply-${data.applyJobId}`, name: EVENTS.applyRequested, data }
     : { name: EVENTS.applyRequested, data };
   const result = await inngest.send(event);
   return result.ids;
@@ -64,8 +64,8 @@ export async function sendAuditRequested(data: AuditRequestedPayload): Promise<s
   return result.ids;
 }
 
-export function adAccountSyncEvent(platform: AdAccountSyncPayload["platform"]): string {
-  return platform === "meta" ? EVENTS.metaAdsAccountSync : EVENTS.googleAdsAccountSync;
+export function adAccountSyncEvent(_platform: AdAccountSyncPayload["platform"]): string {
+  return EVENTS.accountSync;
 }
 
 export async function sendAdAccountSync(data: AdAccountSyncPayload): Promise<string[]> {

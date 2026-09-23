@@ -2,7 +2,7 @@ import type {
   BusinessType,
   CapabilityOverrides,
   ModuleFlags,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 
 export type AdsWorkspaceSettingsPatch = {
   businessType?: BusinessType;

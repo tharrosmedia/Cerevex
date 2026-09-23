@@ -5,7 +5,7 @@ import {
   BUSINESS_TYPES,
   isBusinessType,
   type BusinessType,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 import { saveBusinessType } from '@/src/lib/db/workspace-modules';
 
 async function chooseBusinessType(formData: FormData) {

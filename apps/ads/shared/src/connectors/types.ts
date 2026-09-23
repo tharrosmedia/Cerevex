@@ -11,7 +11,7 @@ import type {
   CapabilityId,
   ConnectorImplementation,
   ConnectorKind,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import type { PullResult } from "../platforms";

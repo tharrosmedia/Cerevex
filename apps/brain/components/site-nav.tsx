@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import type { CapabilityFlags, ModuleFlags } from '@shopify-brain/contracts';
+import type { CapabilityFlags, ModuleFlags } from '@cerevex/contracts';
 import { adsSub } from '@/lib/ads-nav';
 import { navSectionFromPath, railItemsForSection } from '@/lib/nav-section';
 

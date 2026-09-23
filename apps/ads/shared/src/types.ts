@@ -1,4 +1,5 @@
-import type { CapabilityFlags } from "@shopify-brain/contracts";
+import type { CapabilityFlags } from "@cerevex/contracts";
+import { ADS_EVENTS, LEGACY_ADS_EVENTS } from "@cerevex/contracts";
 import type { BusinessType, ModuleFlags } from "./modules";
 
 export const ROLES = ["owner", "operator", "client_readonly"] as const;
@@ -116,18 +117,20 @@ export type HealthStatus = {
 };
 
 /**
- * Plan 1.5 event names.
- * Platform-specific paid jobs use meta/ads/* and google/ads/*.
- * Shared OS orchestration uses os/*. Brain seo/* is untouched.
+ * R5 / G7 canonical ads event names. Platform is payload data, not the namespace.
+ * Brain seo/* is untouched. LEGACY_EVENTS stay for one-release dual listeners.
  */
 export const EVENTS = {
-  stubPing: "os/stub.ping",
-  stubSync: "os/stub.sync",
-  metaAdsAccountSync: "meta/ads/account.sync",
-  googleAdsAccountSync: "google/ads/account.sync",
-  applyRequested: "os/apply.requested",
-  auditRequested: "os/audit.requested",
+  stubPing: ADS_EVENTS.stubPing,
+  stubSync: ADS_EVENTS.stubSync,
+  accountSync: ADS_EVENTS.accountSync,
+  metaAdsAccountSync: ADS_EVENTS.accountSync,
+  googleAdsAccountSync: ADS_EVENTS.accountSync,
+  applyRequested: ADS_EVENTS.applyRequested,
+  auditRequested: ADS_EVENTS.auditRequested,
 } as const;
+
+export const LEGACY_EVENTS = LEGACY_ADS_EVENTS;
 
 export const AUDIT_RUN_STATUSES = ["queued", "running", "completed", "failed"] as const;
 export type AuditRunStatus = (typeof AUDIT_RUN_STATUSES)[number];

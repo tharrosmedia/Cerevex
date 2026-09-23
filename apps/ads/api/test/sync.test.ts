@@ -75,7 +75,7 @@ describe("ad account sync", () => {
     expect([200, 503]).toContain(res.status);
     if (res.status === 200) {
       expect(body.status).toBe("queued");
-      expect(body.name).toBe("google/ads/account.sync");
+      expect(body.name).toBe("ads/account.sync");
       expect(JSON.stringify(body)).not.toContain("mock-access");
     }
   });

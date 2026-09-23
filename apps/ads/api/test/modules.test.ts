@@ -4,7 +4,7 @@ import {
   parseWorkspaceModuleSettings,
   settingsJsonWithBusinessType,
   unboardedModules,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
 import { applyBusinessTypeSettings, applyModuleOverrideSettings, readWorkspaceModules } from "@tharros/ads-shared";
 import { app, json, login } from "./helpers";
 

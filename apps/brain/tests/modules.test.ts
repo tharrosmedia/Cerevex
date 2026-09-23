@@ -5,7 +5,7 @@ import {
   filterItemsByModules,
   parseWorkspaceModuleSettings,
   unboardedModules,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 import { adsSub } from '../lib/ads-nav';
 
 assert.deepEqual(defaultModulesFor('home_service'), {

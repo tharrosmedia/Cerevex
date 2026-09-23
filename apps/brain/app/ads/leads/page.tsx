@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { isLeadsSurfaceVisible } from '@shopify-brain/contracts';
+import { isLeadsSurfaceVisible } from '@cerevex/contracts';
 import { AdsModulePlaceholder } from '@/components/ads/module-placeholder';
 import { getWorkspaceProductSettings } from '@/src/lib/db/workspace-modules';
 

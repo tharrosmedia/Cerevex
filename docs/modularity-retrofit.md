@@ -1,10 +1,10 @@
 # Modularity retrofit (capability flags + connector interfaces)
 
-Lean ship of Product inventory 1.0 / Cos R1+R2 (R3+R4 included where they stayed clean). **No R5. No M5.1/M5.2 product work.**
+Lean ship of Product inventory 1.0 / Cos R1–R5. **No M5.1/M5.2 product work.**
 
 ## Flag registry shape
 
-Stored on `os.workspaces.settings_json.capabilities` (same JSON as Modules & Nav IA — no new table, schema `os` stays `os`).
+Stored on `os.workspaces.settings_json.capabilities` (same JSON as Modules & Nav IA — no new table, schema `os` stays `os` via `ADS_DB_SCHEMA`).
 
 | State | Meaning |
 |---|---|
@@ -47,24 +47,66 @@ Shared `Connector` surface: `isConfigured`, `connect`, `disconnect`. Meta + Call
 
 Sync (`runAdAccountSync`) and live apply (`executeMutation` / `applyViaConnector`) call `getAdPlatformConnector` — they do not import Meta/Google Graph or Google Ads REST helpers. HTTP still never live-writes platforms; apply stays on the authorize-to-apply job. OAuth `/oauth/:platform/start` and **callback** both `requireWritableCapability(connect.meta|google)` before exchanging or upserting tokens. Sync enqueue and disconnect use the same `connect.*` gate.
 
-## R3 (same PR)
+## R3
 
-- Apply gate + `os/apply.requested` **kept**.
+- Apply gate + `ads/apply.requested` (legacy alias `os/apply.requested` for one release).
 - Mutation families (`pause`, `negatives`, `placement_exclude`, `bid`, `budget`, `create_entity`) sit behind the registry. Bid/budget env flags migrated.
 - Sealed apply job type `create_entity` for a later Grok path. UI still never does sync platform writes.
 
-## R4 (same PR)
+## R4
 
-- One ads-nav catalog in `@shopify-brain/contracts` (`resolveAdsNav`). In-shell `/ads` is the operator path.
+- One ads-nav catalog in `@cerevex/contracts` (`resolveAdsNav`). In-shell `/ads` is the operator path.
 - Leftover `apps/ads/web` is hard-blocked unless `shell.legacy_ads_web` is on (default hidden). Authenticated `/app/*` redirects to in-shell `/ads`.
 - Console leftover-chrome links require **both** `shell.legacy_ads_web=on` and `NEXT_PUBLIC_ADS_LEGACY_CHROME=1`. `NEXT_PUBLIC_ADS_ORIGIN` is ignored unless that pair is on. The env is a deploy-time companion, not a second product flag.
 
-## Deferred
+## R5 (this PR — G7 + G10)
 
-- **R5** — no deploy/naming quarantine, no Neon `os` rename, no `@shopify-brain` package rename.
+R5 naming is **shipped**. Packages renamed. Neon schema `os` is **quarantined**, not renamed. Inngest ads topology is generic `ads/*` (platform is data). `seo/*` / `seo-*` and live Inngest app ids are unchanged.
+
+### G7 — Inngest names
+
+Producers emit the new names. Dual listeners keep the old events and function ids for **one release** so in-flight jobs finish. Remove `LEGACY_ADS_*` after that release.
+
+| Old event | New event | Old function id | New function id |
+|---|---|---|---|
+| `os/stub.ping` | `ads/stub.ping` | `os-stub-ping` | `ads-stub-ping` |
+| `os/stub.sync` | `ads/stub.sync` | `os-stub-sync` | `ads-stub-sync` |
+| `os/apply.requested` | `ads/apply.requested` | `os-apply-requested` | `ads-apply-requested` |
+| `os/audit.requested` | `ads/audit.requested` | `os-audit-requested` | `ads-audit-requested` |
+| `meta/ads/account.sync` | `ads/account.sync` (`platform: "meta"`) | `meta-ads-account-sync` | `ads-account-sync` |
+| `google/ads/account.sync` | `ads/account.sync` (`platform: "google"`) | `google-ads-account-sync` | `ads-account-sync` |
+
+`jobs/meta/ads` and `jobs/google/ads` folders stay. They only register the legacy platform-prefixed listeners. Canonical sync is `ads-account-sync` on the ads worker.
+
+Unchanged: `seo/*`, `seo-*`, Brain Inngest app id `shopify-brain`, ads Inngest app id `cerevex-ads`, env key `OS_INNGEST_APP_ID`.
+
+### G10 — Packages + Neon `os`
+
+`@tharros/ads*` stays (Railway start/build commands). Everything that was `@shopify-brain/*` is `@cerevex/*`.
+
+| Old | New |
+|---|---|
+| `shopify-brain-monorepo` | `cerevex-monorepo` |
+| `@shopify-brain/brain` | `@cerevex/brain` |
+| `@shopify-brain/contracts` | `@cerevex/contracts` |
+| `@shopify-brain/db` | `@cerevex/db` |
+| `@shopify-brain/shared` | `@cerevex/shared` |
+| `@shopify-brain/jobs-seo` | `@cerevex/jobs-seo` |
+| `@shopify-brain/jobs-meta-ads` | `@cerevex/jobs-meta-ads` |
+| `@shopify-brain/jobs-google-ads` | `@cerevex/jobs-google-ads` |
+| `@shopify-brain/jobs-meta-organic` | `@cerevex/jobs-meta-organic` |
+| `@tharros/ads`, `@tharros/ads-api`, `@tharros/ads-web`, `@tharros/ads-shared`, `@tharros/ads-workers` | **unchanged** (Railway workspace commands) |
+
+Neon: `ADS_DB_SCHEMA = "os"` (`OS_DB_SCHEMA` is a deprecated alias). No `ALTER SCHEMA`. Drizzle still targets schema `os`.
+
+If Railway Site Brain start/build uses `--workspace=@shopify-brain/brain`, change it to `@cerevex/brain` on merge. Root `npm run build` / `npm start` already proxy to the new name.
+
+## Out of scope (still deferred)
+
 - **M5.1 Brief 1.6** — no budget-shift UI, Grok creatives, LP congruence, GA4 connect UX, or brainstorm product.
 - **M5.2** — no heatmaps, CallRail product, CRM, weekly narrative.
-- **G7 / G10 / R5** — Inngest/package rename, Neon `os` / `@shopify-brain` rename. Not this PR.
+- Dropping the one-release Inngest `LEGACY_ADS_*` listeners.
+- Railway service / DNS / domain cutover. Live Inngest app id `shopify-brain`. Neon schema rename.
 
 ## G6 + G9 (follow-up)
 
@@ -73,7 +115,7 @@ Sync (`runAdAccountSync`) and live apply (`executeMutation` / `applyViaConnector
 
 ## G8 (ops / env leftovers)
 
-Canonical map lives in `@shopify-brain/contracts` (`OPS_ENV_REGISTRY`).
+Canonical map lives in `@cerevex/contracts` (`OPS_ENV_REGISTRY`).
 
 | Env | Kind | Capability / dest | Notes |
 |---|---|---|---|

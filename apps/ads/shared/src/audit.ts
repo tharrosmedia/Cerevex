@@ -17,14 +17,15 @@ import {
   recommendations,
   workspaces,
 } from "./schema";
-import type {
-  ApplyJobPublic,
-  AuditRequestedPayload,
-  AuditRunPublic,
-  AuthorizationPublic,
-  DecisionAction,
-  FindingPublic,
-  RecommendationPublic,
+import {
+  EVENTS,
+  type ApplyJobPublic,
+  type AuditRequestedPayload,
+  type AuditRunPublic,
+  type AuthorizationPublic,
+  type DecisionAction,
+  type FindingPublic,
+  type RecommendationPublic,
 } from "./types";
 
 export type AuditBundle = {
@@ -120,7 +121,7 @@ export async function createAuditRun(input: {
     entityType: "audit_run",
     entityId: row.id,
     payloadJson: {
-      event: "os/audit.requested",
+      event: EVENTS.auditRequested,
       clientId: input.clientId,
       adAccountId: input.adAccountId,
       writes: false,
@@ -268,7 +269,7 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       entityType: "audit_run",
       entityId: run.id,
       payloadJson: {
-        event: "os/audit.requested",
+        event: EVENTS.auditRequested,
         clientId: run.clientId,
         ...summary,
       },
@@ -291,7 +292,7 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       action: "jobs.audit_failed",
       entityType: "audit_run",
       entityId: run.id,
-      payloadJson: { event: "os/audit.requested", error: message, writes: false },
+      payloadJson: { event: EVENTS.auditRequested, error: message, writes: false },
     });
     throw error;
   }
