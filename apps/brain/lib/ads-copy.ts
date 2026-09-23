@@ -42,7 +42,7 @@ const SUGGESTION_WHY: Record<string, string> = {
   creative_test: "What is winning on one platform can be tested on the other.",
   lp_congruence: "The ad promise and the landing page do not match.",
   create_alternative: "Grok made an alternative. Approve creates the ad. Generate did not write live.",
-  call_attribution: "CallRail calls joined to a campaign in plain language.",
+  call_attribution: "Calls joined to a campaign in plain language.",
   crm_booked_job: "A call matches a booked job. Nothing was written to the CRM.",
 };
 

@@ -48,7 +48,9 @@ export type EvaluateAccountInput = {
     calls?: CallRecord[];
     bookedJobs?: BookedJob[];
     callrailEnabled?: boolean;
+    bundledEnabled?: boolean;
     crmEnabled?: boolean;
+    sourceLabel?: string;
   };
 };
 
@@ -337,7 +339,9 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
   }
 
   const offline = input.offlineSignals;
-  if (offline?.callrailEnabled && (offline.calls?.length ?? 0) > 0) {
+  const callTrackingOn = Boolean(offline?.callrailEnabled || offline?.bundledEnabled);
+  if (offline && callTrackingOn && (offline.calls?.length ?? 0) > 0) {
+    const sourceLabel = offline.sourceLabel ?? (offline.bundledEnabled && !offline.callrailEnabled ? "bundled call tracking" : "CallRail");
     const summary = summarizeAttribution({
       calls: offline.calls ?? [],
       campaigns: campaigns.map((campaign) => ({
@@ -348,6 +352,7 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
       })),
       bookedJobs: offline.bookedJobs,
       crmEnabled: Boolean(offline.crmEnabled),
+      sourceLabel,
     });
     const joined = summary.joins.filter((row) => row.matchedOn !== "unmatched");
     if (joined.length > 0) {
@@ -355,7 +360,7 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
       const target =
         campaigns.find((campaign) => campaign.externalId === first.campaignExternalId) ?? campaigns[0];
       findings.push(
-        finding(input, "call_attribution", "info", `${summary.answeredCount} answered CallRail calls joined to campaigns`, {
+        finding(input, "call_attribution", "info", `${summary.answeredCount} answered calls joined to campaigns`, {
           hint: summary.sentences[0],
           callCount: offline.calls?.length ?? 0,
           answeredCount: summary.answeredCount,
@@ -372,7 +377,7 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
           risk: "low",
           confidence: confidence(0.7),
           evidence: {
-            source: "callrail",
+            source: offline.callrailEnabled ? "callrail" : "bundled",
             writes: false,
             sentences: summary.sentences,
             joinCount: joined.length,

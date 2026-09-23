@@ -42,6 +42,8 @@ assert.equal(isAllowedAdsProxyRequest('POST', '/brainstorm/generate'), false);
 assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/offline-attribution`), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/callrail/connect'), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/callrail/pull'), true);
+assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/bundled/connect'), true);
+assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/bundled/pull'), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/crm/connect'), true);
 
 console.log('ads-copy: ok');

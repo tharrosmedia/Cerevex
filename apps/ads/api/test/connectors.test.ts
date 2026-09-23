@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   asConnector,
+  bundledCallTrackingConnector,
   callRailConnector,
   CONNECTORS,
   ga4AnalyticsConnector,
@@ -41,6 +42,9 @@ describe("connector interfaces", () => {
     expect(typeof metaAdPlatformConnector.authorizeUrl).toBe("function");
     expect(typeof metaAdPlatformConnector.pull).toBe("function");
     expect(typeof callRailConnector.pullCalls).toBe("function");
+    expect(bundledCallTrackingConnector.implementation).toBe("live");
+    expect(bundledCallTrackingConnector.connectCapability).toBe("m52.bundled_call_tracking");
+    expect(typeof bundledCallTrackingConnector.pullCalls).toBe("function");
   });
 
   it("refuses live pull when sync.live is hidden even if tokens look live", () => {

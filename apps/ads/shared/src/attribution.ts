@@ -179,6 +179,7 @@ export function summarizeAttribution(input: {
   campaigns: AttributionCampaign[];
   bookedJobs?: BookedJob[];
   crmEnabled?: boolean;
+  sourceLabel?: string;
 }): AttributionSummary {
   const joins = input.calls.map((call) => {
     const join = joinCallToCampaigns(call, input.campaigns);
@@ -205,9 +206,10 @@ export function summarizeAttribution(input: {
     grouped.set(join.campaignName, current);
   }
 
+  const sourceLabel = input.sourceLabel ?? "CallRail";
   const sentences: string[] = [];
   if (input.calls.length === 0) {
-    sentences.push("No CallRail calls were pulled yet.");
+    sentences.push(`No ${sourceLabel} calls were pulled yet.`);
   } else {
     sentences.push(
       `${input.calls.length} call${input.calls.length === 1 ? "" : "s"} pulled. ${answeredCount} answered.`,
@@ -217,7 +219,7 @@ export function summarizeAttribution(input: {
     }
     if (conversionCount > 0) {
       sentences.push(
-        `${conversionCount} of those ${conversionCount === 1 ? "is" : "are"} marked a conversion in CallRail.`,
+        `${conversionCount} of those ${conversionCount === 1 ? "is" : "are"} marked a conversion in ${sourceLabel}.`,
       );
     }
     if (input.crmEnabled && bookedJoinCount > 0) {
@@ -313,6 +315,93 @@ export function mockCallRailCalls(clientName: string, now = new Date()): CallRec
       campaign: `${clientName} — Google HVAC leads`,
       utmCampaign: "hvac-leads",
       trackingNumber: "+1-555-0100",
+      customerPhoneLast4: "1201",
+      firstCall: false,
+      conversion: true,
+      valueUsd: null,
+    },
+  ];
+}
+
+export function mockBundledCalls(
+  clientName: string,
+  now = new Date(),
+  campaignLabel?: string,
+): CallRecord[] {
+  const stamp = now.toISOString();
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString();
+  const googleCampaign = campaignLabel || `${clientName} — Google HVAC leads`;
+  const metaCampaign = campaignLabel || `${clientName} — Meta HVAC leads`;
+  return [
+    {
+      id: "bd-mock-1",
+      startTime: hoursAgo(5),
+      answered: true,
+      durationSeconds: 201,
+      source: "Bundled",
+      campaign: googleCampaign,
+      utmSource: "google",
+      utmMedium: "cpc",
+      utmCampaign: "hvac-leads",
+      trackingNumber: "+1-555-0140",
+      customerPhoneLast4: "1201",
+      firstCall: true,
+      conversion: true,
+      valueUsd: null,
+    },
+    {
+      id: "bd-mock-2",
+      startTime: hoursAgo(16),
+      answered: true,
+      durationSeconds: 88,
+      source: "Bundled",
+      campaign: metaCampaign,
+      utmSource: "facebook",
+      utmMedium: "paid",
+      utmCampaign: "hvac-leads",
+      trackingNumber: "+1-555-0141",
+      customerPhoneLast4: "4410",
+      firstCall: true,
+      conversion: false,
+      valueUsd: null,
+    },
+    {
+      id: "bd-mock-3",
+      startTime: hoursAgo(28),
+      answered: false,
+      durationSeconds: 0,
+      source: "Bundled",
+      campaign: "",
+      utmSource: "google",
+      utmCampaign: "hvac-leads",
+      trackingNumber: "+1-555-0140",
+      customerPhoneLast4: "7788",
+      firstCall: true,
+      conversion: false,
+      valueUsd: null,
+    },
+    {
+      id: "bd-mock-4",
+      startTime: hoursAgo(36),
+      answered: true,
+      durationSeconds: 45,
+      source: "Bundled",
+      campaign: "Saturday radio",
+      trackingNumber: "+1-555-0149",
+      customerPhoneLast4: "9090",
+      firstCall: true,
+      conversion: false,
+      valueUsd: null,
+    },
+    {
+      id: "bd-mock-5",
+      startTime: stamp,
+      answered: true,
+      durationSeconds: 176,
+      source: "Bundled",
+      campaign: googleCampaign,
+      utmCampaign: "hvac-leads",
+      trackingNumber: "+1-555-0140",
       customerPhoneLast4: "1201",
       firstCall: false,
       conversion: true,

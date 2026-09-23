@@ -119,6 +119,7 @@ export {
   settingsJsonWithCapabilityOverrides,
   isCapabilityOn,
   isCapabilityVisible,
+  isCallAttributionVisible,
   isCapabilityWritable,
   isLegacyAdsWebAllowed,
   isPlatformSyncLiveOn,

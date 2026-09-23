@@ -20,6 +20,7 @@ const ALLOWED: Array<{ method: "GET" | "POST"; pattern: RegExp }> = [
   { method: "GET", pattern: new RegExp(`^/clients/${UUID}/offline-attribution$`) },
   { method: "POST", pattern: new RegExp(`^/clients/${UUID}/audits$`) },
   { method: "POST", pattern: new RegExp(`^/connectors/callrail/(connect|disconnect|pull)$`) },
+  { method: "POST", pattern: new RegExp(`^/connectors/bundled/(connect|disconnect|pull)$`) },
   { method: "POST", pattern: new RegExp(`^/connectors/crm/(connect|disconnect)$`) },
 ];
 

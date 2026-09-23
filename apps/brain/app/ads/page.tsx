@@ -78,9 +78,10 @@ export default async function AdsCockpitPage({
   const connectMeta = adsCapabilityWritable(cockpit.workspace, 'connect.meta');
   const connectGoogle = adsCapabilityWritable(cockpit.workspace, 'connect.google');
   const callrailVisible = adsCapabilityVisible(cockpit.workspace, 'm52.callrail_connect');
+  const bundledVisible = adsCapabilityVisible(cockpit.workspace, 'm52.bundled_call_tracking');
   const crmVisible = adsCapabilityVisible(cockpit.workspace, 'm52.crm_join');
   let offline: OfflineAttributionView | null = null;
-  if ((callrailVisible || crmVisible) && selectedClient) {
+  if ((callrailVisible || bundledVisible || crmVisible) && selectedClient) {
     const result = await adsApi<OfflineAttributionView>(`/clients/${selectedClient.id}/offline-attribution`);
     offline = result.ok ? result.data : null;
   }

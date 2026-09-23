@@ -27,6 +27,13 @@ export type ConnectorConnectInput = {
   apiKey?: string;
   accountId?: string;
   companyId?: string;
+  accountSid?: string;
+  authToken?: string;
+  trackingNumber?: string;
+  campaignLabel?: string;
+  /** Live number purchase / routing writes are refused. */
+  purchaseNumber?: boolean;
+  voiceUrl?: string;
   mock?: boolean;
   useEnv?: boolean;
 };
@@ -38,6 +45,9 @@ export type ConnectorConnectResult = {
   reason?: string;
   externalId?: string;
   mock?: boolean;
+  trackingNumber?: string;
+  purchased?: false;
+  routingChanged?: false;
 };
 
 export type CallTrackingPullInput = {
@@ -46,6 +56,10 @@ export type CallTrackingPullInput = {
   clientName: string;
   accountId?: string;
   apiKey?: string;
+  accountSid?: string;
+  authToken?: string;
+  trackingNumber?: string;
+  campaignLabel?: string;
   mock?: boolean;
 };
 
@@ -134,7 +148,7 @@ export interface CallTrackingConnector extends Connector {
   readonly kind: "call_tracking";
   readonly id: CallTrackingConnectorId;
   readonly mode: "connect" | "bundled";
-  readonly connectCapability?: Extract<CapabilityId, "m52.callrail_connect">;
+  readonly connectCapability?: Extract<CapabilityId, "m52.callrail_connect" | "m52.bundled_call_tracking">;
   pullCalls?(input: CallTrackingPullInput): Promise<CallTrackingPullResult>;
 }
 
