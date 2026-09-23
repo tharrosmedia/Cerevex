@@ -9,6 +9,7 @@ import {
   applyModuleOverrideSettings,
   canApproveApply,
   canMutate,
+  capabilityOnBlockedReason,
   CAPABILITY_IDS,
   EVENTS,
   isBusinessType,
@@ -596,6 +597,12 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       }
       if (Object.keys(overrides).length === 0) {
         throw new HTTPException(400, { message: `Unknown capability. Known: ${CAPABILITY_IDS.join(", ")}` });
+      }
+      for (const [id, state] of Object.entries(overrides)) {
+        const blocked = isCapabilityId(id) ? capabilityOnBlockedReason(id, state) : null;
+        if (blocked) {
+          throw new HTTPException(409, { message: blocked });
+        }
       }
       next = applyCapabilityOverrideSettings(next, overrides);
     }

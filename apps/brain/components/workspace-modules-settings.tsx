@@ -2,8 +2,10 @@ import {
   ADS_MODULE_IDS,
   BUSINESS_TYPE_LABELS,
   BUSINESS_TYPES,
+  LEADS_NOT_LIVE_COPY,
   MODULE_COPY,
   isBusinessType,
+  isLeadsProductUnfinished,
   type BusinessType,
 } from '@shopify-brain/contracts';
 import { getWorkspaceModuleSettings, saveBusinessType, saveModuleOverrides } from '@/src/lib/db/workspace-modules';
@@ -68,18 +70,33 @@ export async function WorkspaceModulesSettings() {
       </div>
 
       <form action={saveModulesAction} className="space-y-4">
-        {ADS_MODULE_IDS.map((id) => (
-          <label key={id} className="flex items-start justify-between gap-4 border-t pt-3">
-            <span>
-              <span className="block font-medium">{MODULE_COPY[id].label}</span>
-              <span className="block text-sm" style={{ color: 'var(--muted-foreground)' }}>{MODULE_COPY[id].help}</span>
-            </span>
-            <span className="text-sm flex items-center gap-2">
-              <input type="checkbox" name={id} defaultChecked={settings.modules[id]} />
-              On
-            </span>
-          </label>
-        ))}
+        {ADS_MODULE_IDS.map((id) => {
+          const leadsLocked = id === 'leads' && isLeadsProductUnfinished();
+          return (
+            <label key={id} className="flex items-start justify-between gap-4 border-t pt-3">
+              <span>
+                <span className="block font-medium">{MODULE_COPY[id].label}</span>
+                <span className="block text-sm" style={{ color: 'var(--muted-foreground)' }}>{MODULE_COPY[id].help}</span>
+                {leadsLocked ? (
+                  <span className="block text-sm mt-1" style={{ color: 'var(--muted-foreground)' }}>
+                    {LEADS_NOT_LIVE_COPY}
+                  </span>
+                ) : null}
+              </span>
+              {leadsLocked ? (
+                <span className="text-sm">
+                  {settings.modules.leads ? <input type="hidden" name="leads" value="on" /> : null}
+                  Not live
+                </span>
+              ) : (
+                <span className="text-sm flex items-center gap-2">
+                  <input type="checkbox" name={id} defaultChecked={settings.modules[id]} />
+                  On
+                </span>
+              )}
+            </label>
+          );
+        })}
         <button type="submit">Save modules</button>
       </form>
     </div>

@@ -9,6 +9,10 @@ export {
   ADS_NAV_CATALOG,
   ADS_NAV_HREFS_IN_SHELL,
   ADS_NAV_HREFS_LEGACY_WEB,
+  LEADS_CAPABILITY_ID,
+  LEADS_NOT_LIVE_COPY,
+  isLeadsProductUnfinished,
+  isLeadsSurfaceVisible,
   resolveAdsNav,
 } from "@shopify-brain/contracts";
 export type { AdsNavItemId, AdsNavShell, ResolvedAdsNavItem } from "@shopify-brain/contracts";

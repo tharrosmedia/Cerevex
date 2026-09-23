@@ -1,13 +1,14 @@
 import { redirect } from 'next/navigation';
+import { isLeadsSurfaceVisible } from '@shopify-brain/contracts';
 import { AdsModulePlaceholder } from '@/components/ads/module-placeholder';
-import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
+import { getWorkspaceProductSettings } from '@/src/lib/db/workspace-modules';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdsLeadsPage() {
-  const settings = await getWorkspaceModuleSettings();
+  const settings = await getWorkspaceProductSettings();
   if (!settings.onboardingComplete) redirect('/onboarding');
-  if (!settings.modules.leads) redirect('/ads');
+  if (!isLeadsSurfaceVisible(settings.modules, settings.capabilities)) redirect('/ads');
   return (
     <AdsModulePlaceholder
       title="Leads"

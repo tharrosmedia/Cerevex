@@ -47,6 +47,8 @@ The kill switch is a hard product control (default **true** / ON). Approve is bl
 
 Defaults: Leads ON for all; Clients ON only for agency; Sales ON only for ecommerce; Workflows ON for v1. Settings can override flags later. Existing keys such as `vertical` stay in the same JSON object.
 
+`modules.leads` is IA only. The Leads / leftover brainstorm placeholder (`/ads/leads`, `/app/brainstorm`) also requires `capabilities["m51.brainstorm"]` to be `on` or `recommend_only`. While that capability is unfinished, Settings hides the Leads toggle (value is preserved) and hides all unfinished `m51.*` flags. `PATCH /workspace` refuses `m51.*: "on"` until `unfinished` is cleared.
+
 Capability states are `on` | `hidden` | `recommend_only`. Unfinished / M5.1 units stay hidden. Optional env global kill (`CAPABILITY_KILL=apply,connect.meta` or `CAPABILITY_KILL_APPLY=1`) hides a capability for every workspace without redeploying Site Brain. Legacy `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` map to `apply.bid` / `apply.budget`. Core GET paths (cockpit, clients, audits, recommendations) never throw when a flag is off.
 
 ### users

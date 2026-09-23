@@ -4,11 +4,33 @@
  */
 
 import {
+  CAPABILITY_CATALOG,
+  defaultCapabilityFlags,
   filterItemsByCapabilities,
+  isCapabilityVisible,
   type CapabilityFlags,
   type CapabilityId,
 } from "./capabilities";
 import { filterItemsByModules, unboardedModules, type AdsModuleId, type ModuleFlags } from "./modules";
+
+/** IA module `leads` maps to this dark capability. Surface/nav require both. */
+export const LEADS_CAPABILITY_ID = "m51.brainstorm" as const;
+
+export const LEADS_NOT_LIVE_COPY =
+  "Leads is not live yet. The Ads menu will not show it until that work ships.";
+
+export function isLeadsProductUnfinished(): boolean {
+  return CAPABILITY_CATALOG[LEADS_CAPABILITY_ID].unfinished;
+}
+
+export function isLeadsSurfaceVisible(
+  modules?: ModuleFlags | null,
+  capabilities?: CapabilityFlags | null,
+): boolean {
+  const mods = modules ?? unboardedModules();
+  const flags = capabilities ?? defaultCapabilityFlags();
+  return Boolean(mods.leads) && isCapabilityVisible(LEADS_CAPABILITY_ID, flags);
+}
 
 export const ADS_NAV_SHELLS = ["inShell", "legacyWeb"] as const;
 export type AdsNavShell = (typeof ADS_NAV_SHELLS)[number];
@@ -38,7 +60,7 @@ export const ADS_NAV_CATALOG: AdsNavCatalogItem[] = [
   { id: "audits", label: "Audits", rail: "Audits", capability: "audits" },
   { id: "suggestions", label: "Suggestions", rail: "Suggestions", capability: "cockpit" },
   { id: "clients", label: "Clients", rail: "Clients", module: "clients" },
-  { id: "leads", label: "Leads", rail: "Leads", module: "leads" },
+  { id: "leads", label: "Leads", rail: "Leads", module: "leads", capability: LEADS_CAPABILITY_ID },
   { id: "sales", label: "Sales", rail: "Sales", module: "sales" },
   { id: "workflows", label: "Workflows", rail: "Workflows", module: "workflows" },
   { id: "modules", label: "Modules" },
@@ -85,9 +107,8 @@ export function resolveAdsNav(input: {
 }): ResolvedAdsNavItem[] {
   const hrefs = { ...adsNavHrefsFor(input.shell ?? "inShell"), ...input.hrefs };
   const modules = input.modules ?? unboardedModules();
+  const capabilities = input.capabilities ?? defaultCapabilityFlags();
   const byModule = filterItemsByModules(ADS_NAV_CATALOG, modules);
-  const byCapability = input.capabilities
-    ? filterItemsByCapabilities(byModule, input.capabilities)
-    : byModule;
+  const byCapability = filterItemsByCapabilities(byModule, capabilities);
   return byCapability.map((item) => ({ ...item, href: hrefs[item.id] }));
 }

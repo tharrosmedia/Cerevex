@@ -1,15 +1,20 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  OPERATOR_CAPABILITY_CATALOG_LIST,
   applyEnvKills,
   canApproveWithApply,
+  capabilityOnBlockedReason,
   defaultCapabilityFlags,
+  defaultModulesFor,
   envCapabilityKills,
   inferApplyJobType,
   isApplyEnabled,
+  isLeadsSurfaceVisible,
   isLegacyAdsWebAllowed,
   isMutationFamilyEnabled,
   legacyAdsWebGate,
   MUTATION_FAMILIES,
+  resolveAdsNav,
   resolveWorkspaceCapabilities,
   settingsJsonWithCapabilityOverrides,
 } from "@tharros/ads-shared";
@@ -42,6 +47,33 @@ describe("capability registry", () => {
     expect(flags["shell.legacy_ads_web"]).toBe("hidden");
     expect(flags["m51.budget_shift"]).toBe("hidden");
     expect(flags["m51.ga4_connect"]).toBe("hidden");
+    expect(flags["m51.brainstorm"]).toBe("hidden");
+  });
+
+  it("keeps unfinished m51 flags out of operator Settings and refuses on", () => {
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.group === "m51")).toBe(false);
+    expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toMatch(/not live yet/);
+    expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
+    expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();
+  });
+
+  it("hides the leads/brainstorm surface unless m51.brainstorm is visible", () => {
+    const modules = defaultModulesFor("home_service");
+    expect(modules.leads).toBe(true);
+    expect(isLeadsSurfaceVisible(modules, defaultCapabilityFlags())).toBe(false);
+    expect(
+      resolveAdsNav({ shell: "inShell", modules }).some((item) => item.id === "leads"),
+    ).toBe(false);
+    expect(
+      resolveAdsNav({ shell: "legacyWeb", modules }).some((item) => item.href === "/app/brainstorm"),
+    ).toBe(false);
+
+    const staged = { ...defaultCapabilityFlags(), "m51.brainstorm": "recommend_only" as const };
+    expect(isLeadsSurfaceVisible(modules, staged)).toBe(true);
+    expect(resolveAdsNav({ shell: "inShell", modules, capabilities: staged }).some((item) => item.id === "leads")).toBe(
+      true,
+    );
+    expect(isLeadsSurfaceVisible({ ...modules, leads: false }, staged)).toBe(false);
   });
 
   it("keeps other settings_json keys when writing capabilities", () => {
@@ -133,6 +165,15 @@ describe.skipIf(!process.env.DATABASE_URL)("PATCH /workspace capabilities", () =
     expect(caps["m51.budget_shift"]).toBe("recommend_only");
     expect(caps.audits).toBe("hidden");
     expect(caps.cockpit).toBe("on");
+
+    const live = await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "m51.brainstorm": "on" } }),
+    });
+    expect(live.status).toBe(409);
+    const liveBody = await json(live);
+    expect(String(liveBody.message ?? liveBody.error ?? "")).toMatch(/not live yet/);
 
     const read = await app.request("/workspace", { headers: { authorization: `Bearer ${token}` } });
     expect(read.status).toBe(200);

@@ -465,7 +465,7 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
       )}
 
       {params.capabilities === 'saved' && (
-        <div className="mb-4 p-3 border text-sm">Capability saved. Unfinished flags stay hidden until you turn them on.</div>
+        <div className="mb-4 p-3 border text-sm">Capability saved. Work that is not live yet stays off the Ads menu.</div>
       )}
       {params.capabilities === 'error' && (
         <div className="mb-4 p-3 border text-sm">Could not save that capability. Try again.</div>

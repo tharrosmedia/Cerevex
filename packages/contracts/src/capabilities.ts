@@ -156,7 +156,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
   "m51.brainstorm": {
     id: "m51.brainstorm",
     label: "Brainstorm (M5.1)",
-    help: "Dark placeholder. No brainstorm product work in this retrofit.",
+    help: "Dark placeholder for the Leads / brainstorm surface. Nav and /ads/leads stay closed until this is live. modules.leads is IA only.",
     defaultState: "hidden",
     unfinished: true,
     group: "m51",
@@ -166,6 +166,37 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
 export const CAPABILITY_CATALOG_LIST: CapabilityCatalogEntry[] = CAPABILITY_IDS.map(
   (id) => CAPABILITY_CATALOG[id],
 );
+
+/** Operator Settings: hide dark M5.1 placeholders until unfinished is cleared. */
+export function isCapabilityInOperatorSettings(entry: CapabilityCatalogEntry): boolean {
+  return !(entry.group === "m51" && entry.unfinished);
+}
+
+export const OPERATOR_CAPABILITY_CATALOG_LIST: CapabilityCatalogEntry[] =
+  CAPABILITY_CATALOG_LIST.filter(isCapabilityInOperatorSettings);
+
+/**
+ * Unfinished m51.* cannot be turned on from Settings or PATCH.
+ * hidden / recommend_only stay allowed so Cos can stage visibility without going live.
+ */
+export function capabilityOnBlockedReason(
+  id: CapabilityId,
+  state: CapabilityState,
+): string | null {
+  if (state !== "on") return null;
+  const entry = CAPABILITY_CATALOG[id];
+  if (!entry || entry.group !== "m51" || !entry.unfinished) return null;
+  return `${entry.label} is not live yet. It cannot be turned on until that work ships.`;
+}
+
+export function blockedUnfinishedCapabilityOns(overrides: CapabilityOverrides): CapabilityId[] {
+  const blocked: CapabilityId[] = [];
+  for (const id of CAPABILITY_IDS) {
+    const state = overrides[id];
+    if (state && capabilityOnBlockedReason(id, state)) blocked.push(id);
+  }
+  return blocked;
+}
 
 export function isCapabilityId(value: unknown): value is CapabilityId {
   return typeof value === "string" && (CAPABILITY_IDS as readonly string[]).includes(value);

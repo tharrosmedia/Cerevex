@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  defaultCapabilityFlags,
   defaultModulesFor,
   filterItemsByModules,
   parseWorkspaceModuleSettings,
@@ -34,8 +35,16 @@ const homeItems = adsSub('https://app.cerevex.store', defaultModulesFor('home_se
 assert.ok(homeItems.every((item) => item.href.startsWith('/')));
 assert.deepEqual(
   homeItems.filter((item) => item.rail).map((item) => item.rail),
-  ['Audits', 'Suggestions', 'Leads', 'Workflows'],
+  ['Audits', 'Suggestions', 'Workflows'],
 );
+assert.ok(!homeItems.some((item) => item.label === 'Leads'));
+
+const homeLeadsOn = adsSub(
+  'https://app.cerevex.store',
+  defaultModulesFor('home_service'),
+  { ...defaultCapabilityFlags(), 'm51.brainstorm': 'on' },
+);
+assert.ok(homeLeadsOn.some((item) => item.label === 'Leads' && item.href === '/ads/leads'));
 assert.ok(homeItems.some((item) => item.label === 'Audits' && item.href === '/ads/audits'));
 assert.ok(homeItems.some((item) => item.label === 'Suggestions' && item.href === '/ads/suggestions'));
 assert.ok(!homeItems.some((item) => item.label === 'Clients'));

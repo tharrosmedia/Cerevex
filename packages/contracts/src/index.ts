@@ -96,6 +96,10 @@ export {
   CAPABILITY_IDS,
   CAPABILITY_CATALOG,
   CAPABILITY_CATALOG_LIST,
+  OPERATOR_CAPABILITY_CATALOG_LIST,
+  isCapabilityInOperatorSettings,
+  capabilityOnBlockedReason,
+  blockedUnfinishedCapabilityOns,
   isCapabilityId,
   isCapabilityState,
   defaultCapabilityFlags,
@@ -132,7 +136,11 @@ export {
   ADS_NAV_CATALOG,
   ADS_NAV_HREFS_IN_SHELL,
   ADS_NAV_HREFS_LEGACY_WEB,
+  LEADS_CAPABILITY_ID,
+  LEADS_NOT_LIVE_COPY,
   adsNavHrefsFor,
+  isLeadsProductUnfinished,
+  isLeadsSurfaceVisible,
   resolveAdsNav,
 } from "./ads-nav";
 export type { AdsNavShell, AdsNavItemId, AdsNavCatalogItem, ResolvedAdsNavItem } from "./ads-nav";

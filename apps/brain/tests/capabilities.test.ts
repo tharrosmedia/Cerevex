@@ -1,32 +1,65 @@
 import assert from 'node:assert/strict';
 import {
+  OPERATOR_CAPABILITY_CATALOG_LIST,
+  blockedUnfinishedCapabilityOns,
   canApproveWithApply,
+  capabilityOnBlockedReason,
   defaultCapabilityFlags,
+  defaultModulesFor,
   envCapabilityKills,
   isApplyEnabled,
+  isCapabilityInOperatorSettings,
+  isLeadsProductUnfinished,
+  isLeadsSurfaceVisible,
   isLegacyAdsWebAllowed,
   legacyAdsWebGate,
   resolveAdsNav,
   resolveWorkspaceCapabilities,
 } from '@shopify-brain/contracts';
 import { adsSub } from '../lib/ads-nav';
-import { defaultModulesFor } from '@shopify-brain/contracts';
 
 const flags = defaultCapabilityFlags();
 assert.equal(flags.cockpit, 'on');
 assert.equal(flags.audits, 'on');
 assert.equal(flags['m51.grok_creatives'], 'hidden');
+assert.equal(flags['m51.brainstorm'], 'hidden');
 assert.equal(flags['shell.legacy_ads_web'], 'hidden');
+
+assert.equal(isCapabilityInOperatorSettings({ id: 'cockpit', label: 'Ads cockpit', help: '', defaultState: 'on', unfinished: false, group: 'product' }), true);
+assert.equal(isLeadsProductUnfinished(), true);
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.every((entry) => entry.group !== 'm51'));
+assert.ok(!OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id.startsWith('m51.')));
+assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), 'Brainstorm (M5.1) is not live yet. It cannot be turned on until that work ships.');
+assert.equal(capabilityOnBlockedReason('m51.budget_shift', 'recommend_only'), null);
+assert.equal(capabilityOnBlockedReason('cockpit', 'on'), null);
+assert.deepEqual(blockedUnfinishedCapabilityOns({ 'm51.ga4_connect': 'on', audits: 'hidden' }), ['m51.ga4_connect']);
 
 const hiddenAudits = resolveWorkspaceCapabilities({ capabilities: { audits: 'hidden' } });
 const items = adsSub('', defaultModulesFor('home_service'), hiddenAudits);
 assert.ok(!items.some((item) => item.label === 'Audits'));
 assert.ok(items.some((item) => item.label === 'Suggestions'));
+assert.ok(!items.some((item) => item.label === 'Leads'));
 
 const catalog = resolveAdsNav({ shell: 'inShell', modules: defaultModulesFor('agency') });
 assert.deepEqual(
   catalog.filter((item) => item.rail).map((item) => item.rail),
-  ['Audits', 'Suggestions', 'Clients', 'Leads', 'Workflows'],
+  ['Audits', 'Suggestions', 'Clients', 'Workflows'],
+);
+
+const leadsLive = resolveAdsNav({
+  shell: 'inShell',
+  modules: defaultModulesFor('agency'),
+  capabilities: { ...defaultCapabilityFlags(), 'm51.brainstorm': 'recommend_only' },
+});
+assert.ok(leadsLive.some((item) => item.label === 'Leads' && item.href === '/ads/leads'));
+assert.equal(isLeadsSurfaceVisible(defaultModulesFor('home_service'), defaultCapabilityFlags()), false);
+assert.equal(
+  isLeadsSurfaceVisible(defaultModulesFor('home_service'), { ...defaultCapabilityFlags(), 'm51.brainstorm': 'on' }),
+  true,
+);
+assert.equal(
+  isLeadsSurfaceVisible({ ...defaultModulesFor('home_service'), leads: false }, { ...defaultCapabilityFlags(), 'm51.brainstorm': 'on' }),
+  false,
 );
 
 assert.deepEqual(envCapabilityKills({ CAPABILITY_KILL: 'apply,connect.meta' }).sort(), [

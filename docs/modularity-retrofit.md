@@ -22,7 +22,7 @@ Env kills (no Site Brain redeploy):
 - `CAPABILITY_KILL_AUDITS=1` (dots become underscores)
 - `FEATURE_BID_MUTATIONS=0` / `FEATURE_BUDGET_MUTATIONS=0` (legacy → `apply.bid` / `apply.budget`)
 
-`GET`/`PATCH /workspace` returns `workspace.capabilities`, `capabilityCatalog`, and `capabilityKills`. Settings → Capabilities (in-shell and leftover ads-web) flips per business.
+`GET`/`PATCH /workspace` returns `workspace.capabilities`, `capabilityCatalog`, and `capabilityKills`. Settings → Capabilities (in-shell and leftover ads-web) flips live product flags only. Unfinished `m51.*` stay out of the operator catalog. `PATCH` still accepts `hidden` / `recommend_only` for those ids; `on` is 409 until `unfinished` is cleared.
 
 ## Degrade behavior
 
@@ -63,4 +63,9 @@ Sync (`runAdAccountSync`) and live apply (`executeMutation` / `applyViaConnector
 - **R5** — no deploy/naming quarantine, no Neon `os` rename, no `@shopify-brain` package rename.
 - **M5.1 Brief 1.6** — no budget-shift UI, Grok creatives, LP congruence, GA4 connect UX, or brainstorm product.
 - **M5.2** — no heatmaps, CallRail product, CRM, weekly narrative.
-- **G6–G10** — Settings catalog cosmetics, Inngest/package rename, leftover env knobs, leads vs `m51.brainstorm`. Not this PR.
+- **G7 / G8 / G10 / R5** — Inngest/package rename, leftover env knobs, Neon `os` / `@shopify-brain` rename. Not this PR.
+
+## G6 + G9 (follow-up)
+
+- **G6** — Operator Settings lists `OPERATOR_CAPABILITY_CATALOG_LIST` (no unfinished `group: "m51"`). Nav still has no `m51.*` items except the mapped Leads row, which stays hidden while `m51.brainstorm` is hidden.
+- **G9** — IA module `leads` maps to capability `m51.brainstorm`. `resolveAdsNav`, in-shell `/ads/leads`, and leftover `/app/brainstorm` require both `modules.leads` and a visible `m51.brainstorm`. Modules Settings shows Leads as “Not live” while the capability is unfinished so enablement cannot diverge. No brainstorm product UI.
