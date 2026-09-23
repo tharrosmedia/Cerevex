@@ -5,8 +5,10 @@ import {
   ADS_MODULE_IDS,
   BUSINESS_TYPE_LABELS,
   BUSINESS_TYPES,
-  CAPABILITY_CATALOG_LIST,
+  LEADS_NOT_LIVE_COPY,
   MODULE_COPY,
+  OPERATOR_CAPABILITY_CATALOG_LIST,
+  isLeadsProductUnfinished,
   type AdsModuleId,
   type BusinessType,
   type CapabilityId,
@@ -92,21 +94,31 @@ export default function AdsModulesSettingsPage() {
           <CardDescription>Turn a module on if you need it. Leave it off if you do not.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {ADS_MODULE_IDS.map((id) => (
-            <label key={id} className="flex items-start justify-between gap-4 border-b border-border pb-4 last:border-0 last:pb-0">
-              <span>
-                <span className="block font-medium">{MODULE_COPY[id].label}</span>
-                <span className="mt-1 block text-sm text-muted-foreground">{MODULE_COPY[id].help}</span>
-              </span>
-              <input
-                type="checkbox"
-                className="mt-1 size-4 accent-black"
-                checked={modules[id]}
-                disabled={!canMutate || pending}
-                onChange={(event) => toggle(id, event.target.checked)}
-              />
-            </label>
-          ))}
+          {ADS_MODULE_IDS.map((id) => {
+            const leadsLocked = id === "leads" && isLeadsProductUnfinished();
+            return (
+              <label key={id} className="flex items-start justify-between gap-4 border-b border-border pb-4 last:border-0 last:pb-0">
+                <span>
+                  <span className="block font-medium">{MODULE_COPY[id].label}</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">{MODULE_COPY[id].help}</span>
+                  {leadsLocked ? (
+                    <span className="mt-1 block text-sm text-muted-foreground">{LEADS_NOT_LIVE_COPY}</span>
+                  ) : null}
+                </span>
+                {leadsLocked ? (
+                  <span className="mt-1 text-sm text-muted-foreground">Not live</span>
+                ) : (
+                  <input
+                    type="checkbox"
+                    className="mt-1 size-4 accent-black"
+                    checked={modules[id]}
+                    disabled={!canMutate || pending}
+                    onChange={(event) => toggle(id, event.target.checked)}
+                  />
+                )}
+              </label>
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -114,12 +126,12 @@ export default function AdsModulesSettingsPage() {
         <CardHeader>
           <CardTitle>Capabilities</CardTitle>
           <CardDescription>
-            Per-workspace product flags. Unfinished work stays hidden or recommend-only.
+            Per-workspace product flags. Work that is not live yet is not listed here.
             Flip a flag here — Site Brain does not need a redeploy.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {CAPABILITY_CATALOG_LIST.map((entry) => (
+          {OPERATOR_CAPABILITY_CATALOG_LIST.map((entry) => (
             <label key={entry.id} className="flex items-start justify-between gap-4 border-b border-border pb-4 last:border-0 last:pb-0">
               <span>
                 <span className="block font-medium">

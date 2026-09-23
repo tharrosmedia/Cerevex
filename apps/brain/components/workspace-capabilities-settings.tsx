@@ -1,8 +1,8 @@
 import {
-  CAPABILITY_CATALOG_LIST,
+  OPERATOR_CAPABILITY_CATALOG_LIST,
+  capabilityOnBlockedReason,
+  isCapabilityId,
   isCapabilityState,
-  type CapabilityId,
-  type CapabilityState,
 } from '@shopify-brain/contracts';
 import { getWorkspaceProductSettings, saveCapabilityOverrides } from '@/src/lib/db/workspace-modules';
 
@@ -12,10 +12,15 @@ async function saveCapabilityAction(formData: FormData) {
   const { redirect } = await import('next/navigation');
   const id = String(formData.get('id') ?? '');
   const state = formData.get('state');
-  if (!id || !isCapabilityState(state)) {
+  if (!isCapabilityId(id) || !isCapabilityState(state)) {
     redirect('/settings?capabilities=error');
+    return;
   }
-  await saveCapabilityOverrides({ [id as CapabilityId]: state as CapabilityState });
+  if (capabilityOnBlockedReason(id, state)) {
+    redirect('/settings?capabilities=error');
+    return;
+  }
+  await saveCapabilityOverrides({ [id]: state });
   revalidatePath('/');
   revalidatePath('/settings');
   revalidatePath('/ads');
@@ -29,11 +34,11 @@ export async function WorkspaceCapabilitiesSettings() {
     <div id="capabilities" className="mb-8 border p-4 rounded">
       <h2 className="font-semibold mb-2">Capabilities</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--muted-foreground)' }}>
-        Per-workspace product flags. Unfinished work stays hidden or recommend-only.
+        Per-workspace product flags. Work that is not live yet is not listed here.
         Changing a flag here hides it on the next request — no Site Brain redeploy.
       </p>
       <div className="space-y-4">
-        {CAPABILITY_CATALOG_LIST.map((entry) => (
+        {OPERATOR_CAPABILITY_CATALOG_LIST.map((entry) => (
           <form key={entry.id} action={saveCapabilityAction} className="flex items-start justify-between gap-4 border-t pt-3">
             <span>
               <span className="block font-medium">

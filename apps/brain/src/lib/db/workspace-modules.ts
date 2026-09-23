@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import {
+  blockedUnfinishedCapabilityOns,
   parseWorkspaceModuleSettings,
   resolveWorkspaceCapabilities,
   settingsJsonWithBusinessType,
@@ -106,6 +107,9 @@ export async function saveModuleOverrides(overrides: Partial<ModuleFlags>) {
 }
 
 export async function saveCapabilityOverrides(overrides: CapabilityOverrides) {
+  if (blockedUnfinishedCapabilityOns(overrides).length > 0) {
+    throw new Error('Unfinished M5.1 capabilities cannot be turned on.');
+  }
   const current = await currentSettingsRecord();
   const next = settingsJsonWithCapabilityOverrides(current, overrides);
   await persistSettings(next);

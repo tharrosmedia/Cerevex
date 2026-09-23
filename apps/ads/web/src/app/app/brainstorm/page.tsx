@@ -1,14 +1,24 @@
 "use client";
 
-import { MODULE_COPY } from "@tharros/ads-shared";
+import { isLeadsSurfaceVisible, LEADS_NOT_LIVE_COPY, MODULE_COPY } from "@tharros/ads-shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ModuleOff } from "@/components/cockpit/module-off";
 import { useWorkspace } from "@/components/cockpit/workspace-context";
 
 export default function BrainstormPlaceholderPage() {
-  const { modules, loading } = useWorkspace();
-  if (!loading && !modules.leads) {
-    return <ModuleOff title={MODULE_COPY.leads.label} help={MODULE_COPY.leads.help} />;
+  const { modules, capabilities, loading } = useWorkspace();
+  if (!loading && !isLeadsSurfaceVisible(modules, capabilities)) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ads</p>
+        <h2 className="mt-2 font-heading text-3xl font-medium tracking-tight">{MODULE_COPY.leads.label}</h2>
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Not live yet</CardTitle>
+            <CardDescription>{LEADS_NOT_LIVE_COPY}</CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
   }
 
   return (
