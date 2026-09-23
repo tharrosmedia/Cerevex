@@ -115,6 +115,9 @@ export {
   isCapabilityVisible,
   isCapabilityWritable,
   isLegacyAdsWebAllowed,
+  isPlatformSyncLiveOn,
+  isLegacyAdsChromeEnvEnabled,
+  legacyAdsChromeLinksAllowed,
   isApplyEnabled,
   canApproveWithApply,
   legacyAdsWebGate,
@@ -128,7 +131,23 @@ export type {
   CapabilityOverrides,
   CapabilityCatalogEntry,
   LegacyAdsWebGate,
+  ProcessEnvMap,
 } from "./capabilities";
+
+export {
+  APPROVE_OPERATOR_EMAILS_ENV,
+  DEFAULT_APPROVE_OPERATOR_EMAIL,
+  approveOperatorEmails,
+  canApproveApply,
+} from "./approve-allowlist";
+
+export {
+  OPS_ENV_KINDS,
+  OPS_ENV_REGISTRY,
+  opsEnvSecrets,
+  opsEnvCapabilityKills,
+} from "./ops-env";
+export type { OpsEnvKind, OpsEnvEntry } from "./ops-env";
 
 export {
   ADS_NAV_SHELLS,

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import {
   OPERATOR_CAPABILITY_CATALOG_LIST,
+  OPS_ENV_REGISTRY,
+  approveOperatorEmails,
   blockedUnfinishedCapabilityOns,
+  canApproveApply,
   canApproveWithApply,
   capabilityOnBlockedReason,
+  DEFAULT_APPROVE_OPERATOR_EMAIL,
   defaultCapabilityFlags,
   defaultModulesFor,
   envCapabilityKills,
@@ -12,6 +16,8 @@ import {
   isLeadsProductUnfinished,
   isLeadsSurfaceVisible,
   isLegacyAdsWebAllowed,
+  isPlatformSyncLiveOn,
+  legacyAdsChromeLinksAllowed,
   legacyAdsWebGate,
   resolveAdsNav,
   resolveWorkspaceCapabilities,
@@ -23,7 +29,9 @@ assert.equal(flags.cockpit, 'on');
 assert.equal(flags.audits, 'on');
 assert.equal(flags['m51.grok_creatives'], 'hidden');
 assert.equal(flags['m51.brainstorm'], 'hidden');
+assert.equal(flags['sync.live'], 'on');
 assert.equal(flags['shell.legacy_ads_web'], 'hidden');
+assert.equal(isPlatformSyncLiveOn(flags), true);
 
 assert.equal(isCapabilityInOperatorSettings({ id: 'cockpit', label: 'Ads cockpit', help: '', defaultState: 'on', unfinished: false, group: 'product' }), true);
 assert.equal(isLeadsProductUnfinished(), true);
@@ -66,6 +74,17 @@ assert.deepEqual(envCapabilityKills({ CAPABILITY_KILL: 'apply,connect.meta' }).s
   'apply',
   'connect.meta',
 ]);
+assert.deepEqual(envCapabilityKills({ PLATFORM_SYNC_LIVE: '0', FEATURE_BID_MUTATIONS: '0' }).sort(), [
+  'apply.bid',
+  'sync.live',
+]);
+assert.equal(resolveWorkspaceCapabilities({}, { PLATFORM_SYNC_LIVE: '0' })['sync.live'], 'hidden');
+assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'APP_PASSWORD')?.kind, 'secret');
+assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ADS_INTERNAL_KEY')?.kind, 'secret');
+assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'APPROVE_OPERATOR_EMAILS')?.kind, 'identity');
+assert.deepEqual(approveOperatorEmails({}), [DEFAULT_APPROVE_OPERATOR_EMAIL]);
+assert.equal(canApproveApply('adam@tharrosmedia.com', {}), true);
+assert.equal(canApproveApply('other@tharrosmedia.com', { SEED_OWNER_EMAIL: 'other@tharrosmedia.com' }), false);
 
 const hiddenLegacy = defaultCapabilityFlags();
 assert.equal(isLegacyAdsWebAllowed(hiddenLegacy), false);
@@ -87,6 +106,15 @@ assert.equal(
     capabilities: { ...hiddenLegacy, 'shell.legacy_ads_web': 'on' },
   }),
   'allow',
+);
+assert.equal(legacyAdsChromeLinksAllowed(hiddenLegacy, { NEXT_PUBLIC_ADS_LEGACY_CHROME: '1' }), false);
+assert.equal(
+  legacyAdsChromeLinksAllowed({ ...hiddenLegacy, 'shell.legacy_ads_web': 'on' }, { NEXT_PUBLIC_ADS_LEGACY_CHROME: '1' }),
+  true,
+);
+assert.equal(
+  legacyAdsChromeLinksAllowed({ ...hiddenLegacy, 'shell.legacy_ads_web': 'on' }, {}),
+  false,
 );
 
 const applyOn = defaultCapabilityFlags();

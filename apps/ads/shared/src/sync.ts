@@ -1,8 +1,9 @@
 import { and, eq } from "drizzle-orm";
+import { resolveWorkspaceCapabilities } from "@shopify-brain/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens, storeTokens, tokenNearExpiry } from "./credentials";
 import { getDb } from "./db";
-import { adAccounts, adEntities, adMetrics, clients } from "./schema";
+import { adAccounts, adEntities, adMetrics, clients, workspaces } from "./schema";
 
 export type SyncResult = {
   adAccountId: string;
@@ -34,6 +35,10 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
     if (!tokens) {
       throw new Error("No OAuth credentials for this ad account");
     }
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.id, account.workspaceId),
+    });
+    const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
     const connector = getAdPlatformConnector(account.platform);
     if (tokenNearExpiry(tokens)) {
       const refreshed = await connector.refreshTokens(tokens);
@@ -55,7 +60,7 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
       tokens,
       externalId: account.externalId,
       clientName: client?.name ?? "Pilot",
-      allowLive: connector.isLiveAllowed(tokens),
+      allowLive: connector.isLiveAllowed(tokens, capabilities),
     });
 
     await db.delete(adEntities).where(eq(adEntities.adAccountId, adAccountId));

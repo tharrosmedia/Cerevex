@@ -93,6 +93,7 @@ export function extractInternalKey(header: string | undefined): string | null {
   return value ? value : null;
 }
 
+/** ADS_INTERNAL_KEY is a service secret (Brain BFF), not a feature flag. */
 export function internalKeyMatches(provided: string | undefined | null): boolean {
   const expected = process.env.ADS_INTERNAL_KEY;
   if (!expected || !provided) return false;

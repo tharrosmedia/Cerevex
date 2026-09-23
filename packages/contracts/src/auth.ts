@@ -3,6 +3,8 @@
  *
  * OS brings workspace/client users in `apps/ads`.
  * Do not couple OS auth to Brain `APP_PASSWORD` in week one.
+ * APP_PASSWORD, JWT_SECRET, and ADS_INTERNAL_KEY are secrets (see OPS_ENV_REGISTRY).
+ * They are not product capabilities.
  */
 
 export const OS_AUTH_HOME = "apps/ads" as const;

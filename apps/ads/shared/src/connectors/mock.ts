@@ -1,3 +1,4 @@
+import type { CapabilityFlags } from "@shopify-brain/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import { mockPull } from "../platforms";
@@ -28,7 +29,7 @@ export class MockAdPlatformConnector implements AdPlatformConnector {
     return true;
   }
 
-  isLiveAllowed(_tokens?: StoredOAuthTokens | null): boolean {
+  isLiveAllowed(_tokens?: StoredOAuthTokens | null, _flags?: CapabilityFlags): boolean {
     return false;
   }
 
