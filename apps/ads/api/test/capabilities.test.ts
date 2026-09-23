@@ -18,7 +18,6 @@ import {
   resolveWorkspaceCapabilities,
   settingsJsonWithCapabilityOverrides,
 } from "@tharros/ads-shared";
-import { defaultModulesFor } from "@shopify-brain/contracts";
 import { app, json, login } from "./helpers";
 
 describe("capability registry", () => {
