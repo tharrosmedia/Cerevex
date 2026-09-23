@@ -24,6 +24,7 @@ export type {
   ConnectorConnectInput,
   ConnectorConnectResult,
   CrmConnector,
+  SiteConnector,
 } from "./connectors/types";
 // Node-only helpers stay on subpaths (`./env`, `./crypto`, `./oauth`, `./connectors`).
 // Re-exporting them here pulls `node:fs` into Next client chunks (Turbopack
@@ -39,6 +40,22 @@ export {
   platformLabel as creativePlatformLabel,
 } from "./creative-analysis";
 export { compareAdToLanding, landingFromCreative } from "./lp-congruence";
+export {
+  mockClaritySignals,
+  mockClaritySnapshot,
+  recsFromSessionSignals,
+  siteApplyBlockedReason,
+  siteApplyMode,
+  siteLandingPageApplySupported,
+  publicClarityView,
+  LP_INTELLIGENCE_KINDS,
+} from "./lp-intelligence";
+export type {
+  AggregatedSessionSignal,
+  LpIntelligenceKind,
+  LpIntelligenceRecDraft,
+  SessionSignalsSnapshot,
+} from "./lp-intelligence";
 export { summarizeFunnel, funnelStrengthFor, inferPlatformFromClick, FUNNEL_EVENT_NAMES } from "./funnel";
 export {
   summarizeAttribution,

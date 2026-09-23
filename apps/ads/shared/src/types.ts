@@ -162,6 +162,7 @@ export const RECOMMENDATION_TYPES = [
   "create_alternative",
   "call_attribution",
   "crm_booked_job",
+  "lp_intelligence",
 ] as const;
 export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
 
@@ -205,6 +206,13 @@ export type OfflineRecommendationType = (typeof OFFLINE_RECOMMENDATION_TYPES)[nu
 
 export function isOfflineRecommendationType(value: string): value is OfflineRecommendationType {
   return (OFFLINE_RECOMMENDATION_TYPES as readonly string[]).includes(value);
+}
+
+export const LP_INTELLIGENCE_RECOMMENDATION_TYPES = ["lp_intelligence"] as const;
+export type LpIntelligenceRecommendationType = (typeof LP_INTELLIGENCE_RECOMMENDATION_TYPES)[number];
+
+export function isLpIntelligenceRecommendationType(value: string): value is LpIntelligenceRecommendationType {
+  return (LP_INTELLIGENCE_RECOMMENDATION_TYPES as readonly string[]).includes(value);
 }
 
 export type StubPingPayload = {

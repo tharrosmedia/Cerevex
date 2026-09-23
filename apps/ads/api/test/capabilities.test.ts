@@ -61,12 +61,16 @@ describe("capability registry", () => {
     expect(flags["m52.callrail_connect"]).toBe("hidden");
     expect(flags["m52.bundled_call_tracking"]).toBe("hidden");
     expect(flags["m52.crm_join"]).toBe("hidden");
+    expect(flags["m52.clarity_connect"]).toBe("hidden");
+    expect(flags["m52.lp_intelligence"]).toBe("hidden");
   });
 
   it("lists live m51 flags in operator Settings and allows on", () => {
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.group === "m51")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.callrail_connect")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.bundled_call_tracking")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.clarity_connect")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.lp_intelligence")).toBe(true);
     expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toBeNull();
     expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
     expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();

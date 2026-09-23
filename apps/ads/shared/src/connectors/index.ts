@@ -12,7 +12,9 @@ import {
 import { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
 import { bundledCallTrackingConnector } from "./bundled";
 import { callRailConnector } from "./callrail";
+import { clarityAnalyticsConnector } from "./clarity";
 import { housecallProConnector } from "./crm";
+import { wordPressSiteConnector } from "./site";
 import type {
   AdPlatformConnector,
   AnalyticsConnector,
@@ -20,6 +22,7 @@ import type {
   CallTrackingConnector,
   Connector,
   CrmConnector,
+  SiteConnector,
 } from "./types";
 
 export type {
@@ -34,10 +37,13 @@ export type {
   ConnectorExchangeResult,
   ConnectorPullInput,
   CrmConnector,
+  SiteConnector,
   CallTrackingPullInput,
   CallTrackingPullResult,
   CrmJoinInput,
   CrmJoinResult,
+  SessionSignalsPullInput,
+  SessionSignalsPullResult,
 } from "./types";
 
 export {
@@ -51,7 +57,9 @@ export {
 export { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
 export { bundledCallTrackingConnector, BundledCallTrackingConnector, twilioEnvCredentials } from "./bundled";
 export { callRailConnector, CallRailConnector, callRailEnvCredentials } from "./callrail";
+export { clarityAnalyticsConnector, ClarityAnalyticsConnector, clarityEnvCredentials, signalsFromClarityInsights } from "./clarity";
 export { housecallProConnector } from "./crm";
+export { wordPressSiteConnector, getDefaultSiteConnector } from "./site";
 
 export const AD_PLATFORM_CONNECTORS: AdPlatformConnector[] = [
   metaAdPlatformConnector,
@@ -62,7 +70,10 @@ export const AD_PLATFORM_CONNECTORS: AdPlatformConnector[] = [
 export const ANALYTICS_CONNECTORS: AnalyticsConnector[] = [
   ga4AnalyticsConnector,
   firstPartyAnalyticsConnector,
+  clarityAnalyticsConnector,
 ];
+
+export const SITE_CONNECTORS: SiteConnector[] = [wordPressSiteConnector];
 
 export const CALL_TRACKING_CONNECTORS: CallTrackingConnector[] = [
   callRailConnector,
@@ -76,6 +87,7 @@ export const CONNECTORS: AnyConnector[] = [
   ...ANALYTICS_CONNECTORS,
   ...CALL_TRACKING_CONNECTORS,
   ...CRM_CONNECTORS,
+  ...SITE_CONNECTORS,
 ];
 
 export function getAdPlatformConnector(id: AdPlatformConnector["id"]): AdPlatformConnector {
@@ -99,6 +111,12 @@ export function getCallTrackingConnector(id: CallTrackingConnector["id"]): CallT
 export function getCrmConnector(id: CrmConnector["id"]): CrmConnector {
   const found = CRM_CONNECTORS.find((connector) => connector.id === id);
   if (!found) throw new Error(`Unknown CRM connector: ${id}`);
+  return found;
+}
+
+export function getSiteConnector(id: SiteConnector["id"] = "wordpress"): SiteConnector {
+  const found = SITE_CONNECTORS.find((connector) => connector.id === id);
+  if (!found) throw new Error(`Unknown Site connector: ${id}`);
   return found;
 }
 

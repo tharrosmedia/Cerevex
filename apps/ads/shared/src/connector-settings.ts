@@ -10,6 +10,7 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import { getDb } from "./db";
 import { workspaces } from "./schema";
 import type { BookedJob, CallRecord } from "./attribution";
+import { publicClarityView, type SessionSignalsSnapshot } from "./lp-intelligence";
 
 export type CallRailClientState = {
   connected: boolean;
@@ -52,10 +53,22 @@ export type BundledClientState = {
   };
 };
 
+export type ClarityClientState = {
+  connected: boolean;
+  mock: boolean;
+  projectId: string | null;
+  encryptedApiKey?: string | null;
+  usesEnv?: boolean;
+  lastPulledAt?: string | null;
+  lastError?: string | null;
+  snapshot?: SessionSignalsSnapshot;
+};
+
 export type ConnectorSettings = {
   callrail: Record<string, CallRailClientState>;
   bundled: Record<string, BundledClientState>;
   crm: Record<string, CrmClientState>;
+  clarity: Record<string, ClarityClientState>;
 };
 
 export type CallTrackingSource = "callrail" | "bundled";
@@ -70,9 +83,11 @@ export function readConnectorSettings(settingsJson: unknown): ConnectorSettings 
   const callrailRaw = asRecord(connectors.callrail);
   const bundledRaw = asRecord(connectors.bundled);
   const crmRaw = asRecord(connectors.crm);
+  const clarityRaw = asRecord(connectors.clarity);
   const callrail: Record<string, CallRailClientState> = {};
   const bundled: Record<string, BundledClientState> = {};
   const crm: Record<string, CrmClientState> = {};
+  const clarity: Record<string, ClarityClientState> = {};
   for (const [clientId, value] of Object.entries(callrailRaw)) {
     const row = asRecord(value);
     const snapshot = asRecord(row.snapshot);
@@ -128,7 +143,32 @@ export function readConnectorSettings(settingsJson: unknown): ConnectorSettings 
       bookedJobs: Array.isArray(row.bookedJobs) ? (row.bookedJobs as BookedJob[]) : [],
     };
   }
-  return { callrail, bundled, crm };
+  for (const [clientId, value] of Object.entries(clarityRaw)) {
+    const row = asRecord(value);
+    const snapshot = asRecord(row.snapshot);
+    clarity[clientId] = {
+      connected: Boolean(row.connected),
+      mock: Boolean(row.mock),
+      projectId: typeof row.projectId === "string" ? row.projectId : null,
+      encryptedApiKey: typeof row.encryptedApiKey === "string" ? row.encryptedApiKey : null,
+      usesEnv: Boolean(row.usesEnv),
+      lastPulledAt: typeof row.lastPulledAt === "string" ? row.lastPulledAt : null,
+      lastError: typeof row.lastError === "string" ? row.lastError : null,
+      snapshot:
+        typeof snapshot.pulledAt === "string" && Array.isArray(snapshot.signals)
+          ? {
+              pulledAt: snapshot.pulledAt,
+              mock: Boolean(snapshot.mock),
+              projectId: typeof snapshot.projectId === "string" ? snapshot.projectId : null,
+              sessionCount: Number(snapshot.sessionCount ?? 0) || 0,
+              signals: snapshot.signals as SessionSignalsSnapshot["signals"],
+              capture: false,
+              writes: false,
+            }
+          : undefined,
+    };
+  }
+  return { callrail, bundled, crm, clarity };
 }
 
 export function settingsJsonWithConnectors(
@@ -141,6 +181,7 @@ export function settingsJsonWithConnectors(
       callrail: next.callrail,
       bundled: next.bundled,
       crm: next.crm,
+      clarity: next.clarity,
     },
   };
 }
@@ -218,6 +259,21 @@ export function encryptCallRailApiKey(apiKey: string): string {
 }
 
 export function decryptCallRailApiKey(payload: string | null | undefined): string | null {
+  if (!payload) return null;
+  try {
+    return decryptSecret(payload);
+  } catch {
+    return null;
+  }
+}
+
+export { publicClarityView };
+
+export function encryptClarityApiKey(apiKey: string): string {
+  return encryptSecret(apiKey);
+}
+
+export function decryptClarityApiKey(payload: string | null | undefined): string | null {
   if (!payload) return null;
   try {
     return decryptSecret(payload);

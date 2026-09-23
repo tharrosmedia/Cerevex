@@ -38,6 +38,8 @@ export const CAPABILITY_IDS = [
   "m52.callrail_connect",
   "m52.bundled_call_tracking",
   "m52.crm_join",
+  "m52.clarity_connect",
+  "m52.lp_intelligence",
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -194,6 +196,22 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     id: "m52.crm_join",
     label: "CRM booked-job join (M5.2)",
     help: "Soft-join Housecall Pro booked-job status to calls. Recommend + join only. Deep write-backs stay out.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.clarity_connect": {
+    id: "m52.clarity_connect",
+    label: "Clarity connect (M5.2)",
+    help: "Connect Microsoft Clarity for aggregated heatmap and session signals. Mock for QA. No in-house session recorder. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.lp_intelligence": {
+    id: "m52.lp_intelligence",
+    label: "LP intelligence (M5.2)",
+    help: "Hero / structure / copy / wizard recs from Clarity session signals, with a plain-language why. Site apply later until a Site connector can mutate. Default hidden.",
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
@@ -361,6 +379,14 @@ export function isCapabilityVisible(id: CapabilityId, flags: CapabilityFlags): b
 /** Call attribution recs from CallRail Connect or Bundled — either flag is enough. */
 export function isCallAttributionVisible(flags: CapabilityFlags): boolean {
   return isCapabilityVisible("m52.callrail_connect", flags) || isCapabilityVisible("m52.bundled_call_tracking", flags);
+}
+
+export function isLpIntelligenceVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.lp_intelligence", flags);
+}
+
+export function isLpIntelligenceWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m52.lp_intelligence", flags);
 }
 
 export function isCapabilityWritable(id: CapabilityId, flags: CapabilityFlags): boolean {

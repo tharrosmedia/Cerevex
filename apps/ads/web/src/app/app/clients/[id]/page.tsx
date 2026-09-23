@@ -32,12 +32,15 @@ import {
   listClientRecommendations,
   connectBundledCallTracking,
   connectCallRail,
+  connectClarity,
   connectCrmMock,
   disconnectAdAccount,
+  getLpIntelligence,
   getOfflineAttribution,
   mockConnect,
   pullBundledCallTracking,
   pullCallRail,
+  pullClarity,
   setAdAccountFrozen,
   startInlineAudit,
   startOAuth,
@@ -74,9 +77,12 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   const [busy, setBusy] = useState<string | null>(null);
   const [advancedConnect, setAdvancedConnect] = useState(false);
   const [offlineSentences, setOfflineSentences] = useState<string[]>([]);
+  const [lpSentences, setLpSentences] = useState<string[]>([]);
   const callrailOn = isCapabilityVisible("m52.callrail_connect", capabilities);
   const bundledOn = isCapabilityVisible("m52.bundled_call_tracking", capabilities);
   const crmOn = isCapabilityVisible("m52.crm_join", capabilities);
+  const clarityOn = isCapabilityVisible("m52.clarity_connect", capabilities);
+  const lpOn = isCapabilityVisible("m52.lp_intelligence", capabilities);
   const [approveId, setApproveId] = useState<string | null>(null);
   const selectedAuditIdRef = useRef<string | null>(null);
   selectedAuditIdRef.current = selectedAuditId;
@@ -97,12 +103,14 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         }),
     );
     setEntities(next);
-    const [recs, runs, offline] = await Promise.all([
+    const [recs, runs, offline, lpIntel] = await Promise.all([
       listClientRecommendations(id),
       listClientAudits(id),
       getOfflineAttribution(id).catch(() => null),
+      getLpIntelligence(id).catch(() => null),
     ]);
     setOfflineSentences(offline?.sentences ?? []);
+    setLpSentences(lpIntel?.clarity.signals.map((row) => row.why) ?? []);
     setRecommendations(recs);
     setAudits(runs);
     const current = selectedAuditIdRef.current;
@@ -542,6 +550,54 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                     Soft-join Housecall Pro
                   </Button>
                 ) : null}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {clarityOn || lpOn ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Clarity and LP intelligence</CardTitle>
+            <CardDescription>
+              Aggregated session signals only. No in-house recorder. Site apply later — nothing writes the website.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm">
+            {lpSentences.length > 0 ? (
+              <ul className="space-y-1 text-muted-foreground">
+                {lpSentences.map((sentence) => (
+                  <li key={sentence}>{sentence}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">
+                Connect Clarity, pull signals, then run a check to see hero / structure / copy / wizard recs.
+              </p>
+            )}
+            {canManage && clarityOn ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={busy === "clarity"}
+                  onClick={async () => {
+                    setBusy("clarity");
+                    setError(null);
+                    try {
+                      await connectClarity({ clientId: id, mock: true });
+                      await pullClarity(id);
+                      await refresh();
+                      setNotice("Clarity mock connected. Aggregated signals only. Site apply later.");
+                    } catch (err) {
+                      setError(err instanceof ApiError ? err.message : "Clarity connect failed.");
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  Connect Clarity (mock)
+                </Button>
               </div>
             ) : null}
           </CardContent>

@@ -13,6 +13,7 @@ import { auditLog } from "@tharros/ads-shared/schema";
 import { registerAuditRoutes } from "./audits";
 import { clientConnectionSummary, listPublicAdAccounts } from "./connect";
 import { registerM51Routes } from "./m51";
+import { registerLpIntelligenceRoutes } from "./lp-intelligence";
 import { registerOfflineRoutes } from "./offline";
 import { registerConnectRoutes } from "./routes";
 import type { AppEnv } from "./types";
@@ -242,6 +243,7 @@ export function createApp() {
   registerAuditRoutes(app, requireAuth);
   registerM51Routes(app, requireAuth);
   registerOfflineRoutes(app, requireAuth);
+  registerLpIntelligenceRoutes(app, requireAuth);
 
   app.post("/jobs/stub", requireAuth, async (c) => {
     const auth = c.get("auth");

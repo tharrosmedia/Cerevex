@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import type { CapabilityFlags } from "@cerevex/contracts";
 import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
-import { getAdPlatformConnector } from "./connectors";
+import { getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
+import { siteApplyBlockedReason } from "./lp-intelligence";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";
 import { isBudgetShiftWritable, isCapabilityOn } from "@cerevex/contracts";
@@ -190,6 +191,10 @@ export function classifyMutation(
     };
   }
   if (mutation.action === "review") {
+    const siteBlocked = siteApplyBlockedReason(
+      getDefaultSiteConnector(),
+      typeof mutation.payload?.action === "string" ? mutation.payload.action : null,
+    );
     return {
       action: mutation.action,
       platform: mutation.platform,
@@ -197,7 +202,9 @@ export function classifyMutation(
       status: "skipped",
       mode: "mock",
       writes: false,
-      reason: "Review-only mutation. No platform write.",
+      reason: siteBlocked
+        ? "LP intelligence is recommend-only. Site apply later — nothing writes the website."
+        : "Review-only mutation. No platform write.",
     };
   }
   if (isCreateNewMutationAction(mutation.action)) {

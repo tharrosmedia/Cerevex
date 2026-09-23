@@ -3,12 +3,15 @@ import {
   asConnector,
   bundledCallTrackingConnector,
   callRailConnector,
+  clarityAnalyticsConnector,
   CONNECTORS,
   ga4AnalyticsConnector,
   getAdPlatformConnector,
+  getSiteConnector,
   googleAdPlatformConnector,
   metaAdPlatformConnector,
   mockAdPlatformConnector,
+  wordPressSiteConnector,
   type Connector,
 } from "@tharros/ads-shared/connectors";
 import { defaultCapabilityFlags } from "@tharros/ads-shared";
@@ -18,7 +21,7 @@ import { exchangeCode } from "../src/oauth-exchange";
 describe("connector interfaces", () => {
   it("registers Meta, Google, mock, GA4, and CallRail against the same Connector surface", () => {
     const ids = CONNECTORS.map((connector) => connector.id);
-    expect(ids).toEqual(["meta", "google", "mock", "ga4", "first_party", "callrail", "bundled", "hcp"]);
+    expect(ids).toEqual(["meta", "google", "mock", "ga4", "first_party", "clarity", "callrail", "bundled", "hcp", "wordpress"]);
     for (const connector of CONNECTORS) {
       const shared: Connector = asConnector(connector);
       expect(typeof shared.isConfigured).toBe("function");
@@ -38,6 +41,12 @@ describe("connector interfaces", () => {
     expect(callRailConnector.implementation).toBe("live");
     expect(callRailConnector.connectCapability).toBe("m52.callrail_connect");
     expect(ga4AnalyticsConnector.implementation).toBe("live");
+    expect(clarityAnalyticsConnector.implementation).toBe("live");
+    expect(clarityAnalyticsConnector.connectCapability).toBe("m52.clarity_connect");
+    expect(clarityAnalyticsConnector.capture).toBe(false);
+    expect(typeof clarityAnalyticsConnector.pullSessionSignals).toBe("function");
+    expect(getSiteConnector("wordpress")).toBe(wordPressSiteConnector);
+    expect(wordPressSiteConnector.supportsLandingPageMutation).toBe(false);
     expect(mockAdPlatformConnector.implementation).toBe("mock");
     expect(typeof metaAdPlatformConnector.authorizeUrl).toBe("function");
     expect(typeof metaAdPlatformConnector.pull).toBe("function");
