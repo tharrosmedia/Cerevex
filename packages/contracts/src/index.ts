@@ -53,10 +53,16 @@ export {
   INNGEST_PREFIXES,
   INNGEST_EVENT_PREFIX,
   INNGEST_FUNCTION_ID_PREFIX,
+  LEGACY_INNGEST_PREFIXES,
+  LEGACY_INNGEST_FUNCTION_ID_PREFIX,
   SEO_EVENTS,
   SEO_FUNCTION_IDS,
+  ADS_EVENTS,
+  ADS_FUNCTION_IDS,
   OS_EVENTS,
   PAID_EVENTS,
+  LEGACY_ADS_EVENTS,
+  LEGACY_ADS_FUNCTION_IDS,
   inngestEventName,
   inngestFunctionId,
 } from "./inngest";
@@ -65,7 +71,7 @@ export type { InngestPrefix, InngestProduct, InngestEnvelope } from "./inngest";
 export { OS_AUTH_HOME, BRAIN_APP_PASSWORD_ENV, OS_AUTH } from "./auth";
 export type { OsAuthSurface } from "./auth";
 
-export { OS_DB_SCHEMA, BRAIN_PUBLIC_SCHEMA, NEON_LAYOUT } from "./neon";
+export { ADS_DB_SCHEMA, OS_DB_SCHEMA, BRAIN_PUBLIC_SCHEMA, NEON_LAYOUT } from "./neon";
 export type { NeonLayout } from "./neon";
 
 export { PLAN_15_DOC, CANONICAL_TREE, DAY1_MOVE } from "./layout";

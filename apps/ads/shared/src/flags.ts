@@ -10,7 +10,7 @@ import {
   isPlatformSyncLiveOn,
   resolveWorkspaceCapabilities,
   type CapabilityFlags,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
 
 export function bidMutationsEnabled(flags?: CapabilityFlags): boolean {
   return isCapabilityOn("apply.bid", flags ?? resolveWorkspaceCapabilities({}));

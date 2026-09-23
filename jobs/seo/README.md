@@ -16,7 +16,7 @@ Brain still serves these functions at `/api/inngest`:
 
 ```ts
 // apps/brain/app/api/inngest/route.ts
-import { functions, inngest } from '@shopify-brain/jobs-seo';
+import { functions, inngest } from '@cerevex/jobs-seo';
 ```
 
 (The Brain files re-export that package so existing `@/src/inngest/*` imports keep working.)

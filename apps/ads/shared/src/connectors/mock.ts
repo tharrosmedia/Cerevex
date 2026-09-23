@@ -1,4 +1,4 @@
-import type { CapabilityFlags } from "@shopify-brain/contracts";
+import type { CapabilityFlags } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import { mockPull } from "../platforms";

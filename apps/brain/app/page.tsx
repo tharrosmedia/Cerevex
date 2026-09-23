@@ -15,7 +15,7 @@ import {
   MODULE_COPY,
   isBusinessType,
   type BusinessType,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 
 export const dynamic = 'force-dynamic';
 

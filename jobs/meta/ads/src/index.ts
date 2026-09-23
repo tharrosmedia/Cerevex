@@ -1,13 +1,20 @@
-import { EVENTS, inngest } from "@tharros/ads-shared/inngest";
+import { LEGACY_ADS_EVENTS, LEGACY_ADS_FUNCTION_IDS } from "@cerevex/contracts";
+import { inngest } from "@tharros/ads-shared/inngest";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
 
 /**
- * Meta ads Inngest functions. Prefix: meta/ads/*
- * Read / mock sync only. No live Meta mutate.
+ * Legacy Meta ads Inngest listener (R5 dual-compat).
+ * Canonical emit + consume is ads/account.sync with platform in the payload.
+ * This function stays registered on meta-ads-account-sync / meta/ads/account.sync
+ * for one release so in-flight jobs finish. Remove after that release.
  */
 export const metaAdsAccountSync = inngest.createFunction(
-  { id: "meta-ads-account-sync", name: "Meta ads account sync", triggers: [{ event: EVENTS.metaAdsAccountSync }] },
+  {
+    id: LEGACY_ADS_FUNCTION_IDS.metaAdsAccountSync,
+    name: "Meta ads account sync (legacy meta/ads/*)",
+    triggers: [{ event: LEGACY_ADS_EVENTS.metaAdsAccountSync }],
+  },
   async ({ event, step }: any) => {
     const result = await step.run("pull-entities", async () => runAdAccountSync(event.data.adAccountId));
     await step.run("audit", async () => {
@@ -16,7 +23,7 @@ export const metaAdsAccountSync = inngest.createFunction(
         actorId: event.data.requestedBy,
         action: result.status === "error" ? "jobs.sync_failed" : "jobs.sync_complete",
         payload: {
-          event: EVENTS.metaAdsAccountSync,
+          event: event.name,
           clientId: event.data.clientId,
           adAccountId: event.data.adAccountId,
           platform: "meta",
@@ -32,4 +39,4 @@ export const metaAdsAccountSync = inngest.createFunction(
 );
 
 export const functions = [metaAdsAccountSync];
-export const FUNCTION_IDS = ["meta-ads-account-sync"] as const;
+export const FUNCTION_IDS = [LEGACY_ADS_FUNCTION_IDS.metaAdsAccountSync] as const;

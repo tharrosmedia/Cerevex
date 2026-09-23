@@ -14,8 +14,8 @@ export {
   isLeadsProductUnfinished,
   isLeadsSurfaceVisible,
   resolveAdsNav,
-} from "@shopify-brain/contracts";
-export type { AdsNavItemId, AdsNavShell, ResolvedAdsNavItem } from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
+export type { AdsNavItemId, AdsNavShell, ResolvedAdsNavItem } from "@cerevex/contracts";
 export type {
   AdPlatformConnector,
   AnalyticsConnector,

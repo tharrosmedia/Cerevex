@@ -15,9 +15,9 @@ This repository is an **npm workspace monorepo** per [Accelerated Merge Plan 1.5
 ```
 apps/brain                 # Cerevex console (SEO command center + App Router)
 apps/ads                   # Cerevex ads module: api, web, shared, workers
-jobs/meta/ads              # meta/ads/* read/mock sync
+jobs/meta/ads              # legacy meta/ads/* listener; canonical ads/account.sync
 jobs/meta/organic          # Stub. Inngest prefix: meta/organic/*
-jobs/google/ads            # google/ads/* read/mock sync
+jobs/google/ads            # legacy google/ads/* listener; canonical ads/account.sync
 jobs/seo                   # Existing SEO Inngest functions (seo/* / seo-*)
 packages/contracts         # Shared TypeScript contracts
 packages/db                # Stub. Brain Neon stays in apps/brain
@@ -45,7 +45,7 @@ Success for Stage A: trigger SEO job for a keyword → research → draft → hu
 | Search (research)  | Tavily (Brain SEO only; **not required for the ads module**) |
 | HTTP               | Hono                                        |
 | Shopify            | `@shopify/shopify-api` (GraphQL Admin)      |
-| Database + Vector  | Neon (Brain: Postgres + pgvector; ads: isolated schema `os`) |
+| Database + Vector  | Neon (Brain: Postgres + pgvector; ads: isolated schema `os` / `ADS_DB_SCHEMA`) |
 | Validation         | Zod                                         |
 
 **Principles:** Reusable modules, no heavy agent frameworks, human-in-the-loop default, `store_id` everywhere, no unsupervised ad spend.
@@ -53,11 +53,13 @@ Success for Stage A: trigger SEO job for a keyword → research → draft → hu
 ## Isolation (week one)
 
 - **No duplicate** Neon / Railway / Inngest for the ads module.
-- Ads Neon = isolated schema **`os`** (name stays — renaming would break Neon prod). Do **not** merge ads tables into Brain `public` / pgvector.
+- Ads Neon = isolated schema **`os`** (`ADS_DB_SCHEMA` — name stays; quarantined, not renamed). Do **not** merge ads tables into Brain `public` / pgvector.
 - Ads auth is **separate** from Brain `APP_PASSWORD`. Do not bolt ads RBAC onto Brain login.
 - No unsupervised ad writes / no Meta-Google mutate.
 - Keep Inngest event names `seo/*` and function IDs `seo-*`. Do not rename to `brain/*`.
+- Ads Inngest events are `ads/*` (platform is data). Legacy `os/*` / `meta/ads/*` / `google/ads/*` listeners stay for one release.
 - Ads Inngest **app id** default is `cerevex-ads` (env key remains `OS_INNGEST_APP_ID` so Railway env names are not clobbered mid-flight). Brain SEO stays on `shopify-brain`.
+- npm scope for Brain/contracts/db/shared/jobs is `@cerevex/*`. Ads runtime packages stay `@tharros/ads*` (Railway start/build commands).
 
 ## Getting Started
 

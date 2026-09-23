@@ -11,7 +11,7 @@ import {
   type CapabilityOverrides,
   type ModuleFlags,
   type WorkspaceModuleSettings,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 import { adsApi } from '@/lib/ads-bff';
 import { getActiveStoreId, getStore, updateStore } from './stores';
 import {

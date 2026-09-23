@@ -1,11 +1,11 @@
 # `jobs/google/ads`
 
-Origin M2 Google account sync, remapped to Plan 1.5 prefix **`google/ads/*`**.
+Origin M2 Google account sync. R5 / G7 canonical event is **`ads/account.sync`** with `platform: "google"` in the payload (registered on the ads worker as `ads-account-sync`).
 
-| Event | Function ID |
+This package keeps the **legacy** listener for one release so in-flight jobs finish:
+
+| Legacy event | Legacy function id |
 |---|---|
 | `google/ads/account.sync` | `google-ads-account-sync` |
 
-Read / mock pull only. **No Google Ads mutate.** AdAccounts hang off Client, not `store_id`.
-
-Registered by `apps/ads/workers` `/api/inngest`.
+Do not emit the legacy name from new producers. Folder path stays.

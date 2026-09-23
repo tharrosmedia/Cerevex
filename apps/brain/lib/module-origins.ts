@@ -10,7 +10,7 @@ import {
   defaultCapabilityFlags,
   legacyAdsChromeLinksAllowed,
   type CapabilityFlags,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 
 export function adsModuleOrigin(flags?: CapabilityFlags | null): string {
   const resolved = flags ?? defaultCapabilityFlags();

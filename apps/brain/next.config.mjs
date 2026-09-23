@@ -10,7 +10,7 @@ const brainSrc = path.join(__dirname, "src");
 const nextConfig = {
   // Include workspace packages (jobs/seo) in Next file tracing.
   outputFileTracingRoot: path.join(__dirname, "../.."),
-  transpilePackages: ["@shopify-brain/jobs-seo"],
+  transpilePackages: ["@cerevex/jobs-seo"],
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',

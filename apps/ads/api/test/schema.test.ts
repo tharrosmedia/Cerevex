@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
+import { ADS_DB_SCHEMA } from "@cerevex/contracts";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 
@@ -38,7 +39,7 @@ describe("M1 core schema", () => {
     const result = await db.execute(sql`
       select table_name
       from information_schema.tables
-      where table_schema = 'os'
+      where table_schema = ${ADS_DB_SCHEMA}
     `);
     const names = new Set(
       (result.rows as { table_name: string }[]).map((row) => row.table_name),
@@ -53,7 +54,7 @@ describe("M1 core schema", () => {
     const result = await db.execute(sql`
       select table_name
       from information_schema.columns
-      where table_schema = 'os'
+      where table_schema = ${ADS_DB_SCHEMA}
         and column_name = 'workspace_id'
     `);
     const withWorkspace = new Set(
@@ -79,7 +80,7 @@ describe("M1 core schema", () => {
     const result = await db.execute(sql`
       select column_name
       from information_schema.columns
-      where table_schema = 'os'
+      where table_schema = ${ADS_DB_SCHEMA}
         and table_name = 'ad_accounts'
         and column_name in ('last_error', 'frozen')
     `);

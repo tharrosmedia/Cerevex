@@ -7,7 +7,7 @@ import {
   isBusinessType,
   isLeadsProductUnfinished,
   type BusinessType,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 import { getWorkspaceModuleSettings, saveBusinessType, saveModuleOverrides } from '@/src/lib/db/workspace-modules';
 
 async function saveTypeAction(formData: FormData) {

@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { isCapabilityOn, resolveWorkspaceCapabilities } from "@shopify-brain/contracts";
+import { isCapabilityOn, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { parseApplyMutations } from "./audit-schemas";
 import { getDb } from "./db";

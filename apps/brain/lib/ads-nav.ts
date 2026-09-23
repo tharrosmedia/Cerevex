@@ -4,7 +4,7 @@ import {
   type AdsModuleId,
   type CapabilityFlags,
   type ModuleFlags,
-} from '@shopify-brain/contracts';
+} from '@cerevex/contracts';
 
 export type AdsNavItem = {
   href: string;

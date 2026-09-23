@@ -21,17 +21,17 @@ M3 product (audits → findings → proposed recs) does **not** deploy or seed p
 | `@tharros/ads-web` | `apps/ads/web` | Next.js operator shell |
 | `@tharros/ads-shared` | `apps/ads/shared` | Drizzle schema (`os`), migrate/seed, Inngest client |
 | `@tharros/ads-workers` | `apps/ads/workers` | Serves `/api/inngest`; ads orchestration + paid job registration |
-| `@shopify-brain/jobs-meta-ads` | `jobs/meta/ads` | `meta/ads/*` read/mock sync |
-| `@shopify-brain/jobs-google-ads` | `jobs/google/ads` | `google/ads/*` read/mock sync |
-| `@shopify-brain/contracts` | `packages/contracts` | Shared envelopes (merged; do not fork) |
+| `@cerevex/jobs-meta-ads` | `jobs/meta/ads` | Legacy `meta/ads/*` listener (one release); canonical sync is `ads/account.sync` |
+| `@cerevex/jobs-google-ads` | `jobs/google/ads` | Legacy `google/ads/*` listener (one release); canonical sync is `ads/account.sync` |
+| `@cerevex/contracts` | `packages/contracts` | Shared envelopes (merged; do not fork) |
 
 `jobs/meta/organic` remains a reserved stub.
 
 ## Isolation (week one)
 
-- **Ads Neon:** schema **`os`** (name stays — renaming would break Neon prod). Do not write ads tables into Brain `public` / pgvector.
+- **Ads Neon:** schema **`os`** (`ADS_DB_SCHEMA` — name stays; renaming would break Neon prod). Do not write ads tables into Brain `public` / pgvector.
 - **Ads auth:** email/password + JWT in `apps/ads`. Separate from Brain `APP_PASSWORD`.
-- **Inngest:** default app id `cerevex-ads` (env key `OS_INNGEST_APP_ID` is unchanged so Railway env names are not clobbered mid-flight) so Brain `seo-*` sync is not overwritten. Use the **same** Inngest Cloud keys when granted — do not provision a second org. Event names stay `os/*` / `os-*`.
+- **Inngest:** default app id `cerevex-ads` (env key `OS_INNGEST_APP_ID` is unchanged so Railway env names are not clobbered mid-flight) so Brain `seo-*` sync is not overwritten. Use the **same** Inngest Cloud keys when granted — do not provision a second org. Canonical ads events are `ads/*` / `ads-*`. Legacy `os/*` / `meta/ads/*` / `google/ads/*` listeners stay for one release.
 - **No duplicate** Neon / Railway project for the ads module. Local docker Postgres (`:54329`) is for ads-only development. Do not seed prod from this tree.
 - **No Tavily.**
 
@@ -72,18 +72,19 @@ See `apps/ads/.env.example`. Never commit `.env`. Brain env stays in `apps/brain
 
 Ads `DATABASE_URL` must resolve to schema `os`. Do not write ads tables into Brain `public` / pgvector. Local compose (`:54329`) is ads-only development and the default for M3 mock-mode smoke. Shared Neon smoke reuses the **existing Brain `DATABASE_URL`** (same Neon project) — see [SMOKE.md](./SMOKE.md). Do not provision a second Neon project. Do not run `ads:db:seed` against production Brain Neon.
 
-## Inngest names (locked)
+## Inngest names (R5 / G7)
+
+Canonical names. Platform is payload data, not the event namespace. Legacy `os/*`, `meta/ads/*`, and `google/ads/*` listeners stay registered for one release.
 
 | Event | Function ID | Package |
 |---|---|---|
-| `os/stub.ping` | `os-stub-ping` | `apps/ads/workers` |
-| `os/stub.sync` | `os-stub-sync` | `apps/ads/workers` |
-| `os/audit.requested` | `os-audit-requested` | `apps/ads/workers` (local tables only; **no platform writes**) |
-| `os/apply.requested` | `os-apply-requested` | `apps/ads/workers` (kill switch + authorize + freeze; executes mutate-existing mutations) |
-| `meta/ads/account.sync` | `meta-ads-account-sync` | `jobs/meta/ads` |
-| `google/ads/account.sync` | `google-ads-account-sync` | `jobs/google/ads` |
+| `ads/stub.ping` | `ads-stub-ping` | `apps/ads/workers` |
+| `ads/stub.sync` | `ads-stub-sync` | `apps/ads/workers` |
+| `ads/audit.requested` | `ads-audit-requested` | `apps/ads/workers` (local tables only; **no platform writes**) |
+| `ads/apply.requested` | `ads-apply-requested` | `apps/ads/workers` (kill switch + authorize + freeze; executes mutate-existing mutations) |
+| `ads/account.sync` | `ads-account-sync` | `apps/ads/workers` (`platform: "meta" \| "google"`) |
 
-Brain `seo/*` / `seo-*` are untouched.
+Brain `seo/*` / `seo-*` are untouched. Live Inngest app ids stay `shopify-brain` / `cerevex-ads`.
 
 ## Tests
 

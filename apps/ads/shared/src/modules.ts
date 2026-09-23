@@ -7,7 +7,7 @@ import {
   type CapabilityFlags,
   type ModuleFlags,
   type WorkspaceModuleSettings,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
 
 export {
   ADS_MODULE_IDS,
@@ -20,8 +20,8 @@ export {
   isBusinessType,
   parseWorkspaceModuleSettings,
   unboardedModules,
-} from "@shopify-brain/contracts";
-export type { AdsModuleId, BusinessType, ModuleFlags, WorkspaceModuleSettings } from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
+export type { AdsModuleId, BusinessType, ModuleFlags, WorkspaceModuleSettings } from "@cerevex/contracts";
 
 export function asSettingsRecord(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {

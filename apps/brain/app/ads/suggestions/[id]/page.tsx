@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { RecommendationActions } from '@/components/ads/recommendation-actions';
 import { RecommendationCard } from '@/components/ads/recommendation-card';
-import { canApproveWithApply, defaultCapabilityFlags, isApplyEnabled } from '@shopify-brain/contracts';
+import { canApproveWithApply, defaultCapabilityFlags, isApplyEnabled } from '@cerevex/contracts';
 import { adsApi, type AdsClient, type AdsSuggestion } from '@/lib/ads-bff';
 import { applyStatusLabel } from '@/lib/ads-copy';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
@@ -43,7 +43,7 @@ export default async function AdsSuggestionDetailPage({
     ? await adsApi<{ client: AdsClient }>(`/clients/${suggestion.clientId}`)
     : null;
   const workspace = await adsApi<{
-    workspace: { applyKillSwitch: boolean; capabilities?: import('@shopify-brain/contracts').CapabilityFlags } | null;
+    workspace: { applyKillSwitch: boolean; capabilities?: import('@cerevex/contracts').CapabilityFlags } | null;
     canApprove?: boolean;
   }>('/workspace');
   const killSwitchOn = Boolean(workspace.ok && workspace.data.workspace?.applyKillSwitch);

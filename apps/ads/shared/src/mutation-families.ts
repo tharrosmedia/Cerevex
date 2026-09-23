@@ -5,8 +5,8 @@
  * create_entity is a sealed apply job type for a later Grok path — no UI sync writes.
  */
 
-import type { CapabilityFlags, CapabilityId } from "@shopify-brain/contracts";
-import { isCapabilityOn, resolveWorkspaceCapabilities } from "@shopify-brain/contracts";
+import type { CapabilityFlags, CapabilityId } from "@cerevex/contracts";
+import { isCapabilityOn, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { MutationAction } from "./types";
 

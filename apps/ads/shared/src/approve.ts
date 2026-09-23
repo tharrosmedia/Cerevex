@@ -9,4 +9,4 @@ export {
   DEFAULT_APPROVE_OPERATOR_EMAIL,
   approveOperatorEmails,
   canApproveApply,
-} from "@shopify-brain/contracts";
+} from "@cerevex/contracts";
