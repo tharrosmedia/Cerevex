@@ -2,16 +2,15 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import type { Platform } from "@tharros/ads-shared";
 import {
   GOOGLE_SCOPES,
   META_SCOPES,
-  authorizeUrl,
   isGoogleConfigured,
   isMetaConfigured,
   oauthConfig,
   webOrigin,
 } from "@tharros/ads-shared/oauth";
+import { getAdPlatformConnector } from "@tharros/ads-shared/connectors";
 import { loadTokens } from "@tharros/ads-shared/credentials";
 import { getDb } from "@tharros/ads-shared/db";
 import { sendAdAccountSync } from "@tharros/ads-shared/inngest";
@@ -41,10 +40,6 @@ const mockConnectSchema = z.object({
   platform: platformSchema,
 });
 
-function configured(platform: Platform): boolean {
-  return platform === "meta" ? isMetaConfigured() : isGoogleConfigured();
-}
-
 function consoleOrigin(): string {
   return (process.env.CONSOLE_ORIGIN ?? process.env.NEXT_PUBLIC_CONSOLE_ORIGIN ?? "").replace(/\/$/, "");
 }
@@ -71,8 +66,9 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     }
     const auth = c.get("auth");
     const client = await requireMutableClient(auth, clientId);
-    await requireWritableCapability(client.workspaceId, platform === "meta" ? "connect.meta" : "connect.google");
-    if (!configured(platform)) {
+    const connector = getAdPlatformConnector(platform);
+    await requireWritableCapability(client.workspaceId, connector.connectCapability);
+    if (!connector.isConfigured()) {
       throw new HTTPException(409, {
         message: `${platform} OAuth is not configured. Use mock connect for local/dev, or set app credentials.`,
       });
@@ -82,7 +78,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       clientId,
       platform,
     });
-    return c.json({ url: authorizeUrl(platform, state), platform });
+    return c.json({ url: connector.authorizeUrl(state), platform });
   });
 
   app.get("/oauth/:platform/callback", async (c) => {
@@ -100,13 +96,15 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       if (parsed.platform !== platform) {
         throw new Error("OAuth state platform mismatch");
       }
-      const exchanged = await exchangeCode(platform, code);
+      const connector = getAdPlatformConnector(platform);
       const visible = await getDb().query.clients.findFirst({
         where: eq(clients.id, parsed.clientId),
       });
       if (!visible) {
         throw new Error("Client not found for OAuth callback");
       }
+      await requireWritableCapability(visible.workspaceId, connector.connectCapability);
+      const exchanged = await exchangeCode(platform, code);
       await upsertConnectedAccount({
         workspaceId: visible.workspaceId,
         clientId: visible.id,
@@ -133,6 +131,10 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       }
       return c.redirect(dest.toString());
     } catch (err) {
+      if (err instanceof HTTPException && err.status === 409) {
+        dest.searchParams.set("oauth_error", "capability_off");
+        return c.redirect(dest.toString());
+      }
       childLogger(c.get("requestId") ?? "oauth").error({
         msg: "oauth.callback_failed",
         platform,
@@ -151,7 +153,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     const auth = c.get("auth");
     const client = await requireMutableClient(auth, parsed.data.clientId);
     const platform = parsed.data.platform;
-    await requireWritableCapability(client.workspaceId, platform === "meta" ? "connect.meta" : "connect.google");
+    await requireWritableCapability(client.workspaceId, getAdPlatformConnector(platform).connectCapability);
     const slug = client.name.toLowerCase().replace(/\s+/g, "-");
     const row = await upsertConnectedAccount({
       workspaceId: client.workspaceId,

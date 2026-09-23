@@ -1,10 +1,8 @@
 import { and, eq } from "drizzle-orm";
+import { getAdPlatformConnector } from "./connectors";
 import { loadTokens, storeTokens, tokenNearExpiry } from "./credentials";
 import { getDb } from "./db";
-import { isGoogleConfigured, isMetaConfigured } from "./oauth";
-import { pullAdAccount, refreshTokensIfNeeded } from "./platforms";
 import { adAccounts, adEntities, adMetrics, clients } from "./schema";
-import type { Platform } from "./types";
 
 export type SyncResult = {
   adAccountId: string;
@@ -13,11 +11,6 @@ export type SyncResult = {
   status: "connected" | "error";
   lastError: string | null;
 };
-
-function liveAllowed(platform: Platform): boolean {
-  if (process.env.PLATFORM_SYNC_LIVE === "0") return false;
-  return platform === "meta" ? isMetaConfigured() : isGoogleConfigured();
-}
 
 export async function runAdAccountSync(adAccountId: string): Promise<SyncResult> {
   const db = getDb();
@@ -41,8 +34,9 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
     if (!tokens) {
       throw new Error("No OAuth credentials for this ad account");
     }
+    const connector = getAdPlatformConnector(account.platform);
     if (tokenNearExpiry(tokens)) {
-      const refreshed = await refreshTokensIfNeeded(account.platform, tokens);
+      const refreshed = await connector.refreshTokens(tokens);
       if (refreshed.accessToken !== tokens.accessToken) {
         await storeTokens({
           workspaceId: account.workspaceId,
@@ -56,12 +50,12 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
       }
     }
 
-    const pulled = await pullAdAccount({
+    const pulled = await connector.pull({
       platform: account.platform,
       tokens,
       externalId: account.externalId,
       clientName: client?.name ?? "Pilot",
-      allowLive: liveAllowed(account.platform) && !tokens.mock,
+      allowLive: connector.isLiveAllowed(tokens),
     });
 
     await db.delete(adEntities).where(eq(adEntities.adAccountId, adAccountId));

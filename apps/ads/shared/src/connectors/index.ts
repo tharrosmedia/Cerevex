@@ -23,8 +23,10 @@ export type {
   AnyConnector,
   CallTrackingConnector,
   Connector,
+  ConnectorApplyInput,
   ConnectorConnectInput,
   ConnectorConnectResult,
+  ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
 

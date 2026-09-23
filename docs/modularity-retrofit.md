@@ -38,11 +38,13 @@ Runtime: `@tharros/ads-shared/connectors` (Node-only — do not import from ads-
 
 | Kind | Ids | Implementation |
 |---|---|---|
-| `AdPlatformConnector` | `meta`, `google`, `mock` | Existing OAuth + pull; mock is a first-class impl |
+| `AdPlatformConnector` | `meta`, `google`, `mock` | Exclusive path for pull, token refresh, OAuth exchange, live read/apply. Meta/Google branches live in `connectors/meta.ts` and `connectors/google.ts`. |
 | `AnalyticsConnector` | `ga4`, `first_party` | Stub — compiles only |
 | `CallTrackingConnector` | `callrail` (connect), `bundled` | Stub — compiles only |
 
 Shared `Connector` surface: `isConfigured`, `connect`, `disconnect`. Meta + CallRail both satisfy it. No real GA4/CallRail product work.
+
+Sync (`runAdAccountSync`) and live apply (`executeMutation` / `applyViaConnector`) call `getAdPlatformConnector` — they do not import Meta/Google Graph or Google Ads REST helpers. HTTP still never live-writes platforms; apply stays on the authorize-to-apply job. OAuth `/oauth/:platform/start` and **callback** both `requireWritableCapability(connect.meta|google)` before exchanging or upserting tokens. Sync enqueue and disconnect use the same `connect.*` gate.
 
 ## R3 (same PR)
 
@@ -61,3 +63,4 @@ Shared `Connector` surface: `isConfigured`, `connect`, `disconnect`. Meta + Call
 - **R5** — no deploy/naming quarantine, no Neon `os` rename, no `@shopify-brain` package rename.
 - **M5.1 Brief 1.6** — no budget-shift UI, Grok creatives, LP congruence, GA4 connect UX, or brainstorm product.
 - **M5.2** — no heatmaps, CallRail product, CRM, weekly narrative.
+- **G6–G10** — Settings catalog cosmetics, Inngest/package rename, leftover env knobs, leads vs `m51.brainstorm`. Not this PR.
