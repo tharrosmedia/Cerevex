@@ -3,7 +3,7 @@ import { AdsFilters } from '@/components/ads/ads-filters';
 import { ConnectEmpty } from '@/components/ads/connect-empty';
 import { RecommendationCard } from '@/components/ads/recommendation-card';
 import { loadAdsCockpit } from '@/lib/ads-bff';
-import { rankSuggestions } from '@/lib/ads-copy';
+import { REC_INBOX_KINDS, rankSuggestions } from '@/lib/ads-copy';
 import {
   clientName,
   filterSuggestions,
@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdsSuggestionsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ client?: string; platform?: string; status?: string }>;
+  searchParams?: Promise<{ client?: string; platform?: string; status?: string; kind?: string }>;
 }) {
   const settings = await getWorkspaceModuleSettings();
   if (!settings.onboardingComplete) redirect('/onboarding');
@@ -29,6 +29,7 @@ export default async function AdsSuggestionsPage({
     client?: string;
     platform?: string;
     status?: string;
+    kind?: string;
   };
   const filters = parseAdsFilters(params);
   const cockpit = await loadAdsCockpit();
@@ -49,7 +50,9 @@ export default async function AdsSuggestionsPage({
     <div className="cx-page">
       <p className="cx-kicker">Ads</p>
       <h1>Suggestions</h1>
-      <p className="cx-lede">What Cerevex would change, in plain language. Numbers stay behind Details.</p>
+      <p className="cx-lede">
+        Inbox of budget shifts, creative tests, landing-page matches, and Grok alternatives. Numbers stay behind Details.
+      </p>
 
       {!cockpit.ok ? (
         <ConnectEmpty title="No suggestions yet — run an audit." body={cockpit.message} clientId={selected?.id} />
@@ -64,6 +67,7 @@ export default async function AdsSuggestionsPage({
             { value: 'denied', label: 'Dismissed' },
             { value: 'snoozed', label: 'Later' },
           ]}
+          kindOptions={[...REC_INBOX_KINDS]}
         />
       )}
 

@@ -44,9 +44,9 @@ export function mutationActionLabel(action: string): string {
     case "exclude_placement":
       return "Exclude placement";
     case "create_ad":
-      return "Create ad (not applied)";
+      return "Create ad";
     case "add_keyword":
-      return "Add keyword (not applied)";
+      return "Add keyword";
     case "review":
       return "Review only";
     default:

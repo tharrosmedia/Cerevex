@@ -290,6 +290,29 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
           },
         },
       });
+    } else if (mutation.action === "create_ad") {
+      const headline =
+        typeof mutation.payload.headline === "string"
+          ? mutation.payload.headline
+          : typeof mutation.payload.proposedName === "string"
+            ? mutation.payload.proposedName
+            : "Same-week home visit";
+      const body =
+        typeof mutation.payload.body === "string" ? mutation.payload.body : "Factory-trained techs. Book a visit.";
+      operations.push({
+        adGroupAdOperation: {
+          create: {
+            adGroup: `customers/${customerId}/adGroups/${mutation.target.externalId}`,
+            status: "PAUSED",
+            ad: {
+              responsiveSearchAd: {
+                headlines: [{ text: headline.slice(0, 30) }],
+                descriptions: [{ text: body.slice(0, 90) }],
+              },
+            },
+          },
+        },
+      });
     } else if (mutation.action === "exclude_placement") {
       const url = typeof mutation.payload.placement === "string" ? mutation.payload.placement : "example.com";
       operations.push({

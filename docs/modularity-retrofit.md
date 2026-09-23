@@ -101,9 +101,17 @@ Neon: `ADS_DB_SCHEMA = "os"` (`OS_DB_SCHEMA` is a deprecated alias). No `ALTER S
 
 If Railway Site Brain start/build uses `--workspace=@shopify-brain/brain`, change it to `@cerevex/brain` on merge. Root `npm run build` / `npm start` already proxy to the new name.
 
+## M5.1 Brief 1.6 (this product PR)
+
+`m51.budget_shift`, `m51.grok_creatives`, `m51.lp_congruence`, `m51.ga4_connect`, `m51.brainstorm`, and `apply.create_entity` are live product flags (`unfinished: false`). Defaults stay `hidden`. Operators can turn them on from Settings.
+
+- Budget shift recs Approve through existing `apply_jobs` + `update_budget`.
+- Grok generate writes `brainstorm_*` only. Promote inserts a `create_alternative` rec. Approve may `create_ad` when `apply.create_entity` is on.
+- LP congruence is recommend-only (`siteApply: later`). No Site / WordPress connector exists.
+- Funnel: GA4 connect **and** first-party pixel. Events strengthen budget/creative recs when data exists.
+
 ## Out of scope (still deferred)
 
-- **M5.1 Brief 1.6** — no budget-shift UI, Grok creatives, LP congruence, GA4 connect UX, or brainstorm product.
 - **M5.2** — no heatmaps, CallRail product, CRM, weekly narrative.
 - Dropping the one-release Inngest `LEGACY_ADS_*` listeners.
 - Railway service / DNS / domain cutover. Live Inngest app id `shopify-brain`. Neon schema rename.

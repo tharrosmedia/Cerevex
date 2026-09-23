@@ -59,6 +59,14 @@ export type AdAccountPublic = {
   scopes: string[];
 };
 
+export type AdCreativePublic = {
+  headline: string | null;
+  body: string | null;
+  imageUrl: string | null;
+  landingPageUrl: string | null;
+  offer: string | null;
+};
+
 export type AdEntityPublic = {
   id: string;
   entityType: string;
@@ -66,6 +74,9 @@ export type AdEntityPublic = {
   name: string;
   status: string;
   parentExternalId: string | null;
+  platform?: Platform;
+  adAccountId?: string;
+  creative?: AdCreativePublic | null;
   metrics: { window: string; spendUsd: string; impressions: number; clicks: number; conversions: string }[];
 };
 
@@ -145,6 +156,10 @@ export const RECOMMENDATION_TYPES = [
   "expand_keywords",
   "spend_concentration",
   "pause_waste",
+  "budget_shift",
+  "creative_test",
+  "lp_congruence",
+  "create_alternative",
 ] as const;
 export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
 
@@ -169,7 +184,7 @@ export const MUTATION_ACTIONS = [
 ] as const;
 export type MutationAction = (typeof MUTATION_ACTIONS)[number];
 
-/** Mutate-existing classes executed under Approve. create_ad / add_keyword are skipped. */
+/** Mutate-existing classes executed under Approve. create_ad / add_keyword need apply.create_entity. */
 export const EXECUTABLE_MUTATION_ACTIONS = [
   "pause",
   "add_negative",

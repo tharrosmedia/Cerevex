@@ -58,9 +58,9 @@ describe("capability registry", () => {
     expect(flags["m51.brainstorm"]).toBe("hidden");
   });
 
-  it("keeps unfinished m51 flags out of operator Settings and refuses on", () => {
-    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.group === "m51")).toBe(false);
-    expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toMatch(/not live yet/);
+  it("lists live m51 flags in operator Settings and allows on", () => {
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.group === "m51")).toBe(true);
+    expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toBeNull();
     expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
     expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();
   });
@@ -224,9 +224,9 @@ describe.skipIf(!process.env.DATABASE_URL)("PATCH /workspace capabilities", () =
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ capabilities: { "m51.brainstorm": "on" } }),
     });
-    expect(live.status).toBe(409);
+    expect(live.status).toBe(200);
     const liveBody = await json(live);
-    expect(String(liveBody.message ?? liveBody.error ?? "")).toMatch(/not live yet/);
+    expect((liveBody.workspace as { capabilities: Record<string, string> }).capabilities["m51.brainstorm"]).toBe("on");
 
     const read = await app.request("/workspace", { headers: { authorization: `Bearer ${token}` } });
     expect(read.status).toBe(200);

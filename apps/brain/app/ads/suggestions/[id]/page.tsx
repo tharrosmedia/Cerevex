@@ -61,6 +61,14 @@ export default async function AdsSuggestionDetailPage({
       <p className="cx-lede">
         Approve applies this change. Deny and Snooze never write Meta or Google.
       </p>
+      {suggestion.type === 'lp_congruence' ? (
+        <p className="cx-banner">
+          Landing-page match is recommend-only. Cerevex cannot change the website in this slice — Site apply later.
+        </p>
+      ) : null}
+      {suggestion.type === 'create_alternative' ? (
+        <p className="cx-banner">Grok already generated this idea. Approve creates the ad. Generate did not write live.</p>
+      ) : null}
       {killSwitchOn ? (
         <p className="cx-banner cx-banner-warn">Ads are paused. Approve cannot apply until the pause is off.</p>
       ) : null}

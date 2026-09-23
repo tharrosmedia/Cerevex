@@ -5,8 +5,9 @@ import type { AdsFilterState } from '@/components/ads/ads-filters';
 export function parseAdsFilters(input: {
   client?: string;
   platform?: string;
-  status?: string;
-  connect_error?: string;
+    status?: string;
+    kind?: string;
+    connect_error?: string;
   connected?: string;
   oauth_error?: string;
 }): AdsFilterState & { notice?: string } {
@@ -20,6 +21,7 @@ export function parseAdsFilters(input: {
     client: input.client || undefined,
     platform,
     status: input.status || undefined,
+    kind: input.kind || undefined,
     notice,
   };
 }
@@ -79,6 +81,7 @@ export function filterSuggestions(
   return suggestions.filter((suggestion) => {
     if (filters.client && suggestion.clientId !== filters.client) return false;
     if (filters.status && suggestion.status !== filters.status) return false;
+    if (filters.kind && suggestion.type !== filters.kind) return false;
     if (filters.platform) {
       const platform =
         platformFromRecord(suggestion.evidence) ?? accountPlatform(accounts, suggestion.adAccountId);

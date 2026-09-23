@@ -34,13 +34,13 @@ assert.equal(flags['shell.legacy_ads_web'], 'hidden');
 assert.equal(isPlatformSyncLiveOn(flags), true);
 
 assert.equal(isCapabilityInOperatorSettings({ id: 'cockpit', label: 'Ads cockpit', help: '', defaultState: 'on', unfinished: false, group: 'product' }), true);
-assert.equal(isLeadsProductUnfinished(), true);
-assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.every((entry) => entry.group !== 'm51'));
-assert.ok(!OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id.startsWith('m51.')));
-assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), 'Brainstorm (M5.1) is not live yet. It cannot be turned on until that work ships.');
+assert.equal(isLeadsProductUnfinished(), false);
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.group === 'm51'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id.startsWith('m51.')));
+assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), null);
 assert.equal(capabilityOnBlockedReason('m51.budget_shift', 'recommend_only'), null);
 assert.equal(capabilityOnBlockedReason('cockpit', 'on'), null);
-assert.deepEqual(blockedUnfinishedCapabilityOns({ 'm51.ga4_connect': 'on', audits: 'hidden' }), ['m51.ga4_connect']);
+assert.deepEqual(blockedUnfinishedCapabilityOns({ 'm51.ga4_connect': 'on', audits: 'hidden' }), []);
 
 const hiddenAudits = resolveWorkspaceCapabilities({ capabilities: { audits: 'hidden' } });
 const items = adsSub('', defaultModulesFor('home_service'), hiddenAudits);

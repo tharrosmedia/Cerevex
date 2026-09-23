@@ -417,6 +417,83 @@ export const adEntities = osSchema.table(
   ],
 );
 
+export const analyticsConnections = osSchema.table(
+  "analytics_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    connectorId: text("connector_id").notNull(),
+    status: text("status").notNull().default("disconnected"),
+    label: text("label").notNull().default("Funnel"),
+    pixelToken: text("pixel_token"),
+    settingsJson: jsonb("settings_json").notNull().default({}),
+    lastError: text("last_error"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("analytics_connections_workspace_idx").on(table.workspaceId),
+    uniqueIndex("analytics_connections_workspace_connector_client_idx").on(
+      table.workspaceId,
+      table.connectorId,
+      table.clientId,
+    ),
+  ],
+);
+
+export const funnelEvents = osSchema.table(
+  "funnel_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").references(() => analyticsConnections.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    source: text("source").notNull().default("first_party"),
+    url: text("url"),
+    referrer: text("referrer"),
+    platform: text("platform"),
+    campaign: text("campaign"),
+    clickId: text("click_id"),
+    propertiesJson: jsonb("properties_json").notNull().default({}),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("funnel_events_workspace_idx").on(table.workspaceId),
+    index("funnel_events_occurred_idx").on(table.occurredAt),
+    index("funnel_events_name_idx").on(table.name),
+  ],
+);
+
+export const lpSnapshots = osSchema.table(
+  "lp_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    title: text("title"),
+    headline: text("headline"),
+    bodyText: text("body_text"),
+    offerText: text("offer_text"),
+    rawJson: jsonb("raw_json").notNull().default({}),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("lp_snapshots_workspace_idx").on(table.workspaceId),
+    index("lp_snapshots_url_idx").on(table.url),
+  ],
+);
+
 export const adMetrics = osSchema.table(
   "ad_metrics",
   {

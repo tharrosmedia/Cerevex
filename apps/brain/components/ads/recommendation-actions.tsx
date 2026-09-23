@@ -96,8 +96,18 @@ export function RecommendationActions({
       ) : null}
       {confirm ? (
         <div className="cx-panel" role="dialog" aria-labelledby="approve-title">
-          <h3 id="approve-title">Approve this change?</h3>
-          <p className="cx-help">This will change live ads.</p>
+          <h3 id="approve-title">
+            {suggestion.type === 'budget_shift' ? 'Approve this budget shift?' : 'Approve this change?'}
+          </h3>
+          <p className="cx-help">
+            {suggestion.type === 'budget_shift'
+              ? 'This will change live budgets. Applying… starts after you confirm.'
+              : suggestion.type === 'create_alternative'
+                ? 'This will create a paused ad after Grok. Brainstorm did not write live.'
+                : suggestion.type === 'lp_congruence'
+                  ? 'This suggestion is recommend-only. Site apply later — nothing writes the website.'
+                  : 'This will change live ads.'}
+          </p>
           <p className="cx-help">Client: {clientName ?? 'Unknown'}</p>
           <p className="cx-help">Platform: {platformLabel(platformFromRecord(suggestion.evidence))}</p>
           <p className="cx-help">Entities: {entities.join(', ') || 'See list'}</p>
@@ -109,7 +119,11 @@ export function RecommendationActions({
           <p className="cx-help">{riskLabel(suggestion.risk)}</p>
           <div className="cx-actions">
             <button type="button" className="btn-cta" disabled={busy !== null} onClick={() => decide('approve')}>
-              {busy === 'approve' ? 'Approving…' : 'Approve and apply'}
+              {busy === 'approve'
+                ? suggestion.type === 'budget_shift'
+                  ? 'Applying…'
+                  : 'Approving…'
+                : 'Approve and apply'}
             </button>
             <button type="button" className="btn-secondary" onClick={() => setConfirm(false)}>
               Cancel

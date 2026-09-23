@@ -9,12 +9,8 @@ import {
   metaAdPlatformConnector,
   mockAdPlatformConnector,
 } from "./ad-platform";
-import {
-  bundledCallTrackingConnector,
-  callRailConnector,
-  firstPartyAnalyticsConnector,
-  ga4AnalyticsConnector,
-} from "./stubs";
+import { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
+import { bundledCallTrackingConnector, callRailConnector } from "./stubs";
 import type { AdPlatformConnector, AnalyticsConnector, AnyConnector, CallTrackingConnector, Connector } from "./types";
 
 export type {
@@ -38,12 +34,8 @@ export {
   GoogleAdPlatformConnector,
   MockAdPlatformConnector,
 } from "./ad-platform";
-export {
-  bundledCallTrackingConnector,
-  callRailConnector,
-  firstPartyAnalyticsConnector,
-  ga4AnalyticsConnector,
-} from "./stubs";
+export { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
+export { bundledCallTrackingConnector, callRailConnector } from "./stubs";
 
 export const AD_PLATFORM_CONNECTORS: AdPlatformConnector[] = [
   metaAdPlatformConnector,

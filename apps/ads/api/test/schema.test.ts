@@ -27,6 +27,9 @@ const REQUIRED_TABLES = [
   "oauth_credentials",
   "ad_entities",
   "ad_metrics",
+  "analytics_connections",
+  "funnel_events",
+  "lp_snapshots",
 ];
 
 describe("M1 core schema", () => {
