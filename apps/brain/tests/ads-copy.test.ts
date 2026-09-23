@@ -14,6 +14,8 @@ assert.equal(findingLabel('zero_conversion_spend'), 'Spend with no leads');
 assert.equal(suggestionLabel('pause_waste'), 'Stop wasted spend');
 assert.equal(suggestionLabel('budget_shift'), 'Shift the budget');
 assert.equal(suggestionWhy('create_alternative').toLowerCase().includes('approve'), true);
+assert.equal(suggestionLabel('call_attribution'), 'Calls joined to a campaign');
+assert.equal(suggestionWhy('crm_booked_job'), 'A call matches a booked job. Nothing was written to the CRM.');
 assert.equal(suggestionWhy('improve_ctr'), 'People are seeing the ad but not clicking it.');
 assert.ok(!suggestionWhy('improve_ctr').toLowerCase().includes('ctr'));
 assert.ok(!suggestionWhy('review_cpa').toLowerCase().includes('roas'));
@@ -37,5 +39,9 @@ assert.equal(isAllowedAdsProxyRequest('GET', '/clients'), true);
 assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/creatives`), true);
 assert.equal(isAllowedAdsProxyRequest('GET', '/funnel'), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/brainstorm/generate'), false);
+assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/offline-attribution`), true);
+assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/callrail/connect'), true);
+assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/callrail/pull'), true);
+assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/crm/connect'), true);
 
 console.log('ads-copy: ok');

@@ -17,7 +17,8 @@ import {
   isCapabilityState,
   toWorkspaceSummary,
 } from "@tharros/ads-shared";
-import { capabilityPublicMeta, requireWritableCapability } from "./capabilities";
+import { capabilityPublicMeta, loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
+import { filterOfflineRecommendations } from "./offline";
 import { latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shared/apply";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
@@ -197,6 +198,11 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (status) {
       recommendations = recommendations.filter((row) => row.status === status);
     }
+    const workspaceId = scoped[0]?.workspaceId;
+    if (workspaceId) {
+      const { flags } = await loadWorkspaceCapabilities(workspaceId);
+      recommendations = filterOfflineRecommendations(recommendations, flags);
+    }
     return c.json({ recommendations, writes: false });
   });
 
@@ -205,7 +211,11 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (!client) {
       throw new HTTPException(404, { message: "Client not found" });
     }
-    return c.json({ recommendations: await listRecommendations(client.id), writes: false });
+    const { flags } = await loadWorkspaceCapabilities(client.workspaceId);
+    return c.json({
+      recommendations: filterOfflineRecommendations(await listRecommendations(client.id), flags),
+      writes: false,
+    });
   });
 
   app.get("/findings/:id", requireAuth, async (c) => {

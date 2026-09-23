@@ -35,6 +35,8 @@ export const CAPABILITY_IDS = [
   "m51.lp_congruence",
   "m51.ga4_connect",
   "m51.brainstorm",
+  "m52.callrail_connect",
+  "m52.crm_join",
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -47,7 +49,7 @@ export type CapabilityCatalogEntry = {
   help: string;
   defaultState: CapabilityState;
   unfinished: boolean;
-  group: "product" | "apply" | "shell" | "m51";
+  group: "product" | "apply" | "shell" | "m51" | "m52";
 };
 
 export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = {
@@ -170,6 +172,22 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m51",
+  },
+  "m52.callrail_connect": {
+    id: "m52.callrail_connect",
+    label: "CallRail connect (M5.2)",
+    help: "Connect Got Ductless CallRail (API key or mock) and join calls to campaigns. Default hidden. No unsupervised writes.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.crm_join": {
+    id: "m52.crm_join",
+    label: "CRM booked-job join (M5.2)",
+    help: "Soft-join Housecall Pro booked-job status to calls. Recommend + join only. Deep write-backs stay out.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
   },
 };
 

@@ -23,6 +23,7 @@ export type {
   Connector,
   ConnectorConnectInput,
   ConnectorConnectResult,
+  CrmConnector,
 } from "./connectors/types";
 // Node-only helpers stay on subpaths (`./env`, `./crypto`, `./oauth`, `./connectors`).
 // Re-exporting them here pulls `node:fs` into Next client chunks (Turbopack
@@ -39,6 +40,14 @@ export {
 } from "./creative-analysis";
 export { compareAdToLanding, landingFromCreative } from "./lp-congruence";
 export { summarizeFunnel, funnelStrengthFor, inferPlatformFromClick, FUNNEL_EVENT_NAMES } from "./funnel";
+export {
+  summarizeAttribution,
+  joinCallToCampaigns,
+  joinBookedJob,
+  mockCallRailCalls,
+  mockHcpBookedJobs,
+} from "./attribution";
+export type { CallRecord, BookedJob, CallJoin, AttributionSummary, AttributionCampaign } from "./attribution";
 export { evaluateApplyGate, applyBlockMessage, APPLY_BLOCK_REASONS } from "./apply-gate";
 export {
   findingDraftSchema,

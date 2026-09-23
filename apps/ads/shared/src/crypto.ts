@@ -48,9 +48,14 @@ const SECRET_KEYS = new Set([
   "refresh_token",
   "encryptedPayload",
   "encrypted_payload",
+  "encryptedApiKey",
+  "encrypted_api_key",
+  "apiKey",
+  "api_key",
   "id_token",
   "client_secret",
   "TOKEN_ENCRYPTION_KEY",
+  "CALLRAIL_API_KEY",
 ]);
 
 export function redactSecrets<T>(value: T): T {

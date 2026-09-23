@@ -1,10 +1,10 @@
 /**
  * Connector identity catalog. Runtime interfaces live in @tharros/ads-shared/connectors.
- * Meta/Google/mock implement AdPlatformConnector. GA4 + CallRail are stubs that
- * compile against the same Connector contract.
+ * Meta/Google/mock implement AdPlatformConnector. CallRail is the M5.2 connect path.
+ * GA4 and bundled telephony stay stubs. HCP is recommend+join only.
  */
 
-export const CONNECTOR_KINDS = ["ad_platform", "analytics", "call_tracking"] as const;
+export const CONNECTOR_KINDS = ["ad_platform", "analytics", "call_tracking", "crm"] as const;
 export type ConnectorKind = (typeof CONNECTOR_KINDS)[number];
 
 export const AD_PLATFORM_CONNECTOR_IDS = ["meta", "google", "mock"] as const;
@@ -16,7 +16,14 @@ export type AnalyticsConnectorId = (typeof ANALYTICS_CONNECTOR_IDS)[number];
 export const CALL_TRACKING_CONNECTOR_IDS = ["callrail", "bundled"] as const;
 export type CallTrackingConnectorId = (typeof CALL_TRACKING_CONNECTOR_IDS)[number];
 
-export type ConnectorId = AdPlatformConnectorId | AnalyticsConnectorId | CallTrackingConnectorId;
+export const CRM_CONNECTOR_IDS = ["hcp"] as const;
+export type CrmConnectorId = (typeof CRM_CONNECTOR_IDS)[number];
+
+export type ConnectorId =
+  | AdPlatformConnectorId
+  | AnalyticsConnectorId
+  | CallTrackingConnectorId
+  | CrmConnectorId;
 
 export type ConnectorImplementation = "live" | "mock" | "stub";
 
@@ -68,14 +75,21 @@ export const CONNECTOR_CATALOG: ConnectorCatalogEntry[] = [
     kind: "call_tracking",
     id: "callrail",
     label: "CallRail",
-    implementation: "stub",
-    help: "Stub CallTrackingConnector (connect). No CallRail product work.",
+    implementation: "live",
+    help: "CallTrackingConnector connect path. API key or mock. No unsupervised writes.",
   },
   {
     kind: "call_tracking",
     id: "bundled",
     label: "Bundled call tracking",
     implementation: "stub",
-    help: "Stub CallTrackingConnector (bundled). No telephony product work.",
+    help: "Stub CallTrackingConnector (bundled). Phase B telephony — not this PR.",
+  },
+  {
+    kind: "crm",
+    id: "hcp",
+    label: "Housecall Pro",
+    implementation: "stub",
+    help: "Soft CRM join for booked-job status. Recommend + join only. No write-backs.",
   },
 ];

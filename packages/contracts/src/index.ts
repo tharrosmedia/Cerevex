@@ -177,6 +177,7 @@ export {
   AD_PLATFORM_CONNECTOR_IDS,
   ANALYTICS_CONNECTOR_IDS,
   CALL_TRACKING_CONNECTOR_IDS,
+  CRM_CONNECTOR_IDS,
   CONNECTOR_CATALOG,
 } from "./connectors";
 export type {
@@ -184,6 +185,7 @@ export type {
   AdPlatformConnectorId,
   AnalyticsConnectorId,
   CallTrackingConnectorId,
+  CrmConnectorId,
   ConnectorId,
   ConnectorImplementation,
   ConnectorCatalogEntry,

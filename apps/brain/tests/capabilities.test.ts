@@ -29,6 +29,8 @@ assert.equal(flags.cockpit, 'on');
 assert.equal(flags.audits, 'on');
 assert.equal(flags['m51.grok_creatives'], 'hidden');
 assert.equal(flags['m51.brainstorm'], 'hidden');
+assert.equal(flags['m52.callrail_connect'], 'hidden');
+assert.equal(flags['m52.crm_join'], 'hidden');
 assert.equal(flags['sync.live'], 'on');
 assert.equal(flags['shell.legacy_ads_web'], 'hidden');
 assert.equal(isPlatformSyncLiveOn(flags), true);
@@ -37,6 +39,7 @@ assert.equal(isCapabilityInOperatorSettings({ id: 'cockpit', label: 'Ads cockpit
 assert.equal(isLeadsProductUnfinished(), false);
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.group === 'm51'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id.startsWith('m51.')));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.callrail_connect'));
 assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), null);
 assert.equal(capabilityOnBlockedReason('m51.budget_shift', 'recommend_only'), null);
 assert.equal(capabilityOnBlockedReason('cockpit', 'on'), null);

@@ -11,6 +11,7 @@ import { listProducts } from '@/src/lib/db/products';
 import { getDefaultSEORules } from '@/src/lib/seo/rules';
 import { SEORulesEditor } from '@/components/SEORulesEditor';
 import { WorkspaceCapabilitiesSettings } from '@/components/workspace-capabilities-settings';
+import { WorkspaceCallRailSettings } from '@/components/workspace-callrail-settings';
 import { WorkspaceModulesSettings } from '@/components/workspace-modules-settings';
 
 async function resyncInngest() {
@@ -436,8 +437,8 @@ async function syncCatalogAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string };
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string };
   let store = null;
   try {
     store = await getActiveStore();
@@ -471,8 +472,16 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
         <div className="mb-4 p-3 border text-sm">Could not save that capability. Try again.</div>
       )}
 
+      {params.callrail === 'saved' && (
+        <div className="mb-4 p-3 border text-sm">CallRail / CRM join saved. Nothing was written to CallRail or Housecall Pro.</div>
+      )}
+      {params.callrail === 'error' && (
+        <div className="mb-4 p-3 border text-sm">Could not update CallRail or CRM join. Check the capability flag and try again.</div>
+      )}
+
       <WorkspaceModulesSettings />
       <WorkspaceCapabilitiesSettings />
+      <WorkspaceCallRailSettings />
 
       {params.resync === 'success' && (
         <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Inngest resync successful.</div>

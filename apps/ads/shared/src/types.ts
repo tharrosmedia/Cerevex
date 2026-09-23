@@ -160,6 +160,8 @@ export const RECOMMENDATION_TYPES = [
   "creative_test",
   "lp_congruence",
   "create_alternative",
+  "call_attribution",
+  "crm_booked_job",
 ] as const;
 export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
 
@@ -197,6 +199,13 @@ export type ExecutableMutationAction = (typeof EXECUTABLE_MUTATION_ACTIONS)[numb
 export const CREATE_NEW_MUTATION_ACTIONS = ["create_ad", "add_keyword"] as const;
 
 export const RECOMMENDATION_SCHEMA_VERSION = "1" as const;
+
+export const OFFLINE_RECOMMENDATION_TYPES = ["call_attribution", "crm_booked_job"] as const;
+export type OfflineRecommendationType = (typeof OFFLINE_RECOMMENDATION_TYPES)[number];
+
+export function isOfflineRecommendationType(value: string): value is OfflineRecommendationType {
+  return (OFFLINE_RECOMMENDATION_TYPES as readonly string[]).includes(value);
+}
 
 export type StubPingPayload = {
   requestedBy: string;

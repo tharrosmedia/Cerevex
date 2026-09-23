@@ -30,7 +30,9 @@
     "./lp-congruence": "./src/lp-congruence.ts",
     "./funnel": "./src/funnel.ts",
     "./analytics": "./src/analytics.ts",
-    "./grok-creatives": "./src/grok-creatives.ts"
+    "./grok-creatives": "./src/grok-creatives.ts",
+    "./attribution": "./src/attribution.ts",
+    "./connector-settings": "./src/connector-settings.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",

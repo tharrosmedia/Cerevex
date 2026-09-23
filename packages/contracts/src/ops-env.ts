@@ -75,6 +75,16 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
     kind: "secret",
     help: "Encrypts OAuth tokens at rest in schema os. Not a feature flag.",
   },
+  {
+    env: "CALLRAIL_API_KEY",
+    kind: "secret",
+    help: "Optional workspace-wide CallRail API key. Prefer the per-client encrypted store. Never put in settings_json in the clear.",
+  },
+  {
+    env: "CALLRAIL_ACCOUNT_ID",
+    kind: "secret",
+    help: "Optional CallRail account id companion for CALLRAIL_API_KEY. Not a feature flag.",
+  },
 ];
 
 export function opsEnvSecrets(): readonly OpsEnvEntry[] {

@@ -17,7 +17,7 @@ import { exchangeCode } from "../src/oauth-exchange";
 describe("connector interfaces", () => {
   it("registers Meta, Google, mock, GA4, and CallRail against the same Connector surface", () => {
     const ids = CONNECTORS.map((connector) => connector.id);
-    expect(ids).toEqual(["meta", "google", "mock", "ga4", "first_party", "callrail", "bundled"]);
+    expect(ids).toEqual(["meta", "google", "mock", "ga4", "first_party", "callrail", "bundled", "hcp"]);
     for (const connector of CONNECTORS) {
       const shared: Connector = asConnector(connector);
       expect(typeof shared.isConfigured).toBe("function");
@@ -26,18 +26,21 @@ describe("connector interfaces", () => {
     }
   });
 
-  it("lets Meta connect and stub CallRail compile and run against Connector", async () => {
+  it("lets Meta connect and CallRail mock-connect against the same Connector surface", async () => {
     const pair: Connector[] = [metaAdPlatformConnector, callRailConnector];
     const meta = await pair[0]!.connect({ workspaceId: "ws", clientId: "client" });
-    const callrail = await pair[1]!.connect({ workspaceId: "ws" });
+    const callrail = await pair[1]!.connect({ workspaceId: "ws", mock: true });
     expect(meta.connectorId).toBe("meta");
     expect(callrail.ok).toBe(true);
-    expect(callrail.stub).toBe(true);
-    expect(callrail.reason).toMatch(/stub/i);
+    expect(callrail.stub).toBe(false);
+    expect(callrail.mock).toBe(true);
+    expect(callRailConnector.implementation).toBe("live");
+    expect(callRailConnector.connectCapability).toBe("m52.callrail_connect");
     expect(ga4AnalyticsConnector.implementation).toBe("live");
     expect(mockAdPlatformConnector.implementation).toBe("mock");
     expect(typeof metaAdPlatformConnector.authorizeUrl).toBe("function");
     expect(typeof metaAdPlatformConnector.pull).toBe("function");
+    expect(typeof callRailConnector.pullCalls).toBe("function");
   });
 
   it("refuses live pull when sync.live is hidden even if tokens look live", () => {

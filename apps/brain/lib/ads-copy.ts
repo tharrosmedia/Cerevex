@@ -27,6 +27,8 @@ const SUGGESTION_LABELS: Record<string, string> = {
   creative_test: "Test this ad on the other platform",
   lp_congruence: "Match the landing page",
   create_alternative: "Create the Grok alternative",
+  call_attribution: "Calls joined to a campaign",
+  crm_booked_job: "Call booked a job",
 };
 
 const SUGGESTION_WHY: Record<string, string> = {
@@ -40,6 +42,8 @@ const SUGGESTION_WHY: Record<string, string> = {
   creative_test: "What is winning on one platform can be tested on the other.",
   lp_congruence: "The ad promise and the landing page do not match.",
   create_alternative: "Grok made an alternative. Approve creates the ad. Generate did not write live.",
+  call_attribution: "CallRail calls joined to a campaign in plain language.",
+  crm_booked_job: "A call matches a booked job. Nothing was written to the CRM.",
 };
 
 const AUDIT_STATUS_LABELS: Record<string, string> = {
@@ -186,6 +190,10 @@ export function metricLines(record: Record<string, unknown> | null | undefined):
   if (typeof record.impressions === "number") lines.push(`Impressions: ${record.impressions}`);
   if (typeof record.clicks === "number") lines.push(`Clicks: ${record.clicks}`);
   if (typeof record.ctr === "number") lines.push(`Click rate: ${(record.ctr * 100).toFixed(2)}%`);
+  if (typeof record.callCount === "number") lines.push(`Calls pulled: ${record.callCount}`);
+  if (typeof record.answeredCount === "number") lines.push(`Answered: ${record.answeredCount}`);
+  if (typeof record.conversionCount === "number") lines.push(`CallRail conversions: ${record.conversionCount}`);
+  if (typeof record.bookedJoinCount === "number") lines.push(`Booked-job joins: ${record.bookedJoinCount}`);
   if (typeof record.hint === "string") lines.push(record.hint);
   if (typeof record.entityExternalId === "string") lines.push(`Entity: ${record.entityExternalId}`);
   if (typeof record.adAccountId === "string") lines.push(`Account: ${record.adAccountId}`);

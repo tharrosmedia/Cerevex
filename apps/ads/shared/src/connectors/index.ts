@@ -10,8 +10,17 @@ import {
   mockAdPlatformConnector,
 } from "./ad-platform";
 import { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
-import { bundledCallTrackingConnector, callRailConnector } from "./stubs";
-import type { AdPlatformConnector, AnalyticsConnector, AnyConnector, CallTrackingConnector, Connector } from "./types";
+import { callRailConnector } from "./callrail";
+import { housecallProConnector } from "./crm";
+import { bundledCallTrackingConnector } from "./stubs";
+import type {
+  AdPlatformConnector,
+  AnalyticsConnector,
+  AnyConnector,
+  CallTrackingConnector,
+  Connector,
+  CrmConnector,
+} from "./types";
 
 export type {
   AdPlatformConnector,
@@ -24,6 +33,11 @@ export type {
   ConnectorConnectResult,
   ConnectorExchangeResult,
   ConnectorPullInput,
+  CrmConnector,
+  CallTrackingPullInput,
+  CallTrackingPullResult,
+  CrmJoinInput,
+  CrmJoinResult,
 } from "./types";
 
 export {
@@ -35,7 +49,9 @@ export {
   MockAdPlatformConnector,
 } from "./ad-platform";
 export { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
-export { bundledCallTrackingConnector, callRailConnector } from "./stubs";
+export { bundledCallTrackingConnector } from "./stubs";
+export { callRailConnector, CallRailConnector, callRailEnvCredentials } from "./callrail";
+export { housecallProConnector } from "./crm";
 
 export const AD_PLATFORM_CONNECTORS: AdPlatformConnector[] = [
   metaAdPlatformConnector,
@@ -53,10 +69,13 @@ export const CALL_TRACKING_CONNECTORS: CallTrackingConnector[] = [
   bundledCallTrackingConnector,
 ];
 
+export const CRM_CONNECTORS: CrmConnector[] = [housecallProConnector];
+
 export const CONNECTORS: AnyConnector[] = [
   ...AD_PLATFORM_CONNECTORS,
   ...ANALYTICS_CONNECTORS,
   ...CALL_TRACKING_CONNECTORS,
+  ...CRM_CONNECTORS,
 ];
 
 export function getAdPlatformConnector(id: AdPlatformConnector["id"]): AdPlatformConnector {
@@ -77,7 +96,13 @@ export function getCallTrackingConnector(id: CallTrackingConnector["id"]): CallT
   return found;
 }
 
-/** Same Connector surface for Meta (live) and CallRail (stub). */
+export function getCrmConnector(id: CrmConnector["id"]): CrmConnector {
+  const found = CRM_CONNECTORS.find((connector) => connector.id === id);
+  if (!found) throw new Error(`Unknown CRM connector: ${id}`);
+  return found;
+}
+
+/** Same Connector surface for Meta (live) and CallRail (connect). */
 export function asConnector(connector: AnyConnector): Connector {
   return connector;
 }
