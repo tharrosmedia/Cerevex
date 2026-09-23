@@ -207,12 +207,19 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
           type: "pause_waste",
           ruleId: "zero_conversion_spend",
           title: `Propose pausing ${campaign.name} (waste)`,
-          rationale: `30d spend $${m30.spendUsd} produced 0 conversions. A pause is proposed only — kill switch and authorization are required before any apply, and M3 still will not write platforms.`,
+          rationale: `30d spend $${m30.spendUsd} produced 0 conversions. Approve pauses this campaign. Deny or Snooze writes nothing.`,
           estimatedImpactUsd: money(num(m30.spendUsd) * 0.5),
           risk: "high",
           confidence: confidence(0.62),
           evidence: { entityExternalId: campaign.externalId, window: "30d", metrics: m30 },
-          mutations: [mutation(input.platform, "pause", campaign, { reason: "zero_conversions" })],
+          mutations: [
+            mutation(input.platform, "pause", campaign, { reason: "zero_conversions" }),
+            ...(input.platform === "google" && keywords[0]
+              ? [mutation(input.platform, "add_negative", campaign, { text: "free estimate", reason: "waste" })]
+              : input.platform === "meta"
+                ? [mutation(input.platform, "exclude_placement", campaign, { placement: "audience_network" })]
+                : []),
+          ],
         }),
       );
     }
@@ -231,12 +238,15 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
           type: "review_cpa",
           ruleId: "high_cpa",
           title: `Review bids/targeting on ${campaign.name}`,
-          rationale: `30d CPA is $${campaignCpa.toFixed(2)}. Propose a bid review only. No unsupervised write.`,
+          rationale: `30d CPA is $${campaignCpa.toFixed(2)}. Approve lowers bid 15% and budget 10% on this campaign.`,
           estimatedImpactUsd: money(num(m30.spendUsd) * 0.1),
           risk: "medium",
           confidence: confidence(0.71),
           evidence: { entityExternalId: campaign.externalId, window: "30d", cpaUsd: money(campaignCpa), metrics: m30 },
-          mutations: [mutation(input.platform, "update_bid", campaign, { proposed: "review_down", execute: false })],
+          mutations: [
+            mutation(input.platform, "update_bid", campaign, { percent: -15, direction: "down" }),
+            mutation(input.platform, "update_budget", campaign, { percent: -10, direction: "down" }),
+          ],
         }),
       );
     }
@@ -257,7 +267,7 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
           type: "improve_ctr",
           ruleId: "low_ctr",
           title: `Refresh creative on ${campaign.name}`,
-          rationale: `${ctrRow.window} CTR is ${(rate * 100).toFixed(2)}%. Propose a new ad variant. Mutation is propose-only.`,
+          rationale: `${ctrRow.window} CTR is ${(rate * 100).toFixed(2)}%. A new ad variant is proposed only — Approve will not create new ads in this slice.`,
           estimatedImpactUsd: money(num((m30 ?? ctrRow).spendUsd) * 0.05),
           risk: "low",
           confidence: confidence(0.58),

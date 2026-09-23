@@ -3,7 +3,8 @@ import type { OAuthPlatformConfig, Platform } from "./types";
 
 loadEnv();
 
-const META_SCOPES = ["ads_read"];
+/** Marketing API read + manage so Approve can mutate existing entities. */
+const META_SCOPES = ["ads_read", "ads_management"];
 const GOOGLE_SCOPES = ["https://www.googleapis.com/auth/adwords"];
 
 export function apiPublicUrl(): string {

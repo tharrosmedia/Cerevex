@@ -51,6 +51,8 @@ CREATE TABLE "os"."users" ( … );
 
 M2 (`0001_m2_connect.sql`) adds `"os"."ad_entities"`, `"os"."ad_metrics"`, and columns on existing `"os"` tables.
 
+M5 (`0002_m5_apply.sql`) adds `"os"."ad_accounts"."frozen"` and `"os"."apply_jobs"."idempotency_key"`.
+
 **Why `search_path`:** Drizzle column types are written as `"platform"` (unprefixed) while the type lives at `"os"."platform"`. Migrations must run with `search_path` including `os` (migrate.ts sets this). Do not create those enums in `public`.
 
 Drizzle also creates journal schema **`drizzle`** (`__drizzle_migrations`). That is expected and is not a Brain table.
@@ -385,23 +387,25 @@ curl -s -X POST "http://127.0.0.1:43180/clients/$CLIENT/audits" \
 
 Expect `writes: false`, at least one finding, at least one recommendation with `status: "proposed"` and every `proposedMutations[].execute === false`.
 
-## Authorize-to-apply boundary
+## Authorize-to-apply boundary (M5)
 
 ```bash
 REC=<recommendation id from the audit>
 
+# Approve must 409 while kill switch is ON.
+curl -s -o /tmp/approve.json -w '%{http_code}\n' -X POST \
+  "http://127.0.0.1:43180/recommendations/$REC/decide" \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"action":"approve","note":"smoke"}'
+jq . /tmp/approve.json
+
+# Deny / Snooze never write platforms
 curl -s -X POST "http://127.0.0.1:43180/recommendations/$REC/decide" \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"action":"authorize","note":"smoke"}' | jq '{status: .recommendation.status, applied, writes}'
-
-# Apply must 409 while kill switch is ON. No Meta/Google mutate either way.
-curl -s -o /tmp/apply.json -w '%{http_code}\n' -X POST \
-  "http://127.0.0.1:43180/recommendations/$REC/apply" \
-  -H "authorization: Bearer $TOKEN"
-jq . /tmp/apply.json
+  -d '{"action":"snooze"}' | jq '{status: .recommendation.status, applyJob, writes}'
 ```
 
-Expect HTTP 409, `blocked: "apply_kill_switch"`, `writes: false`.
+Expect HTTP 409 on Approve while paused. Deny/Snooze return `writes: false` and `applyJob: null`.
 
 `GET /workspace` should show `applyKillSwitch: true`.
 

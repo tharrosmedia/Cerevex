@@ -1,29 +1,35 @@
+import Link from "next/link";
 import type { RecommendationPublic } from "@tharros/ads-shared";
+import { summarizeMutation } from "@tharros/ads-shared";
 import { Button } from "@/components/ui/button";
 import { asProposedMutations, formatMoney, titleCase } from "@/lib/format";
 import { RecStatusBadge, RiskBadge } from "./status-badge";
 
-type Decision = "authorize" | "deny" | "snooze";
+type Decision = "deny" | "snooze";
 
 export function RecommendationCard({
   recommendation,
   canManage,
+  canApprove,
   killSwitchOn,
+  frozen,
   busy,
   onDecide,
-  onApply,
+  onApprove,
 }: {
   recommendation: RecommendationPublic;
   canManage: boolean;
+  canApprove: boolean;
   killSwitchOn: boolean;
+  frozen?: boolean;
   busy: string | null;
   onDecide: (id: string, action: Decision) => void;
-  onApply: (id: string) => void;
+  onApprove?: (id: string) => void;
 }) {
   const mutations = asProposedMutations(recommendation.proposedMutations);
   const impact = formatMoney(recommendation.estimatedImpactUsd);
   const deciding = busy === recommendation.id;
-  const applying = busy === `apply-${recommendation.id}`;
+  const open = recommendation.status === "proposed";
 
   return (
     <li className="rounded-md border border-border px-3 py-3">
@@ -47,60 +53,42 @@ export function RecommendationCard({
         <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
           {mutations.map((mutation, index) => (
             <li key={`${recommendation.id}-m-${index}`}>
-              Proposed {mutation.action ?? "change"}
-              {mutation.targetName ? ` on ${mutation.targetName}` : ""}
-              {mutation.platform ? ` (${mutation.platform})` : ""}
-              {" · "}
-              execute {mutation.execute ? "true" : "false"}
+              {summarizeMutation({
+                action: mutation.action,
+                platform: mutation.platform,
+                target: { name: mutation.targetName },
+                payload: mutation.payload,
+              })}
             </li>
           ))}
         </ul>
       ) : null}
 
-      {canManage && recommendation.status === "proposed" ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => onDecide(recommendation.id, "authorize")} disabled={deciding}>
-            {deciding ? "Saving…" : "Authorize"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onDecide(recommendation.id, "deny")}
-            disabled={deciding}
-          >
-            Deny
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onDecide(recommendation.id, "snooze")}
-            disabled={deciding}
-          >
-            Snooze
-          </Button>
-        </div>
-      ) : null}
-
-      {canManage && recommendation.status === "authorized" ? (
-        <div className="mt-3 flex flex-col gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onApply(recommendation.id)}
-            disabled={applying || killSwitchOn}
-          >
-            {applying
-              ? "Checking apply gate…"
-              : killSwitchOn
-                ? "Apply blocked (ads paused)"
-                : "Request apply"}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Authorization is recorded only. Apply is a separate step
-            {killSwitchOn ? " and stays blocked while ads are paused." : "."} Nothing is written to the ad platforms.
-          </p>
-        </div>
-      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Link
+          href={`/app/recommendations/${recommendation.id}`}
+          className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[0.8rem] font-medium hover:bg-muted"
+        >
+          Open detail
+        </Link>
+        {canManage && open ? (
+          <>
+            <Button
+              size="sm"
+              onClick={() => (onApprove ? onApprove(recommendation.id) : undefined)}
+              disabled={!canApprove || killSwitchOn || frozen || deciding}
+            >
+              Approve
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => onDecide(recommendation.id, "deny")} disabled={deciding}>
+              Deny
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onDecide(recommendation.id, "snooze")} disabled={deciding}>
+              Snooze
+            </Button>
+          </>
+        ) : null}
+      </div>
     </li>
   );
 }

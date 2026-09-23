@@ -17,7 +17,7 @@ A user with `client_readonly` on the workspace and a membership on Got Ductless 
 ### workspaces
 `id`, `name` (unique), `settings_json`, `apply_kill_switch` (default **true**), `created_at`
 
-The kill switch is a hard product control (default **true** / ON). M3 still does not execute Meta/Google writes even if it is flipped.
+The kill switch is a hard product control (default **true** / ON). Approve is blocked while it is on. M5 apply executes only after Approve, with the switch off and the ad account not frozen.
 
 `settings_json` also holds Modules & Nav IA 1.1 workspace flags (no extra table, schema `os` only):
 
@@ -52,7 +52,7 @@ Used to scope `client_readonly` users. Owners and operators do not need a row pe
 ### ad_accounts
 `id`, `workspace_id`, `client_id`, `platform` (`meta` \| `google`), `external_id`, `connection_status`, `last_sync_at`, `last_error`, `scopes_json`
 
-`connection_status`: `disconnected` | `pending` | `syncing` | `connected` | `error`. Sync is Inngest-only; HTTP never blocks on a platform pull.
+`connection_status`: `disconnected` | `pending` | `syncing` | `connected` | `needs_reconnect` | `error`. `frozen` (boolean, default false) blocks Approve per account. Sync is Inngest-only; HTTP never blocks on a platform pull.
 
 ### ad_entities / ad_metrics
 Pulled campaigns, ad sets / ad groups, ads, keywords, plus 7d/30d performance. Workspace- and client-scoped. No tokens.
@@ -75,7 +75,7 @@ M3 orchestration creates a run, evaluates **local** `ad_entities` / `ad_metrics`
 ### recommendations
 `id`, `workspace_id`, `client_id`, `ad_account_id`, `type`, `title`, `rationale`, `estimated_impact_usd`, `risk`, `confidence`, `evidence_json`, `proposed_mutations_json`, `status`, `schema_version`, `created_at`
 
-Validated with Zod (`schema_version = 1`) before insert. Every proposed mutation has `execute: false`. Status starts as `proposed`. Authorize/deny/snooze is a separate decision; apply is a third step.
+Validated with Zod (`schema_version = 1`) before insert. Every proposed mutation has `execute: false`. Status starts as `proposed`. Approve (authorize) creates an authorization and enqueues apply. Deny/Snooze never write platforms.
 
 ### decisions
 `id`, `workspace_id`, `client_id`, `recommendation_id`, `user_id`, `action` (`authorize` \| `deny` \| `snooze`), `note`, `created_at`
@@ -86,7 +86,7 @@ Validated with Zod (`schema_version = 1`) before insert. Every proposed mutation
 ### apply_jobs
 `id`, `workspace_id`, `client_id`, `authorization_id`, `status`, `attempts`, `request_json`, `response_json`, `error`, `created_at`, `finished_at`
 
-Table exists. HTTP `POST /recommendations/:id/apply` and Inngest `os/apply.requested` both run `evaluateApplyGate`: kill switch ON (default) blocks; missing/revoked/expired authorization blocks; even a clean grant returns `apply_not_implemented`. No Meta/Google writes. No spend.
+HTTP Approve and Inngest `os/apply.requested` run `evaluateApplyGate`: kill switch ON (default) blocks; frozen ad account blocks; missing/revoked/expired authorization blocks. When the gate allows, the worker executes schema-valid mutate-existing `proposed_mutations` (pause, negatives, placement exclude, bid, budget). Create-new (`create_ad`, `add_keyword`) is skipped. Job statuses: `queued` / `applying` / `succeeded` / `failed`. `idempotency_key` is unique (`apply:<recommendationId>`).
 
 ### audit_log
 `id`, `workspace_id`, `actor_type`, `actor_id`, `action`, `entity_type`, `entity_id`, `payload_json`, `created_at`

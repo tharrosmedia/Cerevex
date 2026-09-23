@@ -1,12 +1,21 @@
 import { eq } from "drizzle-orm";
 import type { AdAccountPublic, AdEntityPublic, AuthContext, Platform } from "@tharros/ads-shared";
 import { canMutate } from "@tharros/ads-shared";
+import { writeAuditEvent } from "@tharros/ads-shared/audit";
 import { loadTokens, publicTokenView, storeTokens } from "@tharros/ads-shared/credentials";
 import { getDb } from "@tharros/ads-shared/db";
 import { adAccountSyncEvent, sendAdAccountSync } from "@tharros/ads-shared/inngest";
-import { adAccounts, adEntities, adMetrics, clients } from "@tharros/ads-shared/schema";
+import { adAccounts, adEntities, adMetrics, oauthCredentials } from "@tharros/ads-shared/schema";
 import { HTTPException } from "hono/http-exception";
 import { getVisibleClient } from "./tenancy";
+
+function publicConnectionStatus(row: typeof adAccounts.$inferSelect): string {
+  const error = (row.lastError ?? "").toLowerCase();
+  if (row.connectionStatus === "error" && /(token|oauth|auth|expired|reconnect)/.test(error)) {
+    return "needs_reconnect";
+  }
+  return row.connectionStatus;
+}
 
 export function toPublicAccount(
   row: typeof adAccounts.$inferSelect,
@@ -19,9 +28,10 @@ export function toPublicAccount(
     clientId: row.clientId,
     platform: row.platform,
     externalId: row.externalId,
-    connectionStatus: row.connectionStatus,
+    connectionStatus: publicConnectionStatus(row),
     lastSyncAt: row.lastSyncAt ? row.lastSyncAt.toISOString() : null,
     lastError: row.lastError,
+    frozen: Boolean(row.frozen),
     hasCredentials: view.hasCredentials,
     mock: view.mock,
     scopes: (row.scopesJson as string[] | null) ?? view.scopes,
@@ -87,7 +97,72 @@ export async function upsertConnectedAccount(input: {
     tokens: input.tokens,
   });
 
+  await writeAuditEvent({
+    workspaceId: input.workspaceId,
+    actorType: "system",
+    action: "oauth_connect",
+    entityType: "ad_account",
+    entityId: row.id,
+    payload: {
+      platform: input.platform,
+      clientId: input.clientId,
+      label: input.label,
+      mock: Boolean(input.tokens.mock),
+    },
+  });
+
   return row;
+}
+
+export async function disconnectAccount(auth: AuthContext, adAccountId: string) {
+  const account = await requireVisibleAccount(auth, adAccountId);
+  if (!account) {
+    throw new HTTPException(404, { message: "Ad account not found" });
+  }
+  await requireMutableClient(auth, account.clientId);
+  const db = getDb();
+  await db.delete(oauthCredentials).where(eq(oauthCredentials.adAccountId, account.id));
+  const [updated] = await db
+    .update(adAccounts)
+    .set({
+      connectionStatus: "disconnected",
+      lastError: null,
+    })
+    .where(eq(adAccounts.id, account.id))
+    .returning();
+  await writeAuditEvent({
+    workspaceId: account.workspaceId,
+    actorType: "user",
+    actorId: auth.user.id,
+    action: "oauth_disconnect",
+    entityType: "ad_account",
+    entityId: account.id,
+    payload: { platform: account.platform, clientId: account.clientId },
+  });
+  return updated;
+}
+
+export async function setAccountFrozen(auth: AuthContext, adAccountId: string, frozen: boolean) {
+  const account = await requireVisibleAccount(auth, adAccountId);
+  if (!account) {
+    throw new HTTPException(404, { message: "Ad account not found" });
+  }
+  await requireMutableClient(auth, account.clientId);
+  const [updated] = await getDb()
+    .update(adAccounts)
+    .set({ frozen })
+    .where(eq(adAccounts.id, account.id))
+    .returning();
+  await writeAuditEvent({
+    workspaceId: account.workspaceId,
+    actorType: "user",
+    actorId: auth.user.id,
+    action: "freeze_flip",
+    entityType: "ad_account",
+    entityId: account.id,
+    payload: { frozen, platform: account.platform, clientId: account.clientId },
+  });
+  return updated;
 }
 
 export async function enqueueAccountSync(auth: AuthContext, adAccountId: string) {

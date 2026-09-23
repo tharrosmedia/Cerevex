@@ -74,14 +74,14 @@ export default async function AdsCockpitPage({
       <p className="cx-kicker">Ads</p>
       <h1>Ads</h1>
       <p className="cx-lede">
-        See what a check found and what Cerevex suggests. Apply comes later — nothing is written to Meta or Google here.
+        See what a check found and what Cerevex suggests. Open a suggestion to Approve, Deny, or Snooze.
       </p>
 
       {filters.notice ? <p className="cx-banner" role="status">{filters.notice}</p> : null}
       {cockpit.workspace?.applyKillSwitch ? (
-        <p className="cx-banner cx-banner-warn">Changes paused. Suggestions are read-only in this slice.</p>
+        <p className="cx-banner cx-banner-warn">Ads are paused. Approve cannot apply until the pause is off.</p>
       ) : (
-        <p className="cx-banner">Apply coming later. You can read checks and suggestions only.</p>
+        <p className="cx-banner">Approve can change live ads. Deny and Snooze never write platforms.</p>
       )}
 
       {!cockpit.ok ? (

@@ -11,6 +11,7 @@ type WorkspaceState = {
   workspace: WorkspaceSummary | null;
   killSwitch: boolean;
   canMutate: boolean;
+  canApprove: boolean;
   workspaceName: string | null;
   modules: ModuleFlags;
   onboardingComplete: boolean;
@@ -27,6 +28,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
   const [killSwitch, setKillSwitch] = useState(true);
   const [canMutate, setCanMutate] = useState(false);
+  const [canApprove, setCanApprove] = useState(false);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleFlags>(unboardedModules());
   const [onboardingComplete, setOnboardingComplete] = useState(false);
@@ -40,6 +42,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setWorkspace(result.workspace);
     setKillSwitch(result.workspace?.applyKillSwitch ?? true);
     setCanMutate(result.canMutate);
+    setCanApprove(Boolean(result.canApprove));
     setWorkspaceName(result.workspace?.name ?? null);
     setModules(result.workspace?.modules ?? unboardedModules());
     setOnboardingComplete(Boolean(result.workspace?.onboardingComplete));
@@ -72,6 +75,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       workspace,
       killSwitch,
       canMutate,
+      canApprove,
       workspaceName,
       modules,
       onboardingComplete,
@@ -79,7 +83,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       error,
       refresh,
     }),
-    [user, workspace, killSwitch, canMutate, workspaceName, modules, onboardingComplete, loading, error, refresh],
+    [user, workspace, killSwitch, canMutate, canApprove, workspaceName, modules, onboardingComplete, loading, error, refresh],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

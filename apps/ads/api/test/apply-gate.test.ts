@@ -50,7 +50,7 @@ describe("authorize-to-apply gate", () => {
     ).toBe("authorization_expired");
   });
 
-  it("still refuses to apply when every gate passes — no unsupervised writes", () => {
+  it("blocks a frozen ad account", () => {
     const gate = evaluateApplyGate({
       expectedWorkspaceId: workspaceId,
       workspace: { applyKillSwitch: false },
@@ -59,9 +59,22 @@ describe("authorize-to-apply gate", () => {
         revokedAt: null,
         expiresAt: new Date(Date.now() + 60_000),
       },
+      account: { frozen: true },
     });
-    expect(gate.blocked).toBe("apply_not_implemented");
-    expect(gate.allowed).toBe(false);
-    expect(gate.writes).toBe(false);
+    expect(gate).toEqual({ allowed: false, blocked: "account_frozen", writes: false });
+  });
+
+  it("allows apply when every gate passes", () => {
+    const gate = evaluateApplyGate({
+      expectedWorkspaceId: workspaceId,
+      workspace: { applyKillSwitch: false },
+      authorization: {
+        workspaceId,
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      account: { frozen: false },
+    });
+    expect(gate).toEqual({ allowed: true, blocked: null, writes: true });
   });
 });

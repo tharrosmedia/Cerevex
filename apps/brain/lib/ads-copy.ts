@@ -40,9 +40,18 @@ const AUDIT_STATUS_LABELS: Record<string, string> = {
 
 const SUGGESTION_STATUS_LABELS: Record<string, string> = {
   proposed: "Open",
-  authorized: "Noted",
+  authorized: "Approved",
   denied: "Dismissed",
   snoozed: "Later",
+};
+
+const APPLY_STATUS_LABELS: Record<string, string> = {
+  queued: "Queued",
+  pending: "Queued",
+  applying: "Applying",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  blocked: "Blocked",
 };
 
 const RISK_LABELS: Record<string, string> = {
@@ -74,6 +83,11 @@ export function auditStatusLabel(status: string | null | undefined): string {
 export function suggestionStatusLabel(status: string | null | undefined): string {
   if (!status) return "Open";
   return SUGGESTION_STATUS_LABELS[status] ?? titleCase(status);
+}
+
+export function applyStatusLabel(status: string | null | undefined): string {
+  if (!status) return "Not applied";
+  return APPLY_STATUS_LABELS[status] ?? titleCase(status);
 }
 
 export function riskLabel(risk: string | null | undefined): string {

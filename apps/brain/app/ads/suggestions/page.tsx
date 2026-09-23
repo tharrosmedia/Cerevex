@@ -49,7 +49,7 @@ export default async function AdsSuggestionsPage({
           value={filters}
           statusOptions={[
             { value: 'proposed', label: 'Open' },
-            { value: 'authorized', label: 'Noted' },
+            { value: 'authorized', label: 'Approved' },
             { value: 'denied', label: 'Dismissed' },
             { value: 'snoozed', label: 'Later' },
           ]}

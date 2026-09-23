@@ -37,6 +37,7 @@ export type ProposedMutationView = {
   action?: string;
   execute?: boolean;
   targetName?: string;
+  payload?: Record<string, unknown>;
 };
 
 export function asProposedMutations(value: unknown[]): ProposedMutationView[] {
@@ -49,6 +50,7 @@ export function asProposedMutations(value: unknown[]): ProposedMutationView[] {
       action: typeof rec.action === "string" ? rec.action : undefined,
       execute: rec.execute === true,
       targetName: typeof target.name === "string" ? target.name : undefined,
+      payload: rec.payload && typeof rec.payload === "object" ? (rec.payload as Record<string, unknown>) : undefined,
     };
   });
 }

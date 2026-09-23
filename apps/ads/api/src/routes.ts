@@ -14,8 +14,9 @@ import {
 } from "@tharros/ads-shared/oauth";
 import { loadTokens } from "@tharros/ads-shared/credentials";
 import { getDb } from "@tharros/ads-shared/db";
-import { clients } from "@tharros/ads-shared/schema";
-import { eq } from "drizzle-orm";
+import { sendAdAccountSync } from "@tharros/ads-shared/inngest";
+import { adAccounts, clients } from "@tharros/ads-shared/schema";
+import { and, eq } from "drizzle-orm";
 import {
   enqueueAccountSync,
   listEntities,
@@ -23,6 +24,8 @@ import {
   requireMutableClient,
   requireVisibleAccount,
   toPublicAccount,
+  disconnectAccount,
+  setAccountFrozen,
   upsertConnectedAccount,
 } from "./connect";
 import { childLogger } from "./logger";
@@ -114,6 +117,18 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       dest.searchParams.set("client", visible.id);
       dest.searchParams.set("connected", platform);
       if (!consoleOrigin()) dest.pathname = `/app/clients/${visible.id}`;
+      const connected = await getDb().query.adAccounts.findFirst({
+        where: and(eq(adAccounts.clientId, visible.id), eq(adAccounts.platform, platform)),
+      });
+      if (connected) {
+        await sendAdAccountSync({
+          requestedBy: parsed.userId,
+          workspaceId: visible.workspaceId,
+          clientId: visible.id,
+          adAccountId: connected.id,
+          platform,
+        }).catch(() => undefined);
+      }
       return c.redirect(dest.toString());
     } catch (err) {
       childLogger(c.get("requestId") ?? "oauth").error({
@@ -155,6 +170,13 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       clientId: client.id,
       adAccountId: row.id,
     });
+    await sendAdAccountSync({
+      requestedBy: auth.user.id,
+      workspaceId: client.workspaceId,
+      clientId: client.id,
+      adAccountId: row.id,
+      platform,
+    }).catch(() => undefined);
     const tokens = await loadTokens(row.id);
     return c.json({ adAccount: toPublicAccount(row, tokens) });
   });
@@ -184,6 +206,22 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
         message: "Inngest is not reachable. Start the local Dev Server (npm run ads:dev:inngest).",
       });
     }
+  });
+
+  app.post("/ad-accounts/:id/disconnect", requireAuth, async (c) => {
+    const row = await disconnectAccount(c.get("auth"), c.req.param("id"));
+    const tokens = await loadTokens(row.id);
+    return c.json({ adAccount: toPublicAccount(row, tokens) });
+  });
+
+  app.patch("/ad-accounts/:id", requireAuth, async (c) => {
+    const parsed = z.object({ frozen: z.boolean() }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: "frozen is required" });
+    }
+    const row = await setAccountFrozen(c.get("auth"), c.req.param("id"), parsed.data.frozen);
+    const tokens = await loadTokens(row.id);
+    return c.json({ adAccount: toPublicAccount(row, tokens) });
   });
 
   app.get("/ad-accounts/:id", requireAuth, async (c) => {

@@ -65,10 +65,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body;
 }
 
+export type ApplyJobPublic = {
+  id: string;
+  workspaceId: string;
+  clientId: string;
+  authorizationId: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  request: Record<string, unknown>;
+  response: Record<string, unknown> | null;
+  createdAt: string;
+  finishedAt: string | null;
+};
+
 export type MeResponse = {
   user: SessionUser;
   memberships: Membership[];
   clientMemberships: ClientMembership[];
+  canApprove?: boolean;
 };
 
 export type LoginResponse = MeResponse & { token: string };
@@ -152,14 +167,19 @@ export type AuditBundleResponse = {
   status?: string;
 };
 
-export async function getWorkspace(): Promise<{ workspace: WorkspaceSummary | null; canMutate: boolean }> {
+export async function getWorkspace(): Promise<{
+  workspace: WorkspaceSummary | null;
+  canMutate: boolean;
+  canApprove?: boolean;
+}> {
   return api("/workspace");
 }
 
 export async function patchWorkspace(input: {
   businessType?: BusinessType;
   modules?: Partial<ModuleFlags>;
-}): Promise<{ workspace: WorkspaceSummary | null; canMutate: boolean }> {
+  applyKillSwitch?: boolean;
+}): Promise<{ workspace: WorkspaceSummary | null; canMutate: boolean; canApprove?: boolean }> {
   return api("/workspace", {
     method: "PATCH",
     body: JSON.stringify(input),
@@ -187,27 +207,70 @@ export async function listClientRecommendations(clientId: string): Promise<Recom
   return result.recommendations;
 }
 
+export async function getRecommendation(id: string): Promise<{
+  recommendation: RecommendationPublic;
+  authorization: AuthorizationPublic | null;
+  applyJob: ApplyJobPublic | null;
+  client: { id: string; name: string } | null;
+  adAccount: {
+    id: string;
+    platform: Platform;
+    externalId: string;
+    frozen: boolean;
+    connectionStatus: string;
+  } | null;
+  canApprove: boolean;
+  applyGate: { allowed: boolean; blocked: string | null; writes: boolean };
+  writes: boolean;
+}> {
+  return api(`/recommendations/${id}`);
+}
+
 export async function decideRecommendation(
   recommendationId: string,
-  action: "authorize" | "deny" | "snooze",
+  action: "authorize" | "approve" | "deny" | "snooze",
   note?: string,
+  inline?: boolean,
 ): Promise<{
   recommendation: RecommendationPublic;
   authorization: AuthorizationPublic | null;
-  applied: false;
-  writes: false;
+  applyJob: ApplyJobPublic | null;
+  applied: boolean;
+  writes: boolean;
+  note?: string;
 }> {
   return api(`/recommendations/${recommendationId}/decide`, {
     method: "POST",
-    body: JSON.stringify({ action, note }),
+    body: JSON.stringify({ action, note, inline }),
   });
 }
 
-export async function requestApply(recommendationId: string): Promise<{
-  blocked: string;
-  writes: false;
-  allowed: false;
+export async function requestApply(
+  recommendationId: string,
+  inline?: boolean,
+): Promise<{
+  applyJob?: ApplyJobPublic;
+  writes: boolean;
+  allowed?: boolean;
+  blocked?: string | null;
   note?: string;
 }> {
-  return api(`/recommendations/${recommendationId}/apply`, { method: "POST" });
+  return api(`/recommendations/${recommendationId}/apply`, {
+    method: "POST",
+    body: JSON.stringify({ inline }),
+  });
+}
+
+export async function disconnectAdAccount(adAccountId: string): Promise<{ adAccount: AdAccountPublic }> {
+  return api(`/ad-accounts/${adAccountId}/disconnect`, { method: "POST" });
+}
+
+export async function setAdAccountFrozen(
+  adAccountId: string,
+  frozen: boolean,
+): Promise<{ adAccount: AdAccountPublic }> {
+  return api(`/ad-accounts/${adAccountId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ frozen }),
+  });
 }

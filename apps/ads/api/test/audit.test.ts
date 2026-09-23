@@ -122,32 +122,68 @@ describe("M3 audit → findings → recommendations", () => {
     expect(scopedOther.status).toBe(404);
   });
 
-  it("authorizes a recommendation without applying, then blocks apply behind the kill switch", async () => {
+  it("blocks Approve while the kill switch is on, then applies after it is turned off", async () => {
+    const blocked = await app.request(`/recommendations/${recommendationId}/decide`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ action: "approve", note: "M5 — should block" }),
+    });
+    expect(blocked.status).toBe(409);
+    const blockedBody = await json(blocked);
+    expect(String(blockedBody.error)).toMatch(/paused/i);
+
+    const flip = await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ applyKillSwitch: false }),
+    });
+    expect(flip.status).toBe(200);
+
     const decide = await app.request(`/recommendations/${recommendationId}/decide`, {
       method: "POST",
       headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ action: "authorize", note: "M3 smoke — propose only" }),
+      body: JSON.stringify({ action: "approve", note: "M5 smoke", inline: true }),
     });
     const decided = await json(decide);
     expect(decide.status).toBe(200);
-    expect(decided.applied).toBe(false);
-    expect(decided.writes).toBe(false);
     expect((decided.recommendation as { status: string }).status).toBe("authorized");
     expect((decided.authorization as { id: string } | null)?.id).toBeTruthy();
+    expect((decided.applyJob as { status: string }).status).toBe("succeeded");
+    expect(decided.writes).toBe(true);
 
-    const apply = await app.request(`/recommendations/${recommendationId}/apply`, {
-      method: "POST",
+    const jobs = await getDb()
+      .select()
+      .from(applyJobs)
+      .where(eq(applyJobs.authorizationId, String((decided.authorization as { id: string }).id)));
+    expect(jobs[0]?.status).toBe("succeeded");
+
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ applyKillSwitch: true }),
+    });
+  });
+
+  it("never writes platforms on deny or snooze", async () => {
+    const recs = await app.request(`/clients/${clientId}/recommendations`, {
       headers: { authorization: `Bearer ${ownerToken}` },
     });
-    const applied = await json(apply);
-    expect(apply.status).toBe(409);
-    expect(applied.blocked).toBe("apply_kill_switch");
-    expect(applied.writes).toBe(false);
-    expect(applied.allowed).toBe(false);
-
-    const jobs = await getDb().select().from(applyJobs).where(eq(applyJobs.authorizationId, String((decided.authorization as { id: string }).id)));
-    expect(jobs[0]?.status).toBe("blocked");
-    expect(jobs[0]?.error).toBe("apply_kill_switch");
+    const open = ((await json(recs)).recommendations as { id: string; status: string }[]).find(
+      (row) => row.status === "proposed",
+    );
+    expect(open?.id).toBeTruthy();
+    const before = await getDb().select().from(applyJobs);
+    const deny = await app.request(`/recommendations/${open!.id}/decide`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ action: "deny" }),
+    });
+    expect(deny.status).toBe(200);
+    const denied = await json(deny);
+    expect(denied.writes).toBe(false);
+    expect(denied.applyJob).toBeNull();
+    const after = await getDb().select().from(applyJobs);
+    expect(after.length).toBe(before.length);
   });
 
   it("blocks client_readonly from starting audits or deciding", async () => {
@@ -166,13 +202,13 @@ describe("M3 audit → findings → recommendations", () => {
     expect(decide.status).toBe(403);
   });
 
-  it("exposes kill switch default ON on /workspace", async () => {
+  it("exposes kill switch and canApprove for the Adam owner", async () => {
     const res = await app.request("/workspace", {
       headers: { authorization: `Bearer ${ownerToken}` },
     });
     const body = await json(res);
     expect(res.status).toBe(200);
-    expect((body.workspace as { applyKillSwitch: boolean }).applyKillSwitch).toBe(true);
     expect((body.workspace as { modules: { leads: boolean } }).modules.leads).toBe(true);
+    expect(body.canApprove).toBe(true);
   });
 });

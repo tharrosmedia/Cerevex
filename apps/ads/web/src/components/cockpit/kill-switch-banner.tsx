@@ -30,7 +30,7 @@ export function KillSwitchBanner({
           <p className={cn("mt-0.5 text-xs leading-5", on ? "text-muted-foreground" : "text-destructive/80")}>
             {on
               ? "Nothing goes live while ads are paused. You stay in control of spend."
-              : "Ads can run in this workspace. Changes still need a separate apply step."}
+              : "Ads can run. Approve still needs a human and will change live ads."}
           </p>
         )}
       </div>

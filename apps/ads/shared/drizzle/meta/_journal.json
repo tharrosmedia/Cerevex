@@ -15,6 +15,13 @@
       "when": 1790075682637,
       "tag": "0001_m2_connect",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790200000000,
+      "tag": "0002_m5_apply",
+      "breakpoints": true
     }
   ]
 }
