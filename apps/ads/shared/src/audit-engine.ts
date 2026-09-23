@@ -16,6 +16,8 @@ import {
 } from "./lead-lifecycle";
 import { recsFromSessionSignals, type AggregatedSessionSignal } from "./lp-intelligence";
 import { evaluateOperatorHygiene } from "./operator-hygiene";
+import { recsFromWeeklyNarrative } from "./owner-weekly-narrative";
+import { defaultSeasonalityCalendar, recsFromSeasonality, type SeasonalityCalendar } from "./seasonality-calendar";
 import type { Platform, RecommendationType } from "./types";
 
 export const AUDIT_THRESHOLDS = {
@@ -74,6 +76,13 @@ export type EvaluateAccountInput = {
     geoDisciplineWritable?: boolean;
     brandGuardrailsEnabled?: boolean;
     brandGuardrailsWritable?: boolean;
+    seasonalityEnabled?: boolean;
+    seasonalityWritable?: boolean;
+    seasonalityCalendar?: SeasonalityCalendar;
+    seasonalityNow?: Date;
+    weeklyNarrativeEnabled?: boolean;
+    weeklyNarrativeWritable?: boolean;
+    weeklyNarrativeNow?: Date;
   };
 };
 
@@ -579,6 +588,79 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
           estimatedImpactUsd: draft.estimatedImpactUsd,
           risk: draft.risk,
           confidence: confidence(0.6),
+          evidence: draft.evidence,
+          mutations: draft.mutations.map((row) => mutation(input.platform, row.action, row.entity, row.payload)),
+        }),
+      );
+    }
+  }
+
+  if (offline?.seasonalityEnabled) {
+    const seasonalityDrafts = recsFromSeasonality({
+      platform: input.platform,
+      entities: input.entities,
+      metrics: input.metrics,
+      calendar: offline.seasonalityCalendar ?? defaultSeasonalityCalendar(),
+      writable: Boolean(offline.seasonalityWritable),
+      now: offline.seasonalityNow,
+    });
+    if (seasonalityDrafts.length > 0) {
+      findings.push(
+        finding(input, seasonalityDrafts[0]!.ruleId, "info", seasonalityDrafts[0]!.title, {
+          hint: seasonalityDrafts[0]!.why,
+          inbox: "seasonality",
+        }),
+      );
+    }
+    for (const draft of seasonalityDrafts) {
+      recommendations.push(
+        recommendation(input, {
+          type: draft.type,
+          ruleId: draft.ruleId,
+          title: draft.title,
+          rationale: draft.rationale,
+          estimatedImpactUsd: draft.estimatedImpactUsd,
+          risk: draft.risk,
+          confidence: confidence(0.58),
+          evidence: draft.evidence,
+          mutations: draft.mutations.map((row) => mutation(input.platform, row.action, row.entity, row.payload)),
+        }),
+      );
+    }
+  }
+
+  if (offline?.weeklyNarrativeEnabled) {
+    const narrativeDrafts = recsFromWeeklyNarrative({
+      platform: input.platform,
+      entities: input.entities,
+      metrics: input.metrics,
+      writable: Boolean(offline.weeklyNarrativeWritable),
+      now: offline.weeklyNarrativeNow,
+      calls: offline.calls,
+      bookedJobs: offline.bookedJobs,
+      leads: offline.leads,
+      callTrackingVisible: callTrackingOn,
+      bookedVisible: Boolean(offline.bookedJobSignalEnabled || offline.crmEnabled),
+      leadLifecycleVisible: Boolean(offline.leadLifecycleEnabled),
+    });
+    if (narrativeDrafts.length > 0) {
+      findings.push(
+        finding(input, "owner_weekly_narrative", "info", narrativeDrafts[0]!.title, {
+          hint: narrativeDrafts[0]!.why,
+          inbox: "weekly_narrative",
+        }),
+      );
+    }
+    for (const draft of narrativeDrafts) {
+      recommendations.push(
+        recommendation(input, {
+          type: draft.type,
+          ruleId: draft.ruleId,
+          title: draft.title,
+          rationale: draft.rationale,
+          estimatedImpactUsd: draft.estimatedImpactUsd,
+          risk: draft.risk,
+          confidence: confidence(0.7),
           evidence: draft.evidence,
           mutations: draft.mutations.map((row) => mutation(input.platform, row.action, row.entity, row.payload)),
         }),

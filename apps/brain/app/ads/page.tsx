@@ -21,6 +21,8 @@ import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { OfflineAttribution, type OfflineAttributionView } from '@/components/ads/offline-attribution';
 import { LeadLifecycle, type LeadLifecycleView } from '@/components/ads/lead-lifecycle';
 import { LpIntelligence, type LpIntelligenceView } from '@/components/ads/lp-intelligence';
+import { SeasonalityCalendar, type SeasonalityView } from '@/components/ads/seasonality-calendar';
+import { OwnerWeeklyNarrative, type WeeklyNarrativeView } from '@/components/ads/owner-weekly-narrative';
 import { adsApi } from '@/lib/ads-bff';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 import { getActiveStoreId, listStores } from '@/src/lib/db/stores';
@@ -86,9 +88,12 @@ export default async function AdsCockpitPage({
   const bookedSignalVisible = adsCapabilityVisible(cockpit.workspace, 'm52.booked_job_signal');
   const clarityVisible = adsCapabilityVisible(cockpit.workspace, 'm52.clarity_connect');
   const lpVisible = adsCapabilityVisible(cockpit.workspace, 'm52.lp_intelligence');
+  const seasonalityVisible = adsCapabilityVisible(cockpit.workspace, 'm52.seasonality_calendar');
+  const narrativeVisible = adsCapabilityVisible(cockpit.workspace, 'm52.owner_weekly_narrative');
   let offline: OfflineAttributionView | null = null;
   let lifecycle: LeadLifecycleView | null = null;
   let lpIntel: LpIntelligenceView | null = null;
+  let planning: { seasonality: SeasonalityView | null; narrative: WeeklyNarrativeView | null } | null = null;
   if ((callrailVisible || bundledVisible || crmVisible) && selectedClient) {
     const result = await adsApi<OfflineAttributionView>(`/clients/${selectedClient.id}/offline-attribution`);
     offline = result.ok ? result.data : null;
@@ -100,6 +105,14 @@ export default async function AdsCockpitPage({
   if ((clarityVisible || lpVisible) && selectedClient) {
     const result = await adsApi<LpIntelligenceView>(`/clients/${selectedClient.id}/lp-intelligence`);
     lpIntel = result.ok ? result.data : null;
+  }
+  if ((seasonalityVisible || narrativeVisible) && selectedClient) {
+    const result = await adsApi<{
+      visible: boolean;
+      seasonality: SeasonalityView | null;
+      narrative: WeeklyNarrativeView | null;
+    }>(`/clients/${selectedClient.id}/planning`);
+    planning = result.ok && result.data.visible ? result.data : null;
   }
 
   if (!cockpitVisible) {
@@ -193,6 +206,12 @@ export default async function AdsCockpitPage({
       {offline?.visible ? <OfflineAttribution client={selectedClient ?? null} view={offline} /> : null}
       {lifecycle?.visible && lifecycleVisible ? <LeadLifecycle client={selectedClient ?? null} view={lifecycle} /> : null}
       {lpIntel?.visible ? <LpIntelligence client={selectedClient ?? null} view={lpIntel} /> : null}
+      {seasonalityVisible && planning?.seasonality ? (
+        <SeasonalityCalendar client={selectedClient ?? null} view={planning.seasonality} />
+      ) : null}
+      {narrativeVisible && planning?.narrative ? (
+        <OwnerWeeklyNarrative client={selectedClient ?? null} view={planning.narrative} />
+      ) : null}
 
       <section className="cx-panel">
         <h2>Check ads</h2>
@@ -246,6 +265,7 @@ export default async function AdsCockpitPage({
         <Link href="/ads/funnel">Funnel</Link>
         <Link href="/settings#modules">Modules</Link>
         {callrailVisible || crmVisible || lifecycleVisible || bookedSignalVisible ? <Link href="/settings#callrail">CallRail</Link> : null}
+        {seasonalityVisible ? <Link href="/settings#seasonality">Seasonality</Link> : null}
       </nav>
     </div>
   );

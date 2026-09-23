@@ -23,6 +23,9 @@ const FINDING_LABELS: Record<string, string> = {
   brand_guardrails: "Claim or brand risk",
   brand_guardrail_block: "Claim or brand risk",
   brand_guardrail_warn: "Claim or brand warning",
+  seasonality_active: "Seasonal offer window",
+  seasonality_upcoming: "Upcoming offer window",
+  owner_weekly_narrative: "Owner weekly brief",
 };
 
 const SUGGESTION_LABELS: Record<string, string> = {
@@ -45,6 +48,8 @@ const SUGGESTION_LABELS: Record<string, string> = {
   search_negatives: "Add Google negatives",
   geo_discipline: "Tighten the service area",
   brand_guardrails: "Hold a claim or brand risk",
+  seasonality: "Plan the seasonal offer",
+  weekly_narrative: "Owner weekly brief",
 };
 
 const SUGGESTION_WHY: Record<string, string> = {
@@ -67,6 +72,8 @@ const SUGGESTION_WHY: Record<string, string> = {
   search_negatives: "Wasteful Google searches spent money with no leads. Approve adds negatives only when the flag is on.",
   geo_discipline: "Ads are aimed wider than the shop's service area. Approve tightens only when the flag is on.",
   brand_guardrails: "A claim or brand risk must block or warn. Unsupervised spend cannot pass this quietly.",
+  seasonality: "A seasonal window is active or close. Approve changes live ads only when the calendar flag is on.",
+  weekly_narrative: "This week's brief is grounded in synced spend and leads. Approve writes only a recommended action inside it.",
 };
 
 const AUDIT_STATUS_LABELS: Record<string, string> = {
@@ -265,6 +272,29 @@ export function metricLines(record: Record<string, unknown> | null | undefined):
     lines.push(`Service area: ${(record.serviceArea as string[]).join(", ")}`);
   }
   if (typeof record.radiusMiles === "number") lines.push(`Radius: ${record.radiusMiles} miles`);
+  if (typeof record.windowName === "string") lines.push(`Calendar window: ${record.windowName}`);
+  if (typeof record.windowWhen === "string") lines.push(`Dates: ${record.windowWhen}`);
+  if (typeof record.intent === "string") lines.push(`Plan: ${titleCase(record.intent)}`);
+  if (typeof record.phase === "string") lines.push(`Timing: ${record.phase === "active" ? "Now" : "Upcoming"}`);
+  if (typeof record.offerCopy === "string") lines.push(`Offer: ${record.offerCopy}`);
+  if (typeof record.weekOf === "string") lines.push(`Week of: ${record.weekOf}`);
+  if (typeof record.leads7d === "number") lines.push(`Leads (7 days): ${record.leads7d}`);
+  if (typeof record.leads30d === "number") lines.push(`Leads (30 days): ${record.leads30d}`);
+  if (typeof record.wasteSpend7dUsd === "string" || typeof record.wasteSpend7dUsd === "number") {
+    const spend = formatMoney(record.wasteSpend7dUsd);
+    if (spend) lines.push(`Waste this week: ${spend}`);
+  }
+  if (Array.isArray(record.wasteCampaigns) && record.wasteCampaigns.every((row) => typeof row === "string")) {
+    if (record.wasteCampaigns.length > 0) lines.push(`Waste campaigns: ${(record.wasteCampaigns as string[]).join(", ")}`);
+  }
+  if (typeof record.winnerName === "string") lines.push(`Stronger campaign: ${record.winnerName}`);
+  if (typeof record.loserName === "string") lines.push(`Weaker campaign: ${record.loserName}`);
+  if (typeof record.callsAnswered === "number") lines.push(`Answered calls: ${record.callsAnswered}`);
+  if (typeof record.bookedJobs === "number") lines.push(`Booked jobs: ${record.bookedJobs}`);
+  if (typeof record.newLeads === "number") lines.push(`CRM leads: ${record.newLeads}`);
+  if (Array.isArray(record.paragraphs) && record.paragraphs.every((row) => typeof row === "string")) {
+    for (const line of record.paragraphs as string[]) lines.push(line);
+  }
   if (typeof record.guardrail === "string") lines.push(`Guardrail: ${record.guardrail === "block" ? "Block" : "Warn"}`);
   if (Array.isArray(record.claimHits)) {
     const terms = record.claimHits
@@ -287,6 +317,8 @@ export const REC_INBOX_KINDS = [
   { value: "search_negatives", label: "Search terms" },
   { value: "geo_discipline", label: "Service area" },
   { value: "brand_guardrails", label: "Brand guardrail" },
+  { value: "seasonality", label: "Seasonality" },
+  { value: "weekly_narrative", label: "Weekly brief" },
 ] as const;
 
 export function suggestionInboxKind(type: string | null | undefined): string {
@@ -301,5 +333,7 @@ export function suggestionInboxKind(type: string | null | undefined): string {
   if (type === "search_negatives") return "Search terms";
   if (type === "geo_discipline") return "Service area";
   if (type === "brand_guardrails") return "Brand guardrail";
+  if (type === "seasonality") return "Seasonality";
+  if (type === "weekly_narrative") return "Weekly brief";
   return "Check";
 }

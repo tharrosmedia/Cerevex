@@ -159,9 +159,25 @@ Deepens Phase A `CrmConnector` (`hcp`). `m52.crm_join`, `m52.lead_lifecycle`, an
 - Approve → `apply_jobs` with the same kill / freeze / audit gates. Deny / Snooze never write.
 - Core ads/cockpit stays healthy when all four flags are hidden. CallRail / bundled / Clarity / LP / CRM Phase D behavior is unchanged.
 
+## M5.2 Phase F (planning + owner narrative)
+
+`m52.seasonality_calendar` and `m52.owner_weekly_narrative` are live product flags (`unfinished: false`). Default `hidden`. Env kills: `CAPABILITY_KILL_M52_SEASONALITY_CALENDAR=1`, `CAPABILITY_KILL_M52_OWNER_WEEKLY_NARRATIVE=1`.
+
+| Id | Role |
+|---|---|
+| `m52.seasonality_calendar` | Seasonality + offer calendar. Default HVAC year until the operator saves windows in `settings_json.planning`. Calendar→campaign recs (`seasonality`) Approve-gated. |
+| `m52.owner_weekly_narrative` | Owner weekly AM-style brief. In-app digest first (no new email). Read-only unless a nested recommended action Approves. Inbox type `weekly_narrative`. |
+
+Allowed apply_jobs mutation kinds when the matching flag is **on** and Approve passes:
+
+- Seasonality: `update_budget` (ramp / shift), `pause` (pause windows). Hold windows stay review-only.
+- Weekly narrative: `pause` or `update_budget` only when a nested recommended action is present. Digest-only cards stay `review`.
+
+Deny / Snooze never write. Kill switch + freeze + audit stay on. Calendar windows live in `settings_json.planning` — no Neon ALTER.
+
 ## Out of scope (still deferred)
 
-- **M5.2 Phase F** — seasonality / offer calendar + owner weekly AM-style narrative. Unsupervised CRM write-backs stay out.
+- Unsupervised CRM write-backs. New email infrastructure. Phase F does not reopen A–E.
 - Dropping the one-release Inngest `LEGACY_ADS_*` listeners.
 - Railway service / DNS / domain cutover. Live Inngest app id `shopify-brain`. Neon schema rename.
 

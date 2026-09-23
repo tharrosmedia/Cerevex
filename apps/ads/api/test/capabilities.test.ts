@@ -11,6 +11,8 @@ import {
   creativeFatigueWriteBlockedReason,
   geoDisciplineWriteBlockedReason,
   searchNegativesWriteBlockedReason,
+  seasonalityWriteBlockedReason,
+  ownerWeeklyNarrativeWriteBlockedReason,
   capabilityOnBlockedReason,
   DEFAULT_APPROVE_OPERATOR_EMAIL,
   defaultCapabilityFlags,
@@ -74,6 +76,8 @@ describe("capability registry", () => {
     expect(flags["m52.search_negatives"]).toBe("hidden");
     expect(flags["m52.geo_discipline"]).toBe("hidden");
     expect(flags["m52.brand_guardrails"]).toBe("hidden");
+    expect(flags["m52.seasonality_calendar"]).toBe("hidden");
+    expect(flags["m52.owner_weekly_narrative"]).toBe("hidden");
   });
 
   it("lists live m51 flags in operator Settings and allows on", () => {
@@ -88,6 +92,8 @@ describe("capability registry", () => {
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.search_negatives")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.geo_discipline")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.brand_guardrails")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.seasonality_calendar")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.owner_weekly_narrative")).toBe(true);
     expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toBeNull();
     expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
     expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();
@@ -155,6 +161,29 @@ describe("capability registry", () => {
     expect(searchNegativesWriteBlockedReason(recommendOnly, "pause_waste")).toBeNull();
   });
 
+  it("blocks Phase F planning writes unless the matching flag is on", () => {
+    const hidden = defaultCapabilityFlags();
+    const recommendOnly = {
+      ...hidden,
+      "m52.seasonality_calendar": "recommend_only" as const,
+      "m52.owner_weekly_narrative": "recommend_only" as const,
+    };
+    const on = {
+      ...hidden,
+      "m52.seasonality_calendar": "on" as const,
+      "m52.owner_weekly_narrative": "on" as const,
+    };
+    expect(seasonalityWriteBlockedReason(recommendOnly, "seasonality")).toBe(
+      "capability_m52_seasonality_calendar_recommend_only",
+    );
+    expect(seasonalityWriteBlockedReason(on, "seasonality")).toBeNull();
+    expect(ownerWeeklyNarrativeWriteBlockedReason(recommendOnly, "weekly_narrative")).toBe(
+      "capability_m52_owner_weekly_narrative_recommend_only",
+    );
+    expect(ownerWeeklyNarrativeWriteBlockedReason(on, "weekly_narrative")).toBeNull();
+    expect(seasonalityWriteBlockedReason(recommendOnly, "pause_waste")).toBeNull();
+  });
+
   it("hides the leads/brainstorm surface unless m51.brainstorm is visible", () => {
     const modules = defaultModulesFor("home_service");
     expect(modules.leads).toBe(true);
@@ -200,6 +229,10 @@ describe("capability registry", () => {
     expect(envCapabilityKills({ CAPABILITY_KILL_M52_SEARCH_NEGATIVES: "1" })).toEqual(["m52.search_negatives"]);
     expect(envCapabilityKills({ CAPABILITY_KILL_M52_GEO_DISCIPLINE: "1" })).toEqual(["m52.geo_discipline"]);
     expect(envCapabilityKills({ CAPABILITY_KILL_M52_BRAND_GUARDRAILS: "1" })).toEqual(["m52.brand_guardrails"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_SEASONALITY_CALENDAR: "1" })).toEqual(["m52.seasonality_calendar"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_OWNER_WEEKLY_NARRATIVE: "1" })).toEqual([
+      "m52.owner_weekly_narrative",
+    ]);
     const flags = applyEnvKills(defaultCapabilityFlags(), env);
     expect(flags.apply).toBe("hidden");
     expect(flags.audits).toBe("hidden");

@@ -169,6 +169,8 @@ export const RECOMMENDATION_TYPES = [
   "search_negatives",
   "geo_discipline",
   "brand_guardrails",
+  "seasonality",
+  "weekly_narrative",
 ] as const;
 export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
 
@@ -247,6 +249,21 @@ export type HygieneRecommendationType = (typeof HYGIENE_RECOMMENDATION_TYPES)[nu
 
 export function isHygieneRecommendationType(value: string): value is HygieneRecommendationType {
   return (HYGIENE_RECOMMENDATION_TYPES as readonly string[]).includes(value);
+}
+
+export const PLANNING_RECOMMENDATION_TYPES = ["seasonality", "weekly_narrative"] as const;
+export type PlanningRecommendationType = (typeof PLANNING_RECOMMENDATION_TYPES)[number];
+
+export function isPlanningRecommendationType(value: string): value is PlanningRecommendationType {
+  return (PLANNING_RECOMMENDATION_TYPES as readonly string[]).includes(value);
+}
+
+export function isSeasonalityRecommendationType(value: string): boolean {
+  return value === "seasonality";
+}
+
+export function isWeeklyNarrativeRecommendationType(value: string): boolean {
+  return value === "weekly_narrative";
 }
 
 export type StubPingPayload = {

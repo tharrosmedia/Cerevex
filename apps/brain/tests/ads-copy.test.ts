@@ -28,6 +28,12 @@ assert.ok(suggestionWhy('search_negatives').toLowerCase().includes('approve'));
 assert.equal(suggestionLabel('geo_discipline'), 'Tighten the service area');
 assert.equal(suggestionLabel('brand_guardrails'), 'Hold a claim or brand risk');
 assert.ok(suggestionWhy('brand_guardrails').toLowerCase().includes('block'));
+assert.equal(suggestionLabel('seasonality'), 'Plan the seasonal offer');
+assert.ok(suggestionWhy('seasonality').toLowerCase().includes('approve'));
+assert.equal(suggestionLabel('weekly_narrative'), 'Owner weekly brief');
+assert.ok(suggestionWhy('weekly_narrative').toLowerCase().includes('grounded'));
+assert.ok(!suggestionWhy('weekly_narrative').toLowerCase().includes('ctr'));
+assert.ok(!suggestionWhy('seasonality').toLowerCase().includes('roas'));
 assert.equal(suggestionWhy('improve_ctr'), 'People are seeing the ad but not clicking it.');
 assert.ok(!suggestionWhy('improve_ctr').toLowerCase().includes('ctr'));
 assert.ok(!suggestionWhy('review_cpa').toLowerCase().includes('roas'));
@@ -62,5 +68,7 @@ assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/lead-lifecycle`)
 assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/lp-intelligence`), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/connect'), true);
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/pull'), true);
+assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/planning`), true);
+assert.equal(isAllowedAdsProxyRequest('POST', `/clients/${recId}/planning/calendar`), true);
 
 console.log('ads-copy: ok');
