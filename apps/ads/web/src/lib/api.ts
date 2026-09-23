@@ -269,12 +269,21 @@ export async function disconnectAdAccount(adAccountId: string): Promise<{ adAcco
 
 export type OfflineAttributionResponse = {
   visible: boolean;
+  source?: "callrail" | "bundled" | null;
   callrail: {
     connected: boolean;
     mock: boolean;
     callCount: number;
     lastPulledAt: string | null;
     lastError: string | null;
+  };
+  bundled?: {
+    connected: boolean;
+    mock: boolean;
+    trackingNumber?: string | null;
+    callCount: number;
+    lastPulledAt?: string | null;
+    lastError?: string | null;
   };
   crm: { connected: boolean; mock: boolean; bookedJobCount: number };
   sentences: string[];
@@ -298,6 +307,21 @@ export async function connectCallRail(input: {
 
 export async function pullCallRail(clientId: string): Promise<{ ok: boolean; sentences: string[]; writes: false }> {
   return api("/connectors/callrail/pull", { method: "POST", body: JSON.stringify({ clientId }) });
+}
+
+export async function connectBundledCallTracking(input: {
+  clientId: string;
+  mock?: boolean;
+  useEnv?: boolean;
+  accountSid?: string;
+  authToken?: string;
+  trackingNumber?: string;
+}): Promise<{ ok: boolean; writes: false; purchased: false }> {
+  return api("/connectors/bundled/connect", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function pullBundledCallTracking(clientId: string): Promise<{ ok: boolean; sentences: string[]; writes: false }> {
+  return api("/connectors/bundled/pull", { method: "POST", body: JSON.stringify({ clientId }) });
 }
 
 export async function connectCrmMock(clientId: string): Promise<{ ok: boolean; writes: false }> {

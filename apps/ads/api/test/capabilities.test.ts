@@ -59,12 +59,14 @@ describe("capability registry", () => {
     expect(flags["m51.ga4_connect"]).toBe("hidden");
     expect(flags["m51.brainstorm"]).toBe("hidden");
     expect(flags["m52.callrail_connect"]).toBe("hidden");
+    expect(flags["m52.bundled_call_tracking"]).toBe("hidden");
     expect(flags["m52.crm_join"]).toBe("hidden");
   });
 
   it("lists live m51 flags in operator Settings and allows on", () => {
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.group === "m51")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.callrail_connect")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.bundled_call_tracking")).toBe(true);
     expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toBeNull();
     expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
     expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();
@@ -121,6 +123,9 @@ describe("capability registry", () => {
       PLATFORM_SYNC_LIVE: "0",
     };
     expect(envCapabilityKills(env).sort()).toEqual(["apply", "apply.bid", "apply.budget", "audits", "sync.live"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_BUNDLED_CALL_TRACKING: "1" })).toEqual([
+      "m52.bundled_call_tracking",
+    ]);
     const flags = applyEnvKills(defaultCapabilityFlags(), env);
     expect(flags.apply).toBe("hidden");
     expect(flags.audits).toBe("hidden");

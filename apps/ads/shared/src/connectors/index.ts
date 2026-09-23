@@ -10,9 +10,9 @@ import {
   mockAdPlatformConnector,
 } from "./ad-platform";
 import { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
+import { bundledCallTrackingConnector } from "./bundled";
 import { callRailConnector } from "./callrail";
 import { housecallProConnector } from "./crm";
-import { bundledCallTrackingConnector } from "./stubs";
 import type {
   AdPlatformConnector,
   AnalyticsConnector,
@@ -49,7 +49,7 @@ export {
   MockAdPlatformConnector,
 } from "./ad-platform";
 export { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
-export { bundledCallTrackingConnector } from "./stubs";
+export { bundledCallTrackingConnector, BundledCallTrackingConnector, twilioEnvCredentials } from "./bundled";
 export { callRailConnector, CallRailConnector, callRailEnvCredentials } from "./callrail";
 export { housecallProConnector } from "./crm";
 

@@ -85,6 +85,16 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
     kind: "secret",
     help: "Optional CallRail account id companion for CALLRAIL_API_KEY. Not a feature flag.",
   },
+  {
+    env: "TWILIO_ACCOUNT_SID",
+    kind: "secret",
+    help: "Optional workspace-wide Twilio Account SID for bundled call tracking. Prefer the per-client encrypted store. Never put in settings_json in the clear.",
+  },
+  {
+    env: "TWILIO_AUTH_TOKEN",
+    kind: "secret",
+    help: "Optional Twilio Auth Token companion for TWILIO_ACCOUNT_SID. Not a feature flag.",
+  },
 ];
 
 export function opsEnvSecrets(): readonly OpsEnvEntry[] {

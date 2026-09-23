@@ -5,7 +5,8 @@ import { evaluateAccount } from "./audit-engine";
 import { evaluateClientM51 } from "./m51-engine";
 import { auditRunSummarySchema, parseFindingDraft, parseRecommendationDraft } from "./audit-schemas";
 import { readWorkspaceCapabilities } from "./capabilities";
-import { readConnectorSettings } from "./connector-settings";
+import type { CallRecord } from "./attribution";
+import { readConnectorSettings, resolveCallTrackingForClient } from "./connector-settings";
 import { getDb } from "./db";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
 import { inferApplyJobType } from "./mutation-families";
@@ -188,12 +189,16 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
     });
     const flags = readWorkspaceCapabilities(workspace?.settingsJson);
     const connectors = readConnectorSettings(workspace?.settingsJson);
-    const callrail = run.clientId ? connectors.callrail[run.clientId] : undefined;
+    const tracking = run.clientId
+      ? resolveCallTrackingForClient(connectors, run.clientId, flags)
+      : { source: null, calls: [] as CallRecord[], callrail: undefined, bundled: undefined, sourceLabel: "CallRail" };
     const crm = run.clientId ? connectors.crm[run.clientId] : undefined;
     const offlineSignals = {
-      calls: callrail?.snapshot?.calls ?? [],
+      calls: tracking.calls,
       bookedJobs: crm?.bookedJobs ?? [],
-      callrailEnabled: isCapabilityVisible("m52.callrail_connect", flags) && Boolean(callrail?.connected),
+      callrailEnabled: tracking.source === "callrail",
+      bundledEnabled: tracking.source === "bundled",
+      sourceLabel: tracking.sourceLabel,
       crmEnabled: isCapabilityVisible("m52.crm_join", flags) && Boolean(crm?.connected),
     };
 

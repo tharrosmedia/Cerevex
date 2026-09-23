@@ -30,11 +30,13 @@ import {
   getClient,
   listClientAudits,
   listClientRecommendations,
+  connectBundledCallTracking,
   connectCallRail,
   connectCrmMock,
   disconnectAdAccount,
   getOfflineAttribution,
   mockConnect,
+  pullBundledCallTracking,
   pullCallRail,
   setAdAccountFrozen,
   startInlineAudit,
@@ -73,6 +75,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   const [advancedConnect, setAdvancedConnect] = useState(false);
   const [offlineSentences, setOfflineSentences] = useState<string[]>([]);
   const callrailOn = isCapabilityVisible("m52.callrail_connect", capabilities);
+  const bundledOn = isCapabilityVisible("m52.bundled_call_tracking", capabilities);
   const crmOn = isCapabilityVisible("m52.crm_join", capabilities);
   const [approveId, setApproveId] = useState<string | null>(null);
   const selectedAuditIdRef = useRef<string | null>(null);
@@ -448,12 +451,12 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         })}
       </section>
 
-      {callrailOn || crmOn ? (
+      {callrailOn || bundledOn || crmOn ? (
         <Card>
           <CardHeader>
             <CardTitle>CallRail and booked jobs</CardTitle>
             <CardDescription>
-              Calls join to campaigns in plain language. Mock is QA-safe. Nothing is written to CallRail or Housecall Pro.
+              Calls join to campaigns in plain language. Mock is QA-safe. Nothing is written to CallRail, Twilio, or Housecall Pro.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
@@ -464,7 +467,11 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 ))}
               </ul>
             ) : (
-              <p className="text-muted-foreground">Connect CallRail, then pull calls to see joins.</p>
+              <p className="text-muted-foreground">
+                {callrailOn
+                  ? "Connect CallRail, then pull calls to see joins."
+                  : "Enable bundled call tracking, then pull calls to see joins."}
+              </p>
             )}
             {canManage ? (
               <div className="flex flex-wrap gap-2">
@@ -491,6 +498,28 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       Connect CallRail (mock)
                     </Button>
                   </>
+                ) : null}
+                {bundledOn ? (
+                  <Button
+                    variant="outline"
+                    disabled={busy === "bundled"}
+                    onClick={async () => {
+                      setBusy("bundled");
+                      setError(null);
+                      try {
+                        await connectBundledCallTracking({ clientId: id, mock: true });
+                        await pullBundledCallTracking(id);
+                        await refresh();
+                        setNotice("Bundled mock connected. Calls joined in plain language. No number was bought.");
+                      } catch (err) {
+                        setError(err instanceof ApiError ? err.message : "Bundled connect failed.");
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    Enable bundled (mock)
+                  </Button>
                 ) : null}
                 {crmOn ? (
                   <Button

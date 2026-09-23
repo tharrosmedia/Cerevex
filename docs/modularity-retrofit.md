@@ -41,7 +41,7 @@ Runtime: `@tharros/ads-shared/connectors` (Node-only — do not import from ads-
 |---|---|---|
 | `AdPlatformConnector` | `meta`, `google`, `mock` | Exclusive path for pull, token refresh, OAuth exchange, live read/apply. Meta/Google branches live in `connectors/meta.ts` and `connectors/google.ts`. |
 | `AnalyticsConnector` | `ga4`, `first_party` | Stub — compiles only |
-| `CallTrackingConnector` | `callrail` (connect), `bundled` | Stub — compiles only |
+| `CallTrackingConnector` | `callrail` (connect), `bundled` | CallRail live connect; bundled is Twilio-class lean |
 
 Shared `Connector` surface: `isConfigured`, `connect`, `disconnect`. Meta + CallRail both satisfy it. No real GA4/CallRail product work.
 
@@ -110,9 +110,18 @@ If Railway Site Brain start/build uses `--workspace=@shopify-brain/brain`, chang
 - LP congruence is recommend-only (`siteApply: later`). No Site / WordPress connector exists.
 - Funnel: GA4 connect **and** first-party pixel. Events strengthen budget/creative recs when data exists.
 
+## M5.2 Phase B (bundled call tracking)
+
+`m52.bundled_call_tracking` is a live product flag (`unfinished: false`). Default `hidden`. Env kill: `CAPABILITY_KILL_M52_BUNDLED_CALL_TRACKING=1`.
+
+- Same `CallTrackingConnector` + `call_attribution` join path as CallRail Connect.
+- Mock enable for QA. Live Twilio credentials via `TWILIO_*` env or encrypted workspace settings.
+- Will not buy a number or change call routing. CallRail stays selected when both are connected.
+- Connect customers are untouched when this flag is hidden.
+
 ## Out of scope (still deferred)
 
-- **M5.2** — no heatmaps, CallRail product, CRM, weekly narrative.
+- **M5.2 later phases** — heatmaps / Clarity, deep CRM write-backs, weekly narrative.
 - Dropping the one-release Inngest `LEGACY_ADS_*` listeners.
 - Railway service / DNS / domain cutover. Live Inngest app id `shopify-brain`. Neon schema rename.
 

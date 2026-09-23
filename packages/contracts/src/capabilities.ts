@@ -36,6 +36,7 @@ export const CAPABILITY_IDS = [
   "m51.ga4_connect",
   "m51.brainstorm",
   "m52.callrail_connect",
+  "m52.bundled_call_tracking",
   "m52.crm_join",
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
@@ -177,6 +178,14 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     id: "m52.callrail_connect",
     label: "CallRail connect (M5.2)",
     help: "Connect Got Ductless CallRail (API key or mock) and join calls to campaigns. Default hidden. No unsupervised writes.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.bundled_call_tracking": {
+    id: "m52.bundled_call_tracking",
+    label: "Bundled call tracking (M5.2)",
+    help: "Paid Cerevex add-on for shops without CallRail. Twilio-class lean (~$20–80/mo). Mock for QA. Default hidden. Does not buy numbers or change routing.",
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
@@ -347,6 +356,11 @@ export function isCapabilityOn(id: CapabilityId, flags: CapabilityFlags): boolea
 
 export function isCapabilityVisible(id: CapabilityId, flags: CapabilityFlags): boolean {
   return flags[id] === "on" || flags[id] === "recommend_only";
+}
+
+/** Call attribution recs from CallRail Connect or Bundled — either flag is enough. */
+export function isCallAttributionVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.callrail_connect", flags) || isCapabilityVisible("m52.bundled_call_tracking", flags);
 }
 
 export function isCapabilityWritable(id: CapabilityId, flags: CapabilityFlags): boolean {

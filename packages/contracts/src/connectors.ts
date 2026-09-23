@@ -1,7 +1,7 @@
 /**
  * Connector identity catalog. Runtime interfaces live in @tharros/ads-shared/connectors.
  * Meta/Google/mock implement AdPlatformConnector. CallRail is the M5.2 connect path.
- * GA4 and bundled telephony stay stubs. HCP is recommend+join only.
+ * Bundled is the Twilio-class lean add-on. HCP is recommend+join only.
  */
 
 export const CONNECTOR_KINDS = ["ad_platform", "analytics", "call_tracking", "crm"] as const;
@@ -82,8 +82,8 @@ export const CONNECTOR_CATALOG: ConnectorCatalogEntry[] = [
     kind: "call_tracking",
     id: "bundled",
     label: "Bundled call tracking",
-    implementation: "stub",
-    help: "Stub CallTrackingConnector (bundled). Phase B telephony — not this PR.",
+    implementation: "live",
+    help: "Twilio-class lean CallTrackingConnector. Mock or env/encrypted credentials. No number purchase or routing writes.",
   },
   {
     kind: "crm",

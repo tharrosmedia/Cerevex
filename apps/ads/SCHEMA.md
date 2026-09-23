@@ -43,7 +43,10 @@ The kill switch is a hard product control (default **true** / ON). Approve is bl
     "m51.grok_creatives": "hidden",
     "m51.lp_congruence": "hidden",
     "m51.ga4_connect": "hidden",
-    "m51.brainstorm": "hidden"
+    "m51.brainstorm": "hidden",
+    "m52.callrail_connect": "hidden",
+    "m52.bundled_call_tracking": "hidden",
+    "m52.crm_join": "hidden"
   }
 }
 ```
