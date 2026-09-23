@@ -53,7 +53,7 @@ export async function WorkspaceCallRailSettings() {
   const defaultClient = clients.find((client) => client.name === 'Got Ductless') ?? clients[0];
 
   return (
-    <div id="callrail" className="mb-8 border p-4 rounded">
+    <div id="callrail" className="cx-panel">
       <h2 className="font-semibold mb-2">CallRail and booked jobs</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--muted-foreground)' }}>
         Connect Got Ductless CallRail with a mock (QA) or a real API key. Calls join to campaigns in plain language.

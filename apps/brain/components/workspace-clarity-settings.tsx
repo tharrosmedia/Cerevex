@@ -60,7 +60,7 @@ export async function WorkspaceClaritySettings() {
   }
 
   return (
-    <div id="clarity" className="mb-8 border p-4 rounded">
+    <div id="clarity" className="cx-panel">
       <h2 className="font-semibold mb-2">Clarity and LP intelligence</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--muted-foreground)' }}>
         Connect Microsoft Clarity for aggregated heatmap and session signals. Mock is safe for QA.

@@ -1,10 +1,14 @@
 import Link from 'next/link';
 import { getActiveStoreId } from '@/src/lib/db/stores';
 import { listOpenFindings, setFindingStatus } from '@/src/lib/db/findings';
-import { createJob, updateJobStatus } from '@/src/lib/db/jobs';
+import { createJob } from '@/src/lib/db/jobs';
 import { inngest } from '@/src/inngest/client';
-import { Button } from '@/components/ui/button';
 import { revalidatePath } from 'next/cache';
+import { EmptyState } from '@/components/empty-state';
+import { PageHeader } from '@/components/page-header';
+import { SeoSubnav } from '@/components/seo-subnav';
+import { StatusBadge } from '@/components/status-badge';
+import type { StatusTone } from '@/lib/job-labels';
 
 async function dismissFinding(formData: FormData) {
   'use server';
@@ -24,7 +28,6 @@ async function improveFromFinding(formData: FormData) {
   const topQuery = formData.get('query') as string || '';
   const title = formData.get('title') as string || topQuery;
 
-  // liveSnapshot minimal from detail if present; for v1 use what we have in finding
   const detailStr = formData.get('detail') as string || '{}';
   let detail: any = {};
   try { detail = JSON.parse(detailStr); } catch {}
@@ -56,56 +59,98 @@ async function runAudit() {
   }
 }
 
+function severityTone(severity: string | undefined): StatusTone {
+  const value = (severity || '').toLowerCase();
+  if (value === 'high' || value === 'critical') return 'danger';
+  if (value === 'medium') return 'warn';
+  return 'info';
+}
+
 export const dynamic = 'force-dynamic';
 
 export default async function SeoFindings() {
   const storeId = await getActiveStoreId();
   let findings: any[] = [];
   try { if (storeId) findings = await listOpenFindings(storeId, 100); } catch {}
+
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <Link href="/seo" className="underline">← Overview</Link>
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold mt-4">Recommendations</h1>
-        <form action={runAudit}><Button type="submit" variant="outline">Run audit</Button></form>
-      </div>
-      <table className="w-full border mt-4 text-sm">
-        <thead>
-          <tr className="bg-muted"><th className="p-2">Kind</th><th>Title</th><th>Resource</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          {findings.length === 0 && <tr><td colSpan={4} className="p-3">No open findings. Run audit after catalog + GSC sync.</td></tr>}
-          {findings.map((f: any) => {
-            const q = f.detail?.query || '';
-            return (
-              <tr key={f.id} className="border-t">
-                <td className="p-2">{f.kind} <span className="text-xs">({f.severity})</span></td>
-                <td className="p-2">{f.title}</td>
-                <td className="p-2 text-xs">{f.resourceType} {f.handle}</td>
-                <td className="p-2 space-x-2">
-                  <form action={improveFromFinding} className="inline">
-                    <input type="hidden" name="id" value={f.id} />
-                    <input type="hidden" name="shopifyId" value={f.shopifyId || ''} />
-                    <input type="hidden" name="handle" value={f.handle || ''} />
-                    <input type="hidden" name="resourceType" value={f.resourceType || ''} />
-                    <input type="hidden" name="query" value={q} />
-                    <input type="hidden" name="title" value={f.title || ''} />
-                    <input type="hidden" name="detail" value={JSON.stringify(f.detail || {})} />
-                    <Button type="submit" size="sm" variant="outline">Improve</Button>
-                  </form>
-                  <form action={dismissFinding} className="inline">
-                    <input type="hidden" name="id" value={f.id} />
-                    <Button type="submit" size="sm" variant="ghost">Dismiss</Button>
-                  </form>
-                  {f.kind === 'content_gap' && (
-                    <Link href={`/seo/create?keyword=${encodeURIComponent(q)}`} className="underline text-sm">Create</Link>
-                  )}
-                </td>
+    <div className="cx-page">
+      <PageHeader
+        kicker="SEO"
+        title="Recommendations"
+        lede="Open findings from catalog and Search Console. Improve starts an SEO job."
+        backHref="/seo"
+        actions={
+          <form action={runAudit}>
+            <button type="submit" className="btn-secondary">Run audit</button>
+          </form>
+        }
+      />
+      <SeoSubnav />
+
+      {findings.length === 0 ? (
+        <EmptyState
+          message="No open findings. Run an audit after catalog and Search Console sync."
+          action={
+            <form action={runAudit}>
+              <button type="submit" className="btn-cta">Run audit</button>
+            </form>
+          }
+        />
+      ) : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Kind</th>
+                <th>Title</th>
+                <th>Resource</th>
+                <th>Actions</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {findings.map((f: any) => {
+                const q = f.detail?.query || '';
+                return (
+                  <tr key={f.id}>
+                    <td data-label="Kind">
+                      {f.kind}{' '}
+                      {f.severity ? (
+                        <StatusBadge label={f.severity} tone={severityTone(f.severity)} />
+                      ) : null}
+                    </td>
+                    <td data-label="Title">{f.title}</td>
+                    <td data-label="Resource">{[f.resourceType, f.handle].filter(Boolean).join(' ') || '—'}</td>
+                    <td data-label="Actions">
+                      <div className="cx-actions" style={{ marginTop: 0 }}>
+                        <form action={improveFromFinding}>
+                          <input type="hidden" name="id" value={f.id} />
+                          <input type="hidden" name="shopifyId" value={f.shopifyId || ''} />
+                          <input type="hidden" name="handle" value={f.handle || ''} />
+                          <input type="hidden" name="resourceType" value={f.resourceType || ''} />
+                          <input type="hidden" name="query" value={q} />
+                          <input type="hidden" name="title" value={f.title || ''} />
+                          <input type="hidden" name="detail" value={JSON.stringify(f.detail || {})} />
+                          <button type="submit" className="btn-secondary">Improve</button>
+                        </form>
+                        <form action={dismissFinding}>
+                          <input type="hidden" name="id" value={f.id} />
+                          <button type="submit" className="btn-secondary">Dismiss</button>
+                        </form>
+                        {f.kind === 'content_gap' ? (
+                          <Link href={`/seo/create?keyword=${encodeURIComponent(q)}`} className="btn-cta">
+                            Create
+                          </Link>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,10 +1,11 @@
 import { createJob, updateJobStatus } from '@/src/lib/db/jobs';
 import { inngest } from '@/src/inngest/client';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
 import { cookies } from 'next/headers';
 import { listStores, getActiveStoreId } from '@/src/lib/db/stores';
 import { redirect } from 'next/navigation';
+import { PageHeader } from '@/components/page-header';
+import { SeoSubnav } from '@/components/seo-subnav';
 
 async function triggerSeoJob(formData: FormData) {
   'use server';
@@ -49,24 +50,47 @@ export const dynamic = 'force-dynamic';
 export default async function SeoCreate({ searchParams }: { searchParams?: Promise<{ keyword?: string }> }) {
   const params = await (searchParams || Promise.resolve({})) as { keyword?: string };
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <Link href="/seo" className="underline mb-4 block">← SEO Overview</Link>
-      <h1 className="text-3xl font-bold mb-6">New content</h1>
-      <div className="mb-8 border p-4 rounded max-w-xl">
-        <form action={triggerSeoJob} className="flex gap-2">
-          <input name="keyword" defaultValue={params.keyword || ''} placeholder="e.g. daikin single zone mini split" className="border p-2 flex-1" required />
-          <select name="type" defaultValue="collection" className="border p-2">
-            <option value="collection">Collection</option>
-            <option value="page">Page</option>
-            <option value="blog">Blog Post</option>
-          </select>
-          <Button type="submit">Create</Button>
+    <div className="cx-page">
+      <PageHeader
+        kicker="SEO"
+        title="New content"
+        lede="Queue a collection, page, or blog post for this store."
+        backHref="/seo"
+      />
+      <SeoSubnav />
+
+      <section className="cx-panel" style={{ maxWidth: '40rem' }}>
+        <form action={triggerSeoJob} className="cx-form cx-form-inline">
+          <div className="cx-field">
+            <label htmlFor="keyword">Keyword</label>
+            <input
+              id="keyword"
+              name="keyword"
+              defaultValue={params.keyword || ''}
+              placeholder="e.g. daikin single zone mini split"
+              required
+            />
+            <p className="cx-help">The search phrase this page should rank for.</p>
+          </div>
+          <div className="cx-field">
+            <label htmlFor="type">Type</label>
+            <select id="type" name="type" defaultValue="collection">
+              <option value="collection">Collection</option>
+              <option value="page">Page</option>
+              <option value="blog">Blog Post</option>
+            </select>
+            <p className="cx-help">What to create.</p>
+          </div>
+          <div className="cx-field cx-field-action">
+            <button type="submit" className="btn-cta">Create</button>
+          </div>
         </form>
-        <p className="text-xs text-muted-foreground mt-2">This enqueues an SEO job. Approval required unless store autonomy disables it.</p>
-      </div>
-      <div>
-        <Link href="/seo/findings" className="underline">See recommendations for improve opportunities</Link>
-      </div>
+        <p className="cx-help">This starts an SEO job. Approval is required unless store autonomy turns it off.</p>
+      </section>
+
+      <p>
+        <Link href="/seo/findings">See open recommendations</Link>
+      </p>
     </div>
   );
 }

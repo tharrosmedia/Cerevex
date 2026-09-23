@@ -2,6 +2,8 @@ import { listDrafts } from '@/src/lib/db/drafts';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { listStores, getActiveStoreId } from '@/src/lib/db/stores';
+import { EmptyState } from '@/components/empty-state';
+import { PageHeader } from '@/components/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,43 +35,57 @@ export default async function Review({ searchParams }: { searchParams: Promise<{
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Review Queue</h1>
-      <Link href="/" className="underline mb-4 block">Back to Dashboard</Link>
+    <div className="cx-page">
+      <PageHeader
+        kicker="Review"
+        title="Review"
+        lede="Drafts waiting for a decision before they publish."
+      />
 
-      {params.success === 'decision-submitted' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">
-          Decision submitted! Publishing to Shopify (usually under 30s). Check job status or Shopify admin.
+      {params.success === 'decision-submitted' ? (
+        <p className="cx-banner" role="status">
+          Decision submitted. Publishing to Shopify usually takes under 30 seconds.
+        </p>
+      ) : null}
+
+      {loadError ? (
+        <p className="cx-banner cx-banner-warn" role="status">Could not load drafts: {loadError}</p>
+      ) : null}
+
+      {drafts.length === 0 && !loadError ? (
+        <EmptyState
+          message="No drafts to review for this store."
+          actionHref="/seo/create"
+          actionLabel="Create"
+        />
+      ) : drafts.length > 0 ? (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Handle</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.map((d: any) => (
+                <tr key={d.id}>
+                  <td data-label="Title">{d.title}</td>
+                  <td data-label="Type">{d.type}</td>
+                  <td data-label="Handle">{d.handle || '—'}</td>
+                  <td data-label="Created">{new Date(d.createdAt).toLocaleString()}</td>
+                  <td data-label="Actions">
+                    <Link href={`/drafts/${d.id}`} className="btn-secondary">View &amp; decide</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
-
-      {loadError && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">Error: {loadError}</div>}
-
-      <table className="w-full border">
-        <thead>
-          <tr>
-            <th className="p-2 text-left">Title</th>
-            <th className="p-2 text-left">Type</th>
-            <th className="p-2 text-left">Handle</th>
-            <th className="p-2 text-left">Created</th>
-            <th className="p-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {drafts.length === 0 && !loadError && <tr><td colSpan={5} className="p-4 text-muted-foreground">No recent drafts</td></tr>}
-          {drafts.map((d: any) => (
-            <tr key={d.id} className="border-t">
-              <td className="p-2">{d.title}</td>
-              <td className="p-2">{d.type}</td>
-              <td className="p-2">{d.handle}</td>
-              <td className="p-2 text-sm">{new Date(d.createdAt).toLocaleString()}</td>
-              <td className="p-2 space-x-2">
-                <Link href={`/drafts/${d.id}`} className="underline">View &amp; Decide</Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      ) : null}
     </div>
   );
 }

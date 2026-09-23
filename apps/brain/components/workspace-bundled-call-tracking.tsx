@@ -62,7 +62,7 @@ export async function WorkspaceBundledCallTrackingSettings() {
   }
 
   return (
-    <div id="bundled-call-tracking" className="mb-8 border p-4 rounded">
+    <div id="bundled-call-tracking" className="cx-panel">
       <h2 className="font-semibold mb-2">Bundled call tracking</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--muted-foreground)' }}>
         A paid Cerevex add-on for shops that do not already have CallRail. Mock is safe for QA.

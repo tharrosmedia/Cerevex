@@ -1,13 +1,10 @@
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { cookies } from 'next/headers';
-import { listStores, getStore, updateStore, getActiveStoreId } from '@/src/lib/db/stores';
+import { getStore, updateStore, getActiveStoreId } from '@/src/lib/db/stores';
 import { inferBrandVoice } from '@/src/lib/agents/brand/voice';
 import { writeKnowledge } from '@/src/lib/brain/memory';
 import { createAdminClient } from '@/src/lib/shopify/client';
 import { fetchStoreSamples, fetchMetafieldDefinitions, fetchMetafieldValueSamples } from '@/src/lib/shopify/content';
 import { syncProductsForStore, syncCatalogForStore } from '@/src/lib/shopify/sync';
-import { listProducts } from '@/src/lib/db/products';
 import { getDefaultSEORules } from '@/src/lib/seo/rules';
 import { SEORulesEditor } from '@/components/SEORulesEditor';
 import { WorkspaceCapabilitiesSettings } from '@/components/workspace-capabilities-settings';
@@ -16,6 +13,9 @@ import { WorkspaceBundledCallTrackingSettings } from '@/components/workspace-bun
 import { WorkspaceClaritySettings } from '@/components/workspace-clarity-settings';
 import { WorkspaceSeasonalitySettings } from '@/components/workspace-seasonality-settings';
 import { WorkspaceModulesSettings } from '@/components/workspace-modules-settings';
+import { Flash, SettingsNav } from '@/components/settings-nav';
+import { PageHeader } from '@/components/page-header';
+import { StatusBadge } from '@/components/status-badge';
 
 async function resyncInngest() {
   'use server';
@@ -438,6 +438,15 @@ async function syncCatalogAction() {
   }
 }
 
+async function signOutAction() {
+  'use server';
+  const { cookies } = await import('next/headers');
+  const { redirect } = await import('next/navigation');
+  const jar = await cookies();
+  jar.delete('auth');
+  redirect('/login');
+}
+
 export const dynamic = 'force-dynamic';
 
 export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string }> }) {
@@ -454,245 +463,140 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
   const resolvedHandlerUrl = base ? `${base}/api/inngest` : 'https://your-domain.example/api/inngest';
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <Link href="/" className="underline mb-4 block">← Back to Dashboard</Link>
-      <h1 className="text-3xl font-bold mb-8">Settings</h1>
+    <div className="cx-page">
+      <PageHeader
+        kicker="Settings"
+        title="Settings"
+        lede="Connects, approvals, modules, store, and account — grouped so you can find the next step."
+      />
+      <SettingsNav />
 
-      {params.modules === 'saved' && (
-        <div className="mb-4 p-3 border text-sm">Modules saved. The Ads menu now shows only modules that are on.</div>
-      )}
-      {params.modules === 'type' && (
-        <div className="mb-4 p-3 border text-sm">Business type saved. Modules were reset to the defaults for that type.</div>
-      )}
-      {params.modules === 'error' && (
-        <div className="mb-4 p-3 border text-sm">Could not save modules. Try again.</div>
-      )}
-
-      {params.capabilities === 'saved' && (
-        <div className="mb-4 p-3 border text-sm">Capability saved. Work that is not live yet stays off the Ads menu.</div>
-      )}
-      {params.capabilities === 'error' && (
-        <div className="mb-4 p-3 border text-sm">Could not save that capability. Try again.</div>
-      )}
-
-      {params.callrail === 'saved' && (
-        <div className="mb-4 p-3 border text-sm">CallRail / CRM join saved. Nothing was written to CallRail or Housecall Pro.</div>
-      )}
-      {params.callrail === 'error' && (
-        <div className="mb-4 p-3 border text-sm">Could not update CallRail or CRM join. Check the capability flag and try again.</div>
-      )}
-      {params.bundled === 'saved' && (
-        <div className="mb-4 p-3 border text-sm">Bundled call tracking saved. No number was bought and routing was not changed.</div>
-      )}
-      {params.bundled === 'error' && (
-        <div className="mb-4 p-3 border text-sm">Could not update bundled call tracking. Disconnect CallRail first if it is connected, then try again.</div>
-      )}
-      {params.clarity === 'saved' && (
-        <div className="mb-4 p-3 border text-sm">Clarity saved. Aggregated session signals only — nothing was written to the website.</div>
-      )}
-      {params.clarity === 'error' && (
-        <div className="mb-4 p-3 border text-sm">Could not update Clarity. Check the capability flag and try again.</div>
-      )}
-      {params.seasonality === 'saved' && (
-        <div className="mb-4 p-3 border text-sm">Calendar saved in workspace settings. Nothing was written to Meta or Google.</div>
-      )}
-      {params.seasonality === 'error' && (
-        <div className="mb-4 p-3 border text-sm">Could not save the calendar. Turn the seasonality flag on and try again.</div>
-      )}
-
-      <WorkspaceModulesSettings />
-      <WorkspaceCapabilitiesSettings />
-      <WorkspaceCallRailSettings />
-      <WorkspaceBundledCallTrackingSettings />
-      <WorkspaceClaritySettings />
-      <WorkspaceSeasonalitySettings />
-
-      {params.resync === 'success' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Inngest resync successful.</div>
-      )}
+      {params.modules === 'saved' && <Flash>Modules saved. The Ads menu now shows only modules that are on.</Flash>}
+      {params.modules === 'type' && <Flash>Business type saved. Modules were reset to the defaults for that type.</Flash>}
+      {params.modules === 'error' && <Flash tone="warn">Could not save modules. Try again.</Flash>}
+      {params.capabilities === 'saved' && <Flash>Capability saved. Work that is not live yet stays off the Ads menu.</Flash>}
+      {params.capabilities === 'error' && <Flash tone="warn">Could not save that capability. Try again.</Flash>}
+      {params.callrail === 'saved' && <Flash>CallRail / CRM join saved. Nothing was written to CallRail or Housecall Pro.</Flash>}
+      {params.callrail === 'error' && <Flash tone="warn">Could not update CallRail or CRM join. Check the capability flag and try again.</Flash>}
+      {params.bundled === 'saved' && <Flash>Bundled call tracking saved. No number was bought and routing was not changed.</Flash>}
+      {params.bundled === 'error' && <Flash tone="warn">Could not update bundled call tracking. Disconnect CallRail first if it is connected, then try again.</Flash>}
+      {params.clarity === 'saved' && <Flash>Clarity saved. Aggregated session signals only — nothing was written to the website.</Flash>}
+      {params.clarity === 'error' && <Flash tone="warn">Could not update Clarity. Check the capability flag and try again.</Flash>}
+      {params.seasonality === 'saved' && <Flash>Calendar saved in workspace settings. Nothing was written to Meta or Google.</Flash>}
+      {params.seasonality === 'error' && <Flash tone="warn">Could not save the calendar. Turn the seasonality flag on and try again.</Flash>}
+      {params.resync === 'success' && <Flash>Inngest resync successful.</Flash>}
       {params.resync === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
+        <Flash tone="warn">
           Inngest resync failed.
           {params.url && <> Tried: <code>{params.url}</code>.</>}
           {params.status && <> Status: {params.status}.</>}
           {params.message && <> {params.message}</>}
-        </div>
+        </Flash>
       )}
-      {params.brand === 'generated' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Brand voice generated and saved.</div>
-      )}
-      {params.brand === 'saved' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Brand voice saved.</div>
-      )}
+      {params.brand === 'generated' && <Flash>Brand voice generated and saved.</Flash>}
+      {params.brand === 'saved' && <Flash>Brand voice saved.</Flash>}
       {params.brand === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error with brand voice action.
+        <Flash tone="warn">
+          Could not update brand voice.
           {params.message && <> Details: {params.message}</>}
-        </div>
+        </Flash>
       )}
-      {params.knowledge === 'success' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Knowledge ingested successfully.</div>
-      )}
+      {params.knowledge === 'success' && <Flash>Site knowledge ingested.</Flash>}
       {params.knowledge === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error ingesting knowledge.
+        <Flash tone="warn">
+          Could not ingest knowledge.
           {params.message && <> Details: {params.message}</>}
-        </div>
+        </Flash>
       )}
-      {params.autonomy === 'saved' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Autonomy saved.</div>
-      )}
-      {params.autonomy === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">Error saving autonomy.</div>
-      )}
-      {params.placement && (
-        <div className="mb-4 p-3 bg-blue-100 text-blue-700 rounded text-sm">
-          Suggested placement config (copy to /stores edit if useful):
-          <pre className="mt-2 text-xs overflow-auto bg-white p-2 rounded">{decodeURIComponent(params.placement)}</pre>
-          {params.placementReason && <div className="mt-1 text-xs">Reason: current placement may benefit from metafield mappings for better agent support.</div>}
-        </div>
+      {params.autonomy === 'saved' && <Flash>Autonomy saved.</Flash>}
+      {params.autonomy === 'error' && <Flash tone="warn">Could not save autonomy.</Flash>}
+      {params.placement && params.placement !== 'error' && (
+        <Flash>
+          Suggested placement config (copy to Stores edit if useful):
+          <pre style={{ marginTop: '0.5rem', overflow: 'auto' }}>{decodeURIComponent(params.placement)}</pre>
+          {params.placementReason && <span> Current placement may need more metafield mappings.</span>}
+        </Flash>
       )}
       {params.placement === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error generating placement suggestion (check store token).
+        <Flash tone="warn">
+          Could not generate a placement suggestion. Check the store token.
           {params.message && <> Details: {params.message}</>}
-        </div>
+        </Flash>
       )}
-      {params.metafields === 'refreshed' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Metafield schema and values refreshed (full store now in knowledge + config).</div>
-      )}
+      {params.metafields === 'refreshed' && <Flash>Metafield schema refreshed.</Flash>}
       {params.metafields === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error refreshing metafield schema (check store token/permissions).
+        <Flash tone="warn">
+          Could not refresh metafields. Check the store token.
           {params.message && <> Details: {params.message}</>}
-        </div>
+        </Flash>
       )}
-      {params.products === 'synced' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Products synced successfully ({params.count || '0'} imported: titles, descriptions, handles, images, metafields).</div>
-      )}
+      {params.products === 'synced' && <Flash>Products synced ({params.count || '0'} imported).</Flash>}
       {params.products === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error syncing products: {params.message ? decodeURIComponent(params.message) : 'check that the Admin API token has read_products scope (and regenerate the token in Shopify after adding scopes).'}
-        </div>
+        <Flash tone="warn">
+          Could not sync products: {params.message ? decodeURIComponent(params.message) : 'check that the Admin API token has read_products.'}
+        </Flash>
       )}
-      {params.catalog === 'synced' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Live catalog synced ({params.count || '0'} collections/pages/articles).</div>
-      )}
+      {params.catalog === 'synced' && <Flash>Live catalog synced ({params.count || '0'} collections/pages/articles).</Flash>}
       {params.catalog === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error syncing catalog: {params.message ? decodeURIComponent(params.message) : ''}
-        </div>
+        <Flash tone="warn">
+          Could not sync catalog{params.message ? `: ${decodeURIComponent(params.message)}` : '.'}
+        </Flash>
       )}
-      {params.gsc === 'connected' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Google Search Console connected.</div>
-      )}
-      {params.gsc === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">GSC error: {params.message ? decodeURIComponent(params.message) : ''}</div>
-      )}
-      {params.seoRules === 'saved' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">SEO Rules saved. Will be used for future jobs (writer, optimize, grade, revise).</div>
-      )}
-      {params.seoRules === 'reset' && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">SEO Rules reset to initial defaults.</div>
-      )}
+      {params.gsc === 'connected' && <Flash>Google Search Console connected.</Flash>}
+      {params.gsc === 'error' && <Flash tone="warn">Search Console error: {params.message ? decodeURIComponent(params.message) : ''}</Flash>}
+      {params.seoRules === 'saved' && <Flash>SEO rules saved. New jobs will use them.</Flash>}
+      {params.seoRules === 'reset' && <Flash>SEO rules reset to defaults.</Flash>}
       {params.seoRules === 'error' && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
-          Error saving SEO Rules. {params.message ? decodeURIComponent(params.message) : ''}
-        </div>
+        <Flash tone="warn">
+          Could not save SEO rules. {params.message ? decodeURIComponent(params.message) : ''}
+        </Flash>
       )}
 
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Inngest Sync</h2>
-        <div className="text-sm mb-2">Target: <code>{resolvedHandlerUrl}</code></div>
-        <form action={resyncInngest} className="inline">
-          <Button type="submit" variant="outline">Resync Inngest</Button>
-        </form>
-        <span className="ml-2 text-xs text-muted-foreground">Force function sync (uses PUBLIC_URL base + /api/inngest)</span>
-      </div>
+      <section id="connects" className="cx-settings-section">
+        <h2>Connects</h2>
+        <p className="cx-lede">Shopify sync and Search Console live here. CallRail, Clarity, GA4, and Housecall Pro stay hidden until their flags are on.</p>
 
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Active Store Config Status</h2>
-        {store ? (
-          <div className="text-sm space-y-1">
-            <div>Store: {store.name} ({store.shopify_domain})</div>
-            <div>Placement: {config.placement ? 'Configured' : 'Using defaults'}</div>
-            <div>Metafields: {config.metafieldSchema?.lastRefreshed ? `Refreshed ${new Date(config.metafieldSchema.lastRefreshed).toLocaleDateString()} (${config.metafieldSchema.definitions?.length || 0} fields)` : 'Not loaded (use Refresh button)'}</div>
-            <div>Products: {config.productsLastSynced ? `Synced ${new Date(config.productsLastSynced).toLocaleDateString()} (${config.productsSyncedCount || 0} products)` : 'Not synced (use button below)'}</div>
-            <div>Catalog: {config.catalogLastSynced ? `Synced ${new Date(config.catalogLastSynced).toLocaleDateString()} (${config.catalogSyncedCount || 0} resources)` : 'Not synced (use button below or /seo/live)'}</div>
-            <div>GSC: {config.gsc?.refreshTokenEnc ? 'Connected' : 'Not connected'}{config.gsc?.lastSyncedAt ? ` (synced ${new Date(config.gsc.lastSyncedAt).toLocaleDateString()})` : ''}</div>
-            <div>Brand Voice: {bv ? 'Set' : 'Not set'}{bv && bv.inferredAt ? ` (inferred ${new Date(bv.inferredAt).toLocaleDateString()})` : ''}{bv && (bv.allowedClaims || bv.forbiddenClaims) ? ' + claims' : ''}</div>
-            <div>SEO Rules: {config.seoRules && Array.isArray(config.seoRules) ? `${config.seoRules.length} rules` : 'Using defaults'}</div>
-            <div>Autonomy: {auto ? 'Set' : 'Defaults (all types, require approval)'}</div>
+        <div className="cx-panel">
+          <h2>Search Console</h2>
+          {!process.env.GOOGLE_CLIENT_ID && (
+            <p className="cx-help">Search Console is not configured on this host yet. Connect stays available so you can retry from Settings.</p>
+          )}
+          <p className="cx-help">
+            <StatusBadge
+              label={config.gsc?.refreshTokenEnc ? 'Connected' : 'Not connected'}
+              tone={config.gsc?.refreshTokenEnc ? 'trust' : 'warn'}
+            />
+            {config.gsc?.lastSyncedAt ? ` · last sync ${new Date(config.gsc.lastSyncedAt).toLocaleString()}` : ''}
+            {config.gsc?.propertyUrl ? ` · ${config.gsc.propertyUrl}` : ''}
+          </p>
+          <div className="cx-actions">
+            <a href={`/api/gsc/oauth/start?storeId=${store?.id || ''}`} className="btn-cta">Connect / Reconnect</a>
+            <form action={async () => {
+              'use server';
+              const { revalidatePath } = await import('next/cache');
+              const { redirect } = await import('next/navigation');
+              const s = await getActiveStore();
+              if (s) {
+                const c = { ...(s.config || {}) };
+                if (c.gsc) delete c.gsc;
+                await updateStore(s.id, { name: s.name, shopify_domain: s.shopify_domain, shopify_access_token: '', platform: s.platform || 'shopify', config: c });
+              }
+              revalidatePath('/settings');
+              redirect('/settings?gsc=disconnected');
+            }}>
+              <button type="submit" className="btn-secondary">Disconnect</button>
+            </form>
+            <form action={async () => {
+              'use server';
+              const { revalidatePath } = await import('next/cache');
+              const { inngest } = await import('@/src/inngest/client');
+              const s = await getActiveStore();
+              if (s?.id) await inngest.send({ name: 'seo/gsc.sync.requested', data: { storeId: s.id } });
+              revalidatePath('/settings');
+            }}>
+              <button type="submit" className="btn-secondary" disabled={!config.gsc?.refreshTokenEnc}>Sync 28 days</button>
+            </form>
           </div>
-         ) : <div>No active store.</div>}
-      </div>
-
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Placement Helper (Metafields)</h2>
-        <form action={generatePlacementSuggestion} className="inline mr-4">
-          <Button type="submit" variant="outline">Generate suggested placement from current defs</Button>
-        </form>
-        <form action={refreshMetafieldSchema} className="inline">
-          <Button type="submit" variant="outline">Refresh full schema + values (Brand + store mind)</Button>
-        </form>
-        <span className="ml-2 text-xs text-muted-foreground">Agent uses relevant fields per job type but has full store schema/values in knowledge/config. Creates new if needed.</span>
-      </div>
-
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Products Sync (for agent context)</h2>
-        <form action={syncProductsAction} className="inline">
-          <Button type="submit" variant="outline">Sync Products (titles, handles, descriptions, images, metafields)</Button>
-        </form>
-        <span className="ml-2 text-xs text-muted-foreground">Imports all products. Run on store add and ~weekly. Enables agent to recommend/include real products in collections/pages. If failing, regenerate the Admin API token in Shopify after confirming scopes.</span>
-      </div>
-
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Live Catalog Sync (collections, pages, articles)</h2>
-        <form action={syncCatalogAction} className="inline">
-          <Button type="submit" variant="outline">Sync Live Catalog</Button>
-        </form>
-        <span className="ml-2 text-xs text-muted-foreground">Used by SEO for Search Console mapping and recommendations. First blog only for articles (v1 limitation). Link to /seo/live for snapshot view.</span>
-      </div>
-
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Search Console</h2>
-        {!process.env.GOOGLE_CLIENT_ID && (
-          <div className="text-sm text-red-600 mb-2">GSC not configured on host (missing GOOGLE_* envs). OAuth disabled.</div>
-        )}
-        <div className="text-sm mb-2">
-          Status: {config.gsc?.refreshTokenEnc ? 'Connected' : 'Not connected'} {config.gsc?.lastSyncedAt ? `| last sync ${new Date(config.gsc.lastSyncedAt).toLocaleString()}` : ''}
-          {config.gsc?.propertyUrl ? ` | ${config.gsc.propertyUrl}` : ''}
-        </div>
-        <div className="flex gap-2 items-center mb-2">
-          <a href={`/api/gsc/oauth/start?storeId=${store?.id || ''}`} className="inline-block border px-3 py-1 rounded text-sm">Connect / Reconnect</a>
-           <form action={async () => {
-             'use server';
-             const { revalidatePath } = await import('next/cache');
-             const { redirect } = await import('next/navigation');
-             const s = await getActiveStore();
-             if (s) {
-               const c = { ...(s.config || {}) };
-               if (c.gsc) delete c.gsc;
-               await updateStore(s.id, { name: s.name, shopify_domain: s.shopify_domain, shopify_access_token: '', platform: s.platform || 'shopify', config: c });
-             }
-             revalidatePath('/settings');
-             redirect('/settings?gsc=disconnected');
-           }}>
-             <Button type="submit" variant="outline" size="sm">Disconnect</Button>
-           </form>
-          <form action={async () => {
-            'use server';
-            const { revalidatePath } = await import('next/cache');
-            const { inngest } = await import('@/src/inngest/client');
-            const s = await getActiveStore();
-            if (s?.id) await inngest.send({ name: 'seo/gsc.sync.requested', data: { storeId: s.id } });
-            revalidatePath('/settings');
-          }}>
-            <Button type="submit" variant="outline" size="sm">Sync 28 days</Button>
-          </form>
-          <span className="text-xs text-muted-foreground">Also available in /seo/search</span>
-        </div>
-        <div>
           <form action={async (fd: FormData) => {
             'use server';
             const { revalidatePath } = await import('next/cache');
@@ -703,58 +607,190 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
               await updateStore(s.id, { name: s.name, shopify_domain: s.shopify_domain, shopify_access_token: '', platform: s.platform || 'shopify', config: c });
             }
             revalidatePath('/settings');
-          }} className="flex gap-2">
-            <input name="propertyUrl" defaultValue={config.gsc?.propertyUrl || ''} placeholder="https://www.example.com/ or sc-domain:example.com" className="border p-1 text-sm flex-1" />
-            <Button type="submit" variant="outline" size="sm">Save Property</Button>
+          }} className="cx-form" style={{ marginTop: '1rem' }}>
+            <div className="cx-field">
+              <label htmlFor="propertyUrl">Property</label>
+              <input id="propertyUrl" name="propertyUrl" defaultValue={config.gsc?.propertyUrl || ''} placeholder="https://www.example.com/ or sc-domain:example.com" />
+              <p className="cx-help">The Search Console property Cerevex should read.</p>
+            </div>
+            <button type="submit" className="btn-secondary">Save property</button>
           </form>
         </div>
-      </div>
 
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Brand Voice</h2>
-
-        <form action={generateBrandVoiceAction} className="mb-4">
-          <Button type="submit" variant="outline">Generate / Regenerate from Site + Web</Button>
-        </form>
-        <form action={ingestKnowledgeAction} className="mb-4">
-          <Button type="submit" variant="outline">Ingest / Refresh Site Knowledge</Button>
-        </form>
-        <form action={saveBrandVoiceAction} className="space-y-2">
-          <textarea name="brandVoiceText" defaultValue={bv?.text || ''} className="border p-2 w-full h-32 font-mono text-sm" placeholder="Brand voice description..." />
-          <input name="allowedClaims" defaultValue={(bv?.allowedClaims || []).join(', ')} className="border p-1 w-full text-sm" placeholder="Allowed claims (comma sep)" />
-          <input name="forbiddenClaims" defaultValue={(bv?.forbiddenClaims || []).join(', ')} className="border p-1 w-full text-sm" placeholder="Forbidden claims (comma sep, go to mustNotCover)" />
-          <Button type="submit">Save Brand Voice</Button>
-        </form>
-        {bv && <div className="mt-2 text-xs text-muted-foreground">Last updated: {bv.inferredAt ? new Date(bv.inferredAt).toLocaleString() : 'manual'} | Samples used: {bv.samplesUsed || 'n/a'}</div>}
-      </div>
-
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">SEO Rules (Structured - per store)</h2>
-        <p className="text-xs text-muted-foreground mb-2">These rules are injected into writer, optimizer, grader and reviser. Edit below. IDs are used in grader feedback. Changes affect new jobs.</p>
-        <form action={resetSEORulesAction} className="mb-2">
-          <Button type="submit" variant="outline">Reset to Initial Defaults</Button>
-        </form>
-        <form action={saveSEORulesAction} className="space-y-2">
-          <SEORulesEditor initialRules={config.seoRules || getDefaultSEORules()} />
-          <Button type="submit">Save SEO Rules</Button>
-        </form>
-      </div>
-
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Autonomy (Basic)</h2>
-        <form action={saveAutonomyAction} className="space-y-2 text-sm">
-          <div>
-            <label className="block mb-1">Allowed Types (comma sep, leave empty for all)</label>
-            <input name="allowedTypes" defaultValue={(auto?.allowedTypes || []).join(',')} className="border p-1 w-full" placeholder="collection,page,blog" />
+        <div className="cx-panel">
+          <h2>Shopify catalog</h2>
+          <p className="cx-help">Sync products and live collections, pages, and articles used by SEO.</p>
+          <div className="cx-actions">
+            <form action={syncProductsAction}>
+              <button type="submit" className="btn-secondary">Sync products</button>
+            </form>
+            <form action={syncCatalogAction}>
+              <button type="submit" className="btn-secondary">Sync live catalog</button>
+            </form>
+            <Link href="/seo/live" className="btn-secondary">Open live catalog</Link>
           </div>
-          <div>
-            <label>
-              <input type="checkbox" name="requireApproval" defaultChecked={auto?.requireApproval !== false} /> Require human approval
+        </div>
+
+        <div className="cx-panel">
+          <h2>Ads accounts</h2>
+          <p className="cx-help">Connect Meta or Google from Ads. This page does not start a new ads login.</p>
+          <div className="cx-actions">
+            <Link href="/ads" className="btn-secondary">Open Ads</Link>
+          </div>
+        </div>
+
+        <WorkspaceCallRailSettings />
+        <WorkspaceBundledCallTrackingSettings />
+        <WorkspaceClaritySettings />
+      </section>
+
+      <section id="approvals" className="cx-settings-section">
+        <h2>Approvals &amp; autonomy</h2>
+        <p className="cx-lede">SEO approve gate and a pointer to Ads pause. Nothing here writes ad platforms.</p>
+
+        <div className="cx-panel">
+          <h2>SEO approval</h2>
+          <form action={saveAutonomyAction} className="cx-form">
+            <div className="cx-field">
+              <label htmlFor="allowedTypes">Allowed types</label>
+              <input id="allowedTypes" name="allowedTypes" defaultValue={(auto?.allowedTypes || []).join(',')} placeholder="collection,page,blog" />
+              <p className="cx-help">Comma-separated. Leave empty to allow all types.</p>
+            </div>
+            <label className="cx-field">
+              <span>
+                <input type="checkbox" name="requireApproval" defaultChecked={auto?.requireApproval !== false} /> Require human approval
+              </span>
+              <p className="cx-help">When on, new SEO jobs wait in Review before they publish.</p>
             </label>
+            <button type="submit" className="btn-cta">Save autonomy</button>
+          </form>
+        </div>
+
+        <div className="cx-panel">
+          <h2>Ads pause</h2>
+          <p className="cx-help">Pause ads and approve suggestions on Ads. This settings page does not apply ads.</p>
+          <Link href="/ads" className="btn-secondary">Open Ads</Link>
+        </div>
+      </section>
+
+      <section id="modules" className="cx-settings-section">
+        <h2>Modules &amp; flags</h2>
+        <p className="cx-lede">Turn Ads modules and workspace flags on or off. SEO rules apply to new jobs only.</p>
+        <WorkspaceModulesSettings />
+        <WorkspaceCapabilitiesSettings />
+        <WorkspaceSeasonalitySettings />
+
+        <div className="cx-panel">
+          <h2>SEO rules</h2>
+          <p className="cx-help">These rules go into writer, optimizer, grader, and reviser. Changes apply to new jobs.</p>
+          <form action={resetSEORulesAction} style={{ marginBottom: '0.75rem' }}>
+            <button type="submit" className="btn-secondary">Reset to defaults</button>
+          </form>
+          <form action={saveSEORulesAction} className="cx-form">
+            <SEORulesEditor initialRules={config.seoRules || getDefaultSEORules()} />
+            <button type="submit" className="btn-cta">Save SEO rules</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="store" className="cx-settings-section">
+        <h2>Store</h2>
+        <p className="cx-lede">Active store identity, brand voice, and sync helpers. Switch stores from the top right.</p>
+
+        <div className="cx-panel">
+          <h2>Active store</h2>
+          {store ? (
+            <ul className="cx-status-list">
+              <li><span>Store</span><span>{store.name} ({store.shopify_domain})</span></li>
+              <li><span>Placement</span><span>{config.placement ? 'Configured' : 'Using defaults'}</span></li>
+              <li><span>Metafields</span><span>{config.metafieldSchema?.lastRefreshed ? `Refreshed ${new Date(config.metafieldSchema.lastRefreshed).toLocaleDateString()} (${config.metafieldSchema.definitions?.length || 0} fields)` : 'Not loaded'}</span></li>
+              <li><span>Products</span><span>{config.productsLastSynced ? `Synced ${new Date(config.productsLastSynced).toLocaleDateString()} (${config.productsSyncedCount || 0})` : 'Not synced'}</span></li>
+              <li><span>Catalog</span><span>{config.catalogLastSynced ? `Synced ${new Date(config.catalogLastSynced).toLocaleDateString()} (${config.catalogSyncedCount || 0})` : 'Not synced'}</span></li>
+              <li>
+                <span>Search Console</span>
+                <span>
+                  <StatusBadge
+                    label={config.gsc?.refreshTokenEnc ? 'Connected' : 'Not connected'}
+                    tone={config.gsc?.refreshTokenEnc ? 'trust' : 'warn'}
+                  />
+                </span>
+              </li>
+              <li><span>Brand voice</span><span>{bv ? 'Set' : 'Not set'}{bv?.inferredAt ? ` · ${new Date(bv.inferredAt).toLocaleDateString()}` : ''}</span></li>
+              <li><span>SEO rules</span><span>{config.seoRules && Array.isArray(config.seoRules) ? `${config.seoRules.length} rules` : 'Using defaults'}</span></li>
+              <li><span>Autonomy</span><span>{auto ? 'Set' : 'Defaults (all types, require approval)'}</span></li>
+            </ul>
+          ) : (
+            <p className="cx-help">No active store. Add one in Stores.</p>
+          )}
+          <div className="cx-actions">
+            <Link href="/stores" className="btn-secondary">Manage stores</Link>
           </div>
-          <Button type="submit">Save Autonomy</Button>
-        </form>
-      </div>
+        </div>
+
+        <div className="cx-panel">
+          <h2>Brand voice</h2>
+          <div className="cx-actions">
+            <form action={generateBrandVoiceAction}>
+              <button type="submit" className="btn-secondary">Generate from site</button>
+            </form>
+            <form action={ingestKnowledgeAction}>
+              <button type="submit" className="btn-secondary">Ingest site knowledge</button>
+            </form>
+          </div>
+          <form action={saveBrandVoiceAction} className="cx-form" style={{ marginTop: '1rem' }}>
+            <div className="cx-field">
+              <label htmlFor="brandVoiceText">Voice</label>
+              <textarea id="brandVoiceText" name="brandVoiceText" defaultValue={bv?.text || ''} placeholder="Brand voice description..." />
+            </div>
+            <div className="cx-field">
+              <label htmlFor="allowedClaims">Allowed claims</label>
+              <input id="allowedClaims" name="allowedClaims" defaultValue={(bv?.allowedClaims || []).join(', ')} placeholder="Allowed claims (comma sep)" />
+            </div>
+            <div className="cx-field">
+              <label htmlFor="forbiddenClaims">Forbidden claims</label>
+              <input id="forbiddenClaims" name="forbiddenClaims" defaultValue={(bv?.forbiddenClaims || []).join(', ')} placeholder="Forbidden claims (comma sep)" />
+            </div>
+            <button type="submit" className="btn-cta">Save brand voice</button>
+          </form>
+          {bv ? <p className="cx-help">Last updated: {bv.inferredAt ? new Date(bv.inferredAt).toLocaleString() : 'manual'}</p> : null}
+        </div>
+
+        <div className="cx-panel">
+          <h2>Placement helper</h2>
+          <p className="cx-help">Suggest metafield mappings from the current store schema. Does not publish.</p>
+          <div className="cx-actions">
+            <form action={generatePlacementSuggestion}>
+              <button type="submit" className="btn-secondary">Suggest placement</button>
+            </form>
+            <form action={refreshMetafieldSchema}>
+              <button type="submit" className="btn-secondary">Refresh metafields</button>
+            </form>
+          </div>
+        </div>
+
+        <div className="cx-panel">
+          <h2>Job runner</h2>
+          <p className="cx-help">Target: <code>{resolvedHandlerUrl}</code></p>
+          <form action={resyncInngest}>
+            <button type="submit" className="btn-secondary">Resync Inngest</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="account" className="cx-settings-section">
+        <h2>Account</h2>
+        <p className="cx-lede">Workspace sign-in and operator context. Password changes happen on the host.</p>
+        <div className="cx-panel">
+          <h2>Sign in</h2>
+          <p className="cx-help">
+            This workspace uses a shared sign-in password. There is no in-app password form — change <code>APP_PASSWORD</code> on the host if you need a new one.
+          </p>
+          <p className="cx-help">Switch stores from the store switcher in the top right.</p>
+          <form action={signOutAction}>
+            <button type="submit" className="btn-secondary">Sign out</button>
+          </form>
+        </div>
+      </section>
     </div>
   );
 }

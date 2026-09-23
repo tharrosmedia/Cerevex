@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
-import { jobInputDetails, jobInputLabel, jobStatusLabel, jobTypeLabel } from '../lib/job-labels';
+import { jobInputDetails, jobInputLabel, jobStatusLabel, jobStatusTone, jobTypeLabel } from '../lib/job-labels';
 
 assert.equal(jobTypeLabel('seo.generate'), 'SEO create');
 assert.equal(jobStatusLabel('awaiting_approval'), 'Needs review');
 assert.equal(jobStatusLabel('completed'), 'Done');
+assert.equal(jobStatusTone('completed'), 'trust');
+assert.equal(jobStatusTone('approved'), 'trust');
+assert.equal(jobStatusTone('queued'), 'warn');
+assert.equal(jobStatusTone('awaiting_approval'), 'warn');
+assert.equal(jobStatusTone('failed'), 'danger');
+assert.equal(jobStatusTone('rejected'), 'danger');
 
 assert.equal(
   jobInputLabel({ keyword: 'Blog post draft', platform: 'shopify', mode: 'create' }, 'seo.create'),

@@ -6,21 +6,13 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import type { CapabilityFlags, ModuleFlags } from '@cerevex/contracts';
 import { adsSub } from '@/lib/ads-nav';
 import { navSectionFromPath, railItemsForSection } from '@/lib/nav-section';
+import { SEO_NAV } from '@/lib/seo-nav';
 
 type NavItem = {
   href: string;
   label: string;
   rail?: string;
 };
-
-const SEO_SUB: NavItem[] = [
-  { href: '/seo', label: 'Overview' },
-  { href: '/seo/create', label: 'New content', rail: 'New' },
-  { href: '/seo/live', label: 'Live catalog', rail: 'Catalog' },
-  { href: '/seo/search', label: 'Search Console', rail: 'GSC' },
-  { href: '/seo/findings', label: 'Recommendations' },
-  { href: '/seo/jobs', label: 'SEO jobs' },
-];
 
 function isExternal(href: string) {
   return href.startsWith('http://') || href.startsWith('https://');
@@ -142,7 +134,7 @@ export default function SiteNav({
   const section = navSectionFromPath(pathname);
   const [open, setOpen] = useState(false);
   const adsItems = adsSub(adsOrigin, modules, capabilities);
-  const rail = railItemsForSection(section, SEO_SUB, adsItems);
+  const rail = railItemsForSection(section, SEO_NAV, adsItems);
 
   useEffect(() => {
     setOpen(false);
@@ -158,7 +150,7 @@ export default function SiteNav({
             id="seo"
             label="SEO"
             href="/seo"
-            items={SEO_SUB}
+            items={SEO_NAV}
             open={open}
             onToggle={() => setOpen((current) => !current)}
             onClose={closeMenu}

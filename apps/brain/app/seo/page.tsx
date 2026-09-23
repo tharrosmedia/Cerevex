@@ -3,6 +3,12 @@ import { getActiveStoreId, listStores } from '@/src/lib/db/stores';
 import { listJobs } from '@/src/lib/db/jobs';
 import { countOpenFindings } from '@/src/lib/db/findings';
 import AutoRefresh from '@/components/auto-refresh';
+import { EmptyState } from '@/components/empty-state';
+import { MetricCard } from '@/components/metric-card';
+import { PageHeader } from '@/components/page-header';
+import { SeoSubnav } from '@/components/seo-subnav';
+import { StatusBadge } from '@/components/status-badge';
+import { jobTypeLabel } from '@/lib/job-labels';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,52 +26,79 @@ export default async function SeoOverview() {
       recent = jobs;
     }
   } catch {}
+  const storeName = stores.find((s: any) => s.id === storeId)?.name || 'none';
+
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">SEO</h1>
-      <p className="text-sm text-muted-foreground mb-6">Active store: {stores.find((s:any)=>s.id===storeId)?.name || 'none'}</p>
+    <div className="cx-page">
+      <PageHeader
+        kicker="SEO"
+        title="SEO"
+        lede={`Active store: ${storeName}. Open findings, review work, or start a new page.`}
+      />
+      <SeoSubnav />
       <AutoRefresh interval={5000} />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Link href="/seo/findings" className="border p-4 rounded hover:bg-muted">
-          <div className="text-sm">Open Findings</div>
-          <div className="text-3xl font-bold">{findings}</div>
-        </Link>
-        <Link href="/seo/jobs" className="border p-4 rounded hover:bg-muted">
-          <div className="text-sm">Awaiting Approval (SEO)</div>
-          <div className="text-3xl font-bold">{awaiting}</div>
-        </Link>
-        <Link href="/seo/create" className="border p-4 rounded hover:bg-muted">
-          <div>New content</div>
-          <div className="underline mt-2">Create →</div>
-        </Link>
-      </div>
+      <section className="cx-card-grid" aria-label="SEO stats">
+        <MetricCard
+          href="/seo/findings"
+          label="Open findings"
+          value={findings}
+          hint={findings === 1 ? 'recommendation waiting' : 'recommendations waiting'}
+        />
+        <MetricCard
+          href="/seo/jobs"
+          label="Awaiting approval"
+          value={awaiting}
+          hint={awaiting === 1 ? 'SEO job to review' : 'SEO jobs to review'}
+        />
+        <MetricCard
+          href="/seo/create"
+          label="New content"
+          value="Create"
+          hint="Write a collection, page, or post"
+        />
+      </section>
 
-      <div className="mb-4">
-        <Link href="/seo/live" className="underline mr-4">Live catalog</Link>
-        <Link href="/seo/search" className="underline mr-4">Search Console</Link>
-        <Link href="/seo/findings" className="underline mr-4">Recommendations</Link>
-        <Link href="/seo/jobs" className="underline">SEO Jobs</Link>
-      </div>
-
-      <div>
-        <h2 className="font-semibold mb-2">Recent SEO Jobs</h2>
-        <table className="w-full border text-sm">
-          <thead><tr className="bg-muted"><th className="p-2 text-left">ID</th><th>Type</th><th>Status</th><th>Created</th><th></th></tr></thead>
-          <tbody>
-            {recent.length === 0 && <tr><td colSpan={5} className="p-3 text-muted-foreground">None yet</td></tr>}
-            {recent.map((j:any) => (
-              <tr key={j.id} className="border-t">
-                <td className="p-2 font-mono text-xs">{j.id.slice(0,8)}</td>
-                <td>{j.type}</td>
-                <td>{j.status}</td>
-                <td>{new Date(j.createdAt).toLocaleString()}</td>
-                <td><Link href={`/jobs/${j.id}`} className="underline">View</Link></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <section>
+        <div className="cx-section-head">
+          <h2>Recent SEO jobs</h2>
+          <Link href="/seo/jobs" className="btn-secondary">All jobs</Link>
+        </div>
+        {recent.length === 0 ? (
+          <EmptyState
+            message="No SEO jobs yet for this store."
+            actionHref="/seo/create"
+            actionLabel="Create"
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((j: any) => (
+                  <tr key={j.id}>
+                    <td data-label="ID" className="cx-mono">{j.id.slice(0, 8)}</td>
+                    <td data-label="Type">{jobTypeLabel(j.type)}</td>
+                    <td data-label="Status"><StatusBadge status={j.status} /></td>
+                    <td data-label="Created">{new Date(j.createdAt).toLocaleString()}</td>
+                    <td data-label="Open">
+                      <Link href={`/jobs/${j.id}`} className="btn-secondary">View</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
