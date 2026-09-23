@@ -1,15 +1,16 @@
 import { z } from "zod";
 import {
   FINDING_SEVERITIES,
+  MUTATION_ACTIONS,
   RECOMMENDATION_RISKS,
   RECOMMENDATION_SCHEMA_VERSION,
   RECOMMENDATION_TYPES,
 } from "./types";
 
-/** Proposed platform mutation. `execute` is locked false — M3 never writes Meta/Google. */
+/** Proposed platform mutation. Drafts stay execute=false until Approve. */
 export const proposedMutationSchema = z.object({
   platform: z.enum(["meta", "google"]),
-  action: z.enum(["pause", "update_budget", "update_bid", "create_ad", "add_keyword", "review"]),
+  action: z.enum(MUTATION_ACTIONS),
   target: z.object({
     entityType: z.string().min(1),
     externalId: z.string().min(1),
@@ -20,6 +21,21 @@ export const proposedMutationSchema = z.object({
 });
 
 export type ProposedMutation = z.infer<typeof proposedMutationSchema>;
+
+/** Apply-time validation: same shape, execute flag ignored (authorization is the grant). */
+export const applyMutationSchema = z.object({
+  platform: z.enum(["meta", "google"]),
+  action: z.enum(MUTATION_ACTIONS),
+  target: z.object({
+    entityType: z.string().min(1),
+    externalId: z.string().min(1),
+    name: z.string().optional(),
+  }),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  execute: z.boolean().optional(),
+});
+
+export type ApplyMutation = z.infer<typeof applyMutationSchema>;
 
 export const findingDraftSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -87,4 +103,12 @@ export function parseFindingDraft(input: unknown): FindingDraft {
 
 export function parseRecommendationDraft(input: unknown): RecommendationDraft {
   return recommendationDraftSchema.parse(input);
+}
+
+export function parseApplyMutations(input: unknown): ApplyMutation[] {
+  if (!Array.isArray(input)) return [];
+  return input.flatMap((row) => {
+    const parsed = applyMutationSchema.safeParse(row);
+    return parsed.success ? [parsed.data] : [];
+  });
 }

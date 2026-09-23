@@ -15,7 +15,7 @@ import { useWorkspace } from "@/components/cockpit/workspace-context";
 import { ApiError, patchWorkspace } from "@/lib/api";
 
 export default function AdsModulesSettingsPage() {
-  const { workspace, modules, canMutate, refresh } = useWorkspace();
+  const { workspace, modules, canMutate, killSwitch, refresh } = useWorkspace();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +104,39 @@ export default function AdsModulesSettingsPage() {
               />
             </label>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pause ads</CardTitle>
+          <CardDescription>
+            Workspace kill switch. When on, Approve cannot apply. Default is on.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-sm">{killSwitch ? "Ads are paused. Nothing goes live." : "Ads can run. Approve still needs a human."}</p>
+          <Button
+            type="button"
+            variant={killSwitch ? "outline" : "default"}
+            disabled={!canMutate || pending}
+            onClick={async () => {
+              setPending(true);
+              setError(null);
+              setMessage(null);
+              try {
+                await patchWorkspace({ applyKillSwitch: !killSwitch });
+                await refresh();
+                setMessage(!killSwitch ? "Ads paused. Approve is blocked." : "Ads unpaused. Approve can apply.");
+              } catch (err) {
+                setError(err instanceof ApiError ? err.message : "Could not update pause ads.");
+              } finally {
+                setPending(false);
+              }
+            }}
+          >
+            {killSwitch ? "Turn pause off" : "Pause ads"}
+          </Button>
         </CardContent>
       </Card>
 

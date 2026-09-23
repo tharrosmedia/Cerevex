@@ -52,7 +52,10 @@ export async function sendStubSync(data: StubSyncPayload): Promise<string[]> {
 }
 
 export async function sendApplyRequested(data: ApplyRequestedPayload): Promise<string[]> {
-  const result = await inngest.send({ name: EVENTS.applyRequested, data });
+  const event = data.applyJobId
+    ? { id: `os-apply-${data.applyJobId}`, name: EVENTS.applyRequested, data }
+    : { name: EVENTS.applyRequested, data };
+  const result = await inngest.send(event);
   return result.ids;
 }
 

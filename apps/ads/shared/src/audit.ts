@@ -2,10 +2,12 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { evaluateAccount } from "./audit-engine";
 import { auditRunSummarySchema, parseFindingDraft, parseRecommendationDraft } from "./audit-schemas";
 import { getDb } from "./db";
+import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
 import {
   adAccounts,
   adEntities,
   adMetrics,
+  applyJobs,
   auditLog,
   auditRuns,
   authorizations,
@@ -15,6 +17,7 @@ import {
   workspaces,
 } from "./schema";
 import type {
+  ApplyJobPublic,
   AuditRequestedPayload,
   AuditRunPublic,
   AuthorizationPublic,
@@ -427,8 +430,8 @@ export async function decideRecommendation(input: {
         scopeJson: {
           kind: "os.authorize-to-apply",
           recommendationId: row.id,
-          proposedOnly: true,
-          writes: false,
+          proposedOnly: false,
+          writes: true,
         },
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       })
@@ -445,7 +448,7 @@ export async function decideRecommendation(input: {
     workspaceId: row.workspaceId,
     actorType: "user",
     actorId: input.userId,
-    action: "recommendations.decided",
+    action: input.action,
     entityType: "recommendation",
     entityId: row.id,
     payloadJson: {
@@ -460,6 +463,58 @@ export async function decideRecommendation(input: {
     recommendation: toRecommendationPublic(updated),
     authorization: authorization ? toAuthorizationPublic(authorization) : null,
   };
+}
+
+export async function writeAuditEvent(input: {
+  workspaceId: string;
+  actorType: string;
+  actorId?: string | null;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  await getDb().insert(auditLog).values({
+    workspaceId: input.workspaceId,
+    actorType: input.actorType,
+    actorId: input.actorId ?? null,
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId ?? null,
+    payloadJson: input.payload ?? {},
+  });
+}
+
+export async function createApplyJobForAuthorization(input: {
+  workspaceId: string;
+  clientId: string;
+  authorizationId: string;
+  recommendationId: string;
+  proposedMutations: unknown;
+}): Promise<ApplyJobPublic> {
+  const db = getDb();
+  const key = applyJobIdempotencyKey(input.recommendationId);
+  const existing = await db.query.applyJobs.findFirst({
+    where: eq(applyJobs.idempotencyKey, key),
+  });
+  if (existing) {
+    return toApplyJobPublic(existing);
+  }
+  const [job] = await db
+    .insert(applyJobs)
+    .values({
+      workspaceId: input.workspaceId,
+      clientId: input.clientId,
+      authorizationId: input.authorizationId,
+      idempotencyKey: key,
+      status: "queued",
+      requestJson: {
+        recommendationId: input.recommendationId,
+        proposedMutations: input.proposedMutations,
+      },
+    })
+    .returning();
+  return toApplyJobPublic(job);
 }
 
 export async function getWorkspaceKillSwitch(workspaceId: string): Promise<boolean> {

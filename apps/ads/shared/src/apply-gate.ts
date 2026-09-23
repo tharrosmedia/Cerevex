@@ -1,17 +1,17 @@
 /**
  * Authorize-to-apply gate.
  *
- * Apply is never unsupervised. Even when the kill switch is off and an
- * authorization exists, M3 does not implement Meta/Google writes.
+ * Apply requires a valid authorization, workspace kill switch OFF,
+ * and the target ad account not frozen. Deny/Snooze never reach this gate.
  */
 
 export const APPLY_BLOCK_REASONS = [
   "workspace_not_found",
   "apply_kill_switch",
+  "account_frozen",
   "authorization_required",
   "authorization_revoked",
   "authorization_expired",
-  "apply_not_implemented",
 ] as const;
 
 export type ApplyBlockReason = (typeof APPLY_BLOCK_REASONS)[number];
@@ -27,14 +27,13 @@ export type ApplyGateInput = {
       }
     | null
     | undefined;
+  account?: { frozen: boolean } | null;
   now?: Date;
 };
 
-export type ApplyGateResult = {
-  allowed: false;
-  blocked: ApplyBlockReason;
-  writes: false;
-};
+export type ApplyGateResult =
+  | { allowed: true; blocked: null; writes: true }
+  | { allowed: false; blocked: ApplyBlockReason; writes: false };
 
 function asTime(value: Date | string | null | undefined): number | null {
   if (!value) return null;
@@ -50,6 +49,9 @@ export function evaluateApplyGate(input: ApplyGateInput): ApplyGateResult {
   if (input.workspace.applyKillSwitch) {
     return { allowed: false, blocked: "apply_kill_switch", writes: false };
   }
+  if (input.account?.frozen) {
+    return { allowed: false, blocked: "account_frozen", writes: false };
+  }
   if (!input.authorization || input.authorization.workspaceId !== input.expectedWorkspaceId) {
     return { allowed: false, blocked: "authorization_required", writes: false };
   }
@@ -60,5 +62,24 @@ export function evaluateApplyGate(input: ApplyGateInput): ApplyGateResult {
   if (expires !== null && expires <= now.getTime()) {
     return { allowed: false, blocked: "authorization_expired", writes: false };
   }
-  return { allowed: false, blocked: "apply_not_implemented", writes: false };
+  return { allowed: true, blocked: null, writes: true };
+}
+
+export function applyBlockMessage(reason: ApplyBlockReason | null | undefined): string {
+  switch (reason) {
+    case "apply_kill_switch":
+      return "Approve is blocked while ads are paused on this workspace.";
+    case "account_frozen":
+      return "Approve is blocked because this ad account is frozen.";
+    case "authorization_required":
+      return "Approve this recommendation first. Nothing was written.";
+    case "authorization_revoked":
+      return "This approval was revoked. Nothing was written.";
+    case "authorization_expired":
+      return "This approval expired. Approve again to apply.";
+    case "workspace_not_found":
+      return "Workspace not found.";
+    default:
+      return "Apply is blocked.";
+  }
 }

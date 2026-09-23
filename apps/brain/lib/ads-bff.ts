@@ -26,6 +26,7 @@ export type AdsAccount = {
   lastError: string | null;
   hasCredentials: boolean;
   mock: boolean;
+  frozen?: boolean;
 };
 
 export type AdsAudit = {

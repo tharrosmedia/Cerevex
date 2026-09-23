@@ -30,12 +30,15 @@ import {
   getClient,
   listClientAudits,
   listClientRecommendations,
+  disconnectAdAccount,
   mockConnect,
-  requestApply,
+  setAdAccountFrozen,
   startInlineAudit,
   startOAuth,
   syncAdAccount,
 } from "@/lib/api";
+import { ApproveSheet } from "@/components/cockpit/approve-sheet";
+import { connectionStatusLabel } from "@tharros/ads-shared";
 import { formatWhen } from "@/lib/format";
 
 const PLATFORMS: { id: Platform; label: string }[] = [
@@ -48,7 +51,7 @@ type RecFilter = (typeof REC_FILTERS)[number];
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { killSwitch, canMutate, modules, loading: workspaceLoading } = useWorkspace();
+  const { killSwitch, canMutate, canApprove, modules, loading: workspaceLoading } = useWorkspace();
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [accounts, setAccounts] = useState<AdAccountPublic[]>([]);
   const [canManage, setCanManage] = useState(false);
@@ -63,6 +66,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [advancedConnect, setAdvancedConnect] = useState(false);
+  const [approveId, setApproveId] = useState<string | null>(null);
   const selectedAuditIdRef = useRef<string | null>(null);
   selectedAuditIdRef.current = selectedAuditId;
 
@@ -190,7 +195,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  async function decide(recommendationId: string, action: "authorize" | "deny" | "snooze") {
+  async function decide(recommendationId: string, action: "deny" | "snooze") {
     setBusy(recommendationId);
     setError(null);
     try {
@@ -198,11 +203,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       setRecommendations((current) =>
         current.map((row) => (row.id === recommendationId ? result.recommendation : row)),
       );
-      setNotice(
-        action === "authorize"
-          ? "Authorized. Apply is a separate step and stays blocked while ads are paused."
-          : `Recommendation ${action === "deny" ? "denied" : "snoozed"}. Nothing was written to Meta/Google.`,
-      );
+      setNotice(result.note ?? `Recommendation ${action === "deny" ? "denied" : "snoozed"}. Nothing was written to Meta/Google.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Decision failed.");
     } finally {
@@ -210,15 +211,46 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  async function apply(recommendationId: string) {
-    setBusy(`apply-${recommendationId}`);
+  async function approve(recommendationId: string) {
+    setBusy(recommendationId);
     setError(null);
     try {
-      await requestApply(recommendationId);
-      setNotice("Apply unexpectedly succeeded.");
+      const result = await decideRecommendation(recommendationId, "approve");
+      setRecommendations((current) =>
+        current.map((row) => (row.id === recommendationId ? result.recommendation : row)),
+      );
+      setNotice(result.note ?? "Approved. Apply is queued.");
+      setApproveId(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Apply blocked.";
-      setNotice(message);
+      setError(err instanceof Error ? err.message : "Approve failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function freezeAccount(accountId: string, frozen: boolean) {
+    setBusy(`freeze-${accountId}`);
+    setError(null);
+    try {
+      await setAdAccountFrozen(accountId, frozen);
+      setNotice(frozen ? "Ad account frozen. Approve cannot write." : "Ad account unfrozen.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update freeze.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function disconnect(accountId: string) {
+    setBusy(`disconnect-${accountId}`);
+    setError(null);
+    try {
+      await disconnectAdAccount(accountId);
+      setNotice("Disconnected. Tokens were removed from the spine.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not disconnect.");
     } finally {
       setBusy(null);
     }
@@ -280,7 +312,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       <section className="grid gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ad accounts</p>
-          <h3 className="mt-1 font-heading text-xl">Read-only connections</h3>
+          <h3 className="mt-1 font-heading text-xl">Connect Meta / Connect Google</h3>
         </div>
         {PLATFORMS.map((platform) => {
           const account = accounts.find((row) => row.platform === platform.id);
@@ -292,13 +324,13 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   <div>
                     <CardTitle>{platform.label}</CardTitle>
                     <CardDescription>
-                      Account tokens stay on the server. They are never sent to the browser.
+                      One-click OAuth. Tokens stay encrypted in the spine — never in the browser.
                     </CardDescription>
                   </div>
                   {account ? (
                     <ConnectionBadge status={account.connectionStatus} mock={account.mock} />
                   ) : (
-                    <Badge variant="outline">{configured ? "Not connected" : "App not configured"}</Badge>
+                    <Badge variant="outline">{configured ? "Not connected" : "Needs app credentials"}</Badge>
                   )}
                 </div>
               </CardHeader>
@@ -306,7 +338,9 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 {account ? (
                   <>
                     <p className="text-muted-foreground">
-                      Account {account.externalId} · last sync {formatWhen(account.lastSyncAt)}
+                      {connectionStatusLabel(account.connectionStatus)} · {account.externalId} · last sync{" "}
+                      {formatWhen(account.lastSyncAt)}
+                      {account.frozen ? " · frozen" : ""}
                     </p>
                     {account.lastError ? (
                       <NoticeBanner tone="error">{account.lastError}</NoticeBanner>
@@ -328,26 +362,69 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       <p className="text-muted-foreground">No campaigns yet. Sync to pull them in.</p>
                     )}
                     {canManage ? (
-                      <Button onClick={() => sync(account.id)} disabled={busy === account.id} className="w-fit">
-                        {busy === account.id ? "Queueing…" : account.lastError ? "Retry sync" : "Sync now"}
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button onClick={() => sync(account.id)} disabled={busy === account.id} className="w-fit">
+                          {busy === account.id ? "Queueing…" : account.connectionStatus === "needs_reconnect" ? "Reconnect / Sync now" : "Sync now"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => freezeAccount(account.id, !account.frozen)}
+                          disabled={busy === `freeze-${account.id}`}
+                        >
+                          {account.frozen ? "Unfreeze" : "Freeze account"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => disconnect(account.id)}
+                          disabled={busy === `disconnect-${account.id}`}
+                        >
+                          Disconnect
+                        </Button>
+                      </div>
                     ) : null}
                   </>
                 ) : (
                   <>
                     <p className="text-muted-foreground">
                       {configured
-                        ? "Connect this pilot with first-party OAuth. The callback stays on the API."
-                        : "Developer app credentials are not in this environment. Mock connect stores encrypted fake tokens so local and CI can run."}
+                        ? `Connect ${platform.label} with one click. Sync starts after connect.`
+                        : `${platform.label} app credentials are not in this environment. Use Advanced mock connect for local/CI only.`}
                     </p>
                     {canManage ? (
-                      <Button onClick={() => connect(platform.id)} disabled={busy === platform.id} className="w-fit">
-                        {busy === platform.id
-                          ? "Working…"
-                          : configured
-                            ? `Connect ${platform.label}`
-                            : `Mock-connect ${platform.label}`}
-                      </Button>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          onClick={() => connect(platform.id)}
+                          disabled={busy === platform.id || !configured}
+                          className="w-fit"
+                        >
+                          {busy === platform.id ? "Working…" : `Connect ${platform.label === "Google Ads" ? "Google" : platform.label}`}
+                        </Button>
+                        {!configured ? (
+                          <div>
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground underline"
+                              onClick={() => setAdvancedConnect((open) => !open)}
+                            >
+                              {advancedConnect ? "Hide advanced" : "Advanced"}
+                            </button>
+                            {advancedConnect ? (
+                              <div className="mt-2">
+                                <p className="mb-2 text-xs text-muted-foreground">
+                                  Mock connect stores encrypted fake tokens. Not the pilot path.
+                                </p>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => connect(platform.id)}
+                                  disabled={busy === platform.id}
+                                >
+                                  Mock-connect {platform.label}
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">Only owners and operators can connect accounts.</p>
                     )}
@@ -442,10 +519,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
 
       <Card>
         <CardHeader>
-          <CardTitle>Proposed recommendations</CardTitle>
+          <CardTitle>Recommendations</CardTitle>
           <CardDescription>
-            Authorize, deny, or snooze. Apply remains a separate step
-            {killSwitch ? " and is blocked while ads are paused." : "."}
+            Approve, Deny, or Snooze. Only Approve writes platforms
+            {killSwitch ? " — and only after ads are unpaused." : "."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">
@@ -478,16 +555,47 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   key={rec.id}
                   recommendation={rec}
                   canManage={canManage && canMutate}
+                  canApprove={canApprove}
                   killSwitchOn={killSwitch}
+                  frozen={accounts.find((row) => row.id === rec.adAccountId)?.frozen}
                   busy={busy}
                   onDecide={decide}
-                  onApply={apply}
+                  onApprove={(id) => setApproveId(id)}
                 />
               ))}
             </ul>
           )}
         </CardContent>
       </Card>
+
+      <ApproveSheet
+        open={Boolean(approveId)}
+        clientName={client.name}
+        platform={
+          approveId
+            ? accounts.find((row) => row.id === recommendations.find((rec) => rec.id === approveId)?.adAccountId)
+                ?.platform ?? null
+            : null
+        }
+        entities={
+          approveId
+            ? (recommendations.find((rec) => rec.id === approveId)?.proposedMutations ?? []).flatMap((mutation) => {
+                const target = (mutation as { target?: { name?: string } }).target;
+                return target?.name ? [target.name] : [];
+              })
+            : []
+        }
+        mutations={approveId ? (recommendations.find((rec) => rec.id === approveId)?.proposedMutations ?? []) : []}
+        risk={approveId ? recommendations.find((rec) => rec.id === approveId)?.risk ?? "medium" : "medium"}
+        killSwitchOn={killSwitch}
+        frozen={Boolean(
+          approveId &&
+            accounts.find((row) => row.id === recommendations.find((rec) => rec.id === approveId)?.adAccountId)?.frozen,
+        )}
+        submitting={busy === approveId}
+        onCancel={() => setApproveId(null)}
+        onConfirm={() => (approveId ? approve(approveId) : undefined)}
+      />
     </div>
   );
 }

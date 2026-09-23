@@ -6,7 +6,7 @@ Ads work is the **Cerevex ads module** at `apps/ads` (formerly Tharros OS). The 
 
 This repository is an **npm workspace monorepo** per [Accelerated Merge Plan 1.5](docs/accelerated-merge-plan-1.5.md). The GitHub repo is now `tharrosmedia/Cerevex` (Eng/Adam renamed it separately from this PR).
 
-**No unsupervised ad spend.** Authorize-to-apply and workspace kill switches are unchanged (kill switch ON by default). No Meta/Google mutate from this tree.
+**No unsupervised ad spend.** Authorize-to-apply, workspace kill switch (ON by default), and per-account freeze stay on. Approve is Adam-only in M5 soft-launch. Deny/Snooze never write platforms.
 
 **M3 is held until shared Neon smoke.** Neon Postgres schema **`os` stays `os`** — do not rename it in production.
 

@@ -110,6 +110,7 @@ export const adAccounts = osSchema.table(
     connectionStatus: text("connection_status").notNull().default("disconnected"),
     lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
     lastError: text("last_error"),
+    frozen: boolean("frozen").notNull().default(false),
     scopesJson: jsonb("scopes_json").notNull().default([]),
   },
   (table) => [
@@ -220,7 +221,8 @@ export const applyJobs = osSchema.table(
     authorizationId: uuid("authorization_id")
       .notNull()
       .references(() => authorizations.id, { onDelete: "cascade" }),
-    status: text("status").notNull().default("pending"),
+    idempotencyKey: text("idempotency_key"),
+    status: text("status").notNull().default("queued"),
     attempts: integer("attempts").notNull().default(0),
     requestJson: jsonb("request_json").notNull().default({}),
     responseJson: jsonb("response_json"),
@@ -231,6 +233,7 @@ export const applyJobs = osSchema.table(
   (table) => [
     index("apply_jobs_client_idx").on(table.clientId),
     index("apply_jobs_authorization_idx").on(table.authorizationId),
+    uniqueIndex("apply_jobs_idempotency_idx").on(table.idempotencyKey),
   ],
 );
 

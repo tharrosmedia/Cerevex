@@ -4,9 +4,9 @@
 
 Modules & Nav IA 1.1: first-run onboarding picks a business type (home-service operator / agency / ecommerce). Defaults are Leads ON for all, Clients ON only for agency, Sales ON only for ecommerce, Workflows ON. Flags live in `os.workspaces.settings_json`. Settings → Modules can override; the Ads rail shows only ON modules.
 
-**No unsupervised ad spend.** Apply stays behind a workspace kill switch (on by default) and an explicit authorize-to-apply step. Those controls are unchanged.
+**No unsupervised ad spend.** Approve is Adam-only in soft-launch (`APPROVE_OPERATOR_EMAILS`, default `adam@tharrosmedia.com`). Apply stays behind a workspace kill switch (on by default), per-account freeze, and an explicit Approve. Deny/Snooze never write platforms.
 
-No Zapier. No Tavily. No live platform writes. No unsupervised spend. Apply stays behind a workspace kill switch (on by default) and an explicit authorization.
+No Zapier. No Tavily. No auto-approve. No unsupervised spend.
 
 M3 product (audits → findings → proposed recs) does **not** deploy or seed production. Shared Neon is schema `os` only — no `public` migrations. Shared Neon smoke checklist + M3 mock path: [SMOKE.md](./SMOKE.md) (same Brain `DATABASE_URL`, do not clobber `seo-*`).
 
@@ -56,7 +56,7 @@ Sign in at http://127.0.0.1:43181 as the seeded owner:
 - email: `SEED_OWNER_EMAIL` (default `adam@tharrosmedia.com`)
 - password: `SEED_OWNER_PASSWORD` (default `local-dev-only`)
 
-Pilots: **Got Ductless**, **KC Prestige**, **Elmar HVAC**. Mock-connect Meta/Google when app IDs are empty, then **Sync now**, then **Run mock audit**. Authorize/deny/snooze on the client page — do not expect apply to succeed while the kill switch is ON.
+Pilots: **Got Ductless**, **KC Prestige**, **Elmar HVAC**. Connect Meta / Connect Google (OAuth when app IDs are set; Advanced mock when they are empty), then **Sync now**, then run an audit. Approve / Deny / Snooze on recommendation detail. Approve is blocked while ads are paused.
 
 Health:
 
@@ -77,7 +77,7 @@ Ads `DATABASE_URL` must resolve to schema `os`. Do not write ads tables into Bra
 | `os/stub.ping` | `os-stub-ping` | `apps/ads/workers` |
 | `os/stub.sync` | `os-stub-sync` | `apps/ads/workers` |
 | `os/audit.requested` | `os-audit-requested` | `apps/ads/workers` (local tables only; **no platform writes**) |
-| `os/apply.requested` | `os-apply-requested` | `apps/ads/workers` (kill switch + authorize; **no writes**) |
+| `os/apply.requested` | `os-apply-requested` | `apps/ads/workers` (kill switch + authorize + freeze; executes mutate-existing mutations) |
 | `meta/ads/account.sync` | `meta-ads-account-sync` | `jobs/meta/ads` |
 | `google/ads/account.sync` | `google-ads-account-sync` | `jobs/google/ads` |
 

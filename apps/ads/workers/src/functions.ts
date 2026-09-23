@@ -1,15 +1,13 @@
-import { eq } from "drizzle-orm";
-import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
-import { runAuditRun } from "@tharros/ads-shared/audit";
+import { runApplyJob } from "@tharros/ads-shared/apply";
+import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
 import { EVENTS, inngest } from "@tharros/ads-shared/inngest";
-import { getDb } from "@tharros/ads-shared/db";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
-import { applyJobs, authorizations, workspaces } from "@tharros/ads-shared/schema";
 
 /**
- * Shared OS orchestration. Kill-switch + authorize stubs.
- * No Meta/Google mutate. Platform sync lives in jobs/meta/ads and jobs/google/ads.
+ * Shared OS orchestration. Kill-switch + authorize-to-apply.
+ * Platform sync lives in jobs/meta/ads and jobs/google/ads.
+ * Apply executes schema-valid mutate-existing proposed_mutations only.
  */
 
 export const stubPing = inngest.createFunction(
@@ -56,56 +54,58 @@ export const stubSync = inngest.createFunction(
 );
 
 export const applyRequested = inngest.createFunction(
-  { id: "os-apply-requested", name: "OS apply requested", triggers: [{ event: EVENTS.applyRequested }] },
+  {
+    id: "os-apply-requested",
+    name: "OS apply requested",
+    triggers: [{ event: EVENTS.applyRequested }],
+    idempotency: "event.data.applyJobId",
+  },
   async ({ event, step }: any) => {
-    const gate = await step.run("authorize-and-kill-switch", async () => {
-      const db = getDb();
-      const workspace = await db.query.workspaces.findFirst({
-        where: eq(workspaces.id, event.data.workspaceId),
+    const applyJobId = event.data.applyJobId as string | undefined;
+    if (!applyJobId) {
+      await step.run("audit-missing-job", async () => {
+        await writeInngestAudit({
+          workspaceId: event.data.workspaceId,
+          actorId: event.data.requestedBy,
+          action: "apply_fail",
+          payload: { event: EVENTS.applyRequested, error: "applyJobId required" },
+        });
       });
-      const authz = await db.query.authorizations.findFirst({
-        where: eq(authorizations.id, event.data.authorizationId),
-      });
-      return evaluateApplyGate({
-        expectedWorkspaceId: event.data.workspaceId,
-        workspace,
-        authorization: authz,
-      });
+      return { ok: false, error: "applyJobId required" };
+    }
+
+    const result = await step.run("execute-authorized-mutations", async () => {
+      return runApplyJob(applyJobId);
     });
 
-    await step.run("audit-block", async () => {
-      const db = getDb();
-      if (event.data.applyJobId) {
-        await db
-          .update(applyJobs)
-          .set({
-            status: "blocked",
-            error: gate.blocked,
-            finishedAt: new Date(),
-            responseJson: { ...gate, writes: false },
-          })
-          .where(eq(applyJobs.id, event.data.applyJobId));
-      }
-      await writeInngestAudit({
+    await step.run("audit-apply", async () => {
+      await writeAuditEvent({
         workspaceId: event.data.workspaceId,
+        actorType: "worker",
         actorId: event.data.requestedBy,
-        action: "jobs.apply_blocked",
+        action: result.applyJob.status === "succeeded" ? "apply_success" : "apply_fail",
+        entityType: "apply_job",
+        entityId: applyJobId,
         payload: {
           event: EVENTS.applyRequested,
           clientId: event.data.clientId,
           authorizationId: event.data.authorizationId,
-          applyJobId: event.data.applyJobId,
-          ...gate,
-          note: "Authorize-to-apply is enforced. No Meta/Google writes. No Zapier.",
+          applyJobId,
+          writes: result.writes,
+          blocked: result.blocked,
+          outcomes: result.outcomes,
+          error: result.applyJob.error,
         },
       });
     });
 
     return {
-      ok: false,
-      stub: true,
-      ...gate,
-      note: "Apply execution is out of scope. Kill switch and authorization are required.",
+      ok: result.applyJob.status === "succeeded",
+      applyJobId,
+      status: result.applyJob.status,
+      writes: result.writes,
+      blocked: result.blocked,
+      outcomes: result.outcomes,
     };
   },
 );

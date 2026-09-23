@@ -14,6 +14,12 @@ function recVariant(status: string): "default" | "secondary" | "destructive" | "
   return "outline";
 }
 
+function recLabel(status: string): string {
+  if (status === "authorized") return "Approved";
+  if (status === "proposed") return "Open";
+  return titleCase(status);
+}
+
 function connectionVariant(status: string): "destructive" | "secondary" | "outline" {
   if (status === "error") return "destructive";
   if (status === "connected") return "secondary";
@@ -31,7 +37,7 @@ export function SeverityBadge({ severity }: { severity: string }) {
 export function RecStatusBadge({ status }: { status: string }) {
   return (
     <Badge variant={recVariant(status)} className="capitalize">
-      {titleCase(status)}
+      {recLabel(status)}
     </Badge>
   );
 }

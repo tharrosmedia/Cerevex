@@ -17,7 +17,12 @@
     "./audit": "./src/audit.ts",
     "./audit-engine": "./src/audit-engine.ts",
     "./audit-schemas": "./src/audit-schemas.ts",
-    "./apply-gate": "./src/apply-gate.ts"
+    "./apply-gate": "./src/apply-gate.ts",
+    "./apply": "./src/apply.ts",
+    "./mutate": "./src/mutate.ts",
+    "./flags": "./src/flags.ts",
+    "./approve": "./src/approve.ts",
+    "./mutations": "./src/mutations.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",

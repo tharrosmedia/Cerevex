@@ -114,29 +114,34 @@ function readJournalMigrations(migrationsDir: string, journalPath: string): OsMi
 }
 
 function readEmbeddedMigrations(dir: string): OsMigration[] {
+  const extras: Array<{ tag: string; when: number }> = [
+    { tag: "0000_m1_spine", when: 1790048328345 },
+    { tag: "0001_m2_connect", when: 1790075682637 },
+    { tag: "0002_m5_apply", when: 1790200000000 },
+  ];
   const bundlePath = resolve(dir, "os-migrate-bundle.json");
+  const fromBundle: OsMigration[] = [];
   if (existsSync(bundlePath)) {
     const bundle = JSON.parse(readFileSync(bundlePath, "utf8")) as {
       migrations: { filename: string; tag: string; when: number; sql: string }[];
     };
-    return bundle.migrations.map((entry) => {
+    for (const entry of bundle.migrations) {
       const sibling = resolve(dir, entry.filename);
       const sql = existsSync(sibling) ? readFileSync(sibling, "utf8") : entry.sql;
       assertOsQualified(sql, entry.filename);
-      return { tag: entry.tag, filename: entry.filename, when: entry.when, sql };
-    });
+      fromBundle.push({ tag: entry.tag, filename: entry.filename, when: entry.when, sql });
+    }
   }
-
-  const fallback: Array<{ tag: string; when: number }> = [
-    { tag: "0000_m1_spine", when: 1790048328345 },
-    { tag: "0001_m2_connect", when: 1790075682637 },
-  ];
-  return fallback.map((entry) => {
-    const filename = `${entry.tag}.sql`;
-    const sql = readFileSync(resolve(dir, filename), "utf8");
-    assertOsQualified(sql, filename);
-    return { ...entry, filename, sql };
-  });
+  const seen = new Set(fromBundle.map((row) => row.tag));
+  const extraRows = extras
+    .filter((entry) => !seen.has(entry.tag))
+    .map((entry) => {
+      const filename = `${entry.tag}.sql`;
+      const sql = readFileSync(resolve(dir, filename), "utf8");
+      assertOsQualified(sql, filename);
+      return { ...entry, filename, sql };
+    });
+  return [...fromBundle, ...extraRows];
 }
 
 export function loadOsMigrations(options: OsMigrateOptions = {}): OsMigration[] {

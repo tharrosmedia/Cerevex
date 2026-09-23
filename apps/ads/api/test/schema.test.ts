@@ -74,15 +74,17 @@ describe("M1 core schema", () => {
     }
   });
 
-  it("stores last_error on ad_accounts", async () => {
+  it("stores last_error and frozen on ad_accounts", async () => {
     const db = getDb();
     const result = await db.execute(sql`
       select column_name
       from information_schema.columns
       where table_schema = 'os'
         and table_name = 'ad_accounts'
-        and column_name = 'last_error'
+        and column_name in ('last_error', 'frozen')
     `);
-    expect(result.rows.length).toBe(1);
+    const names = new Set((result.rows as { column_name: string }[]).map((row) => row.column_name));
+    expect(names.has("last_error")).toBe(true);
+    expect(names.has("frozen")).toBe(true);
   });
 });

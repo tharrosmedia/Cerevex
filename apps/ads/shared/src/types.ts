@@ -51,6 +51,7 @@ export type AdAccountPublic = {
   connectionStatus: string;
   lastSyncAt: string | null;
   lastError: string | null;
+  frozen: boolean;
   hasCredentials: boolean;
   mock: boolean;
   scopes: string[];
@@ -88,6 +89,20 @@ export type WorkspaceSummary = {
   modules: ModuleFlags;
   onboardingComplete: boolean;
   onboardingCompletedAt: string | null;
+};
+
+export type ApplyJobPublic = {
+  id: string;
+  workspaceId: string;
+  clientId: string;
+  authorizationId: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  request: Record<string, unknown>;
+  response: Record<string, unknown> | null;
+  createdAt: string;
+  finishedAt: string | null;
 };
 
 export type HealthStatus = {
@@ -133,6 +148,33 @@ export type RecommendationRisk = (typeof RECOMMENDATION_RISKS)[number];
 
 export const RECOMMENDATION_STATUSES = ["proposed", "authorized", "denied", "snoozed"] as const;
 export type RecommendationStatus = (typeof RECOMMENDATION_STATUSES)[number];
+
+export const APPLY_JOB_STATUSES = ["queued", "applying", "succeeded", "failed", "blocked"] as const;
+export type ApplyJobStatus = (typeof APPLY_JOB_STATUSES)[number];
+
+export const MUTATION_ACTIONS = [
+  "pause",
+  "update_budget",
+  "update_bid",
+  "add_negative",
+  "exclude_placement",
+  "create_ad",
+  "add_keyword",
+  "review",
+] as const;
+export type MutationAction = (typeof MUTATION_ACTIONS)[number];
+
+/** Mutate-existing classes executed under Approve. create_ad / add_keyword are skipped. */
+export const EXECUTABLE_MUTATION_ACTIONS = [
+  "pause",
+  "add_negative",
+  "exclude_placement",
+  "update_bid",
+  "update_budget",
+] as const;
+export type ExecutableMutationAction = (typeof EXECUTABLE_MUTATION_ACTIONS)[number];
+
+export const CREATE_NEW_MUTATION_ACTIONS = ["create_ad", "add_keyword"] as const;
 
 export const RECOMMENDATION_SCHEMA_VERSION = "1" as const;
 

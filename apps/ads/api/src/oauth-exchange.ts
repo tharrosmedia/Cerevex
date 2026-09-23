@@ -34,7 +34,7 @@ export async function exchangeMetaCode(code: string): Promise<{
       expiresAt: json.expires_in
         ? new Date(Date.now() + json.expires_in * 1000).toISOString()
         : undefined,
-      scopes: ["ads_read"],
+      scopes: ["ads_read", "ads_management"],
       mock: false,
     },
     externalId,
