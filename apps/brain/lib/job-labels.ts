@@ -45,6 +45,29 @@ export function jobStatusLabel(status: string | null | undefined): string {
   return STATUS_LABELS[status] ?? titleCase(status);
 }
 
+export type StatusTone = "trust" | "warn" | "danger" | "info";
+
+/** Design Standards 1.2 status accents: completed/approved=trust, queued=warn, failed/rejected=danger. */
+export function jobStatusTone(status: string | null | undefined): StatusTone {
+  const value = (status || "").toLowerCase();
+  if (value === "completed" || value === "approved" || value === "published" || value === "done") {
+    return "trust";
+  }
+  if (value === "failed" || value === "rejected" || value === "error") {
+    return "danger";
+  }
+  if (
+    value === "queued" ||
+    value === "pending" ||
+    value === "running" ||
+    value === "publishing" ||
+    value === "awaiting_approval"
+  ) {
+    return "warn";
+  }
+  return "info";
+}
+
 export function jobInputLabel(input: unknown, type?: string | null): string {
   const record = asRecord(input);
   if (!record) return "No details";

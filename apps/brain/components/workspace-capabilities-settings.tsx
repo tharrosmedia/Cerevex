@@ -31,9 +31,9 @@ export async function WorkspaceCapabilitiesSettings() {
   const settings = await getWorkspaceProductSettings();
 
   return (
-    <div id="capabilities" className="mb-8 border p-4 rounded">
-      <h2 className="font-semibold mb-2">Capabilities</h2>
-      <p className="text-sm mb-4" style={{ color: 'var(--muted-foreground)' }}>
+    <div id="capabilities" className="cx-panel">
+      <h2>Capability flags</h2>
+      <p className="cx-help">
         Per-workspace product flags. Work that is not live yet is not listed here.
         Changing a flag here hides it on the next request — no Site Brain redeploy.
       </p>
@@ -55,7 +55,7 @@ export async function WorkspaceCapabilitiesSettings() {
                 <option value="recommend_only">Recommend only</option>
                 <option value="hidden">Hidden</option>
               </select>
-              <button type="submit">Save</button>
+              <button type="submit" className="btn-secondary">Save</button>
             </span>
           </form>
         ))}

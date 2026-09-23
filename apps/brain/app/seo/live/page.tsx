@@ -1,9 +1,10 @@
-import Link from 'next/link';
 import { getActiveStoreId, getStore, updateStore } from '@/src/lib/db/stores';
 import { listCatalogResources } from '@/src/lib/db/catalog';
 import { syncCatalogForStore } from '@/src/lib/shopify/sync';
-import { Button } from '@/components/ui/button';
 import { revalidatePath } from 'next/cache';
+import { EmptyState } from '@/components/empty-state';
+import { PageHeader } from '@/components/page-header';
+import { SeoSubnav } from '@/components/seo-subnav';
 
 async function syncNow() {
   'use server';
@@ -32,33 +33,62 @@ export default async function SeoLive() {
   try {
     if (storeId) resources = await listCatalogResources(storeId, 200);
   } catch (e: any) { loadError = e.message || 'load failed'; }
+
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <Link href="/seo" className="underline">← Overview</Link>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold mt-4">Live catalog</h1>
-        <form action={syncNow}><Button type="submit" variant="outline">Sync now</Button></form>
-      </div>
-      {loadError && <div className="text-red-600">Error: {loadError}</div>}
-      <table className="w-full border mt-4 text-sm">
-        <thead>
-          <tr className="bg-muted"><th className="p-2">Type</th><th>Title</th><th>Handle</th><th>SEO Title</th><th>Products</th><th>Synced</th></tr>
-        </thead>
-        <tbody>
-          {resources.length === 0 && <tr><td colSpan={6} className="p-3 text-muted-foreground">No resources synced yet. Run sync from Settings or here.</td></tr>}
-          {resources.map((r: any) => (
-            <tr key={r.id} className="border-t">
-              <td className="p-2">{r.resourceType}</td>
-              <td className="p-2">{r.title}</td>
-              <td className="p-2 font-mono text-xs">/{r.handle}</td>
-              <td className="p-2">{r.seoTitle || ''}</td>
-              <td className="p-2">{r.productCount ?? ''}</td>
-              <td className="p-2 text-xs">{r.syncedAt ? new Date(r.syncedAt).toLocaleDateString() : ''}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-2 text-xs text-muted-foreground">Articles limited to first blog (v1).</p>
+    <div className="cx-page">
+      <PageHeader
+        kicker="SEO"
+        title="Live catalog"
+        lede="Collections, pages, and articles synced from the store."
+        backHref="/seo"
+        actions={
+          <form action={syncNow}>
+            <button type="submit" className="btn-secondary">Sync now</button>
+          </form>
+        }
+      />
+      <SeoSubnav />
+
+      {loadError ? <p className="cx-banner cx-banner-warn" role="status">Could not load catalog: {loadError}</p> : null}
+
+      {resources.length === 0 && !loadError ? (
+        <EmptyState
+          message="No catalog pages synced yet. Sync now to load collections, pages, and articles."
+          action={
+            <form action={syncNow}>
+              <button type="submit" className="btn-cta">Sync now</button>
+            </form>
+          }
+        />
+      ) : resources.length > 0 ? (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Title</th>
+                <th>Handle</th>
+                <th>SEO title</th>
+                <th>Products</th>
+                <th>Synced</th>
+              </tr>
+            </thead>
+            <tbody>
+              {resources.map((r: any) => (
+                <tr key={r.id}>
+                  <td data-label="Type">{r.resourceType}</td>
+                  <td data-label="Title">{r.title}</td>
+                  <td data-label="Handle">/{r.handle}</td>
+                  <td data-label="SEO title">{r.seoTitle || '—'}</td>
+                  <td data-label="Products">{r.productCount ?? '—'}</td>
+                  <td data-label="Synced">{r.syncedAt ? new Date(r.syncedAt).toLocaleDateString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <p className="cx-help">Articles are limited to the first blog.</p>
     </div>
   );
 }

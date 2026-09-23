@@ -66,7 +66,7 @@ export async function WorkspaceSeasonalitySettings() {
   const calendar = planning?.ok ? planning.data.seasonality : null;
 
   return (
-    <div id="seasonality" className="mb-8 border p-4 rounded">
+    <div id="seasonality" className="cx-panel">
       <h2 className="font-semibold mb-2">Seasonality and offer calendar</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--muted-foreground)' }}>
         Plan seasonal offers. Calendar-to-campaign recs still need Approve. This save writes workspace settings only — not Meta or Google.

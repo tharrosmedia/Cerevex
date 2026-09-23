@@ -1,8 +1,8 @@
 import { getStore, updateStore } from '@/src/lib/db/stores';
-import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { PageHeader } from '@/components/page-header';
 
 async function update(formData: FormData) {
   'use server';
@@ -29,43 +29,61 @@ export default async function EditStore({ params, searchParams }: { params: Prom
   const sp = await searchParams;
   let store: any = null;
   try { store = await getStore(id); } catch {}
-  if (!store) return <div className="p-8">Store not found. <Link href="/stores">Back</Link></div>;
+  if (!store) {
+    return (
+      <div className="cx-page">
+        <PageHeader title="Store not found" backHref="/stores" backLabel="← Stores" />
+        <p className="cx-help">That store is gone or the id is wrong.</p>
+        <Link href="/stores" className="btn-cta">Back to stores</Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <Link href="/stores" className="underline">← Back to Stores</Link>
-      <h1 className="text-2xl font-bold my-4">Edit Store: {store.name}</h1>
+    <div className="cx-page">
+      <PageHeader
+        kicker="Stores"
+        title={`Edit ${store.name}`}
+        lede="Update store identity and credentials. Leave the token blank to keep the current one."
+        backHref="/stores"
+        backLabel="← Stores"
+      />
 
-      {sp.error === 'missing' && <div className="mb-4 p-2 bg-red-100 text-red-700">Missing required fields.</div>}
+      {sp.error === 'missing' ? (
+        <p className="cx-banner cx-banner-warn" role="status">Name and domain are required.</p>
+      ) : null}
 
-      <form action={update} className="space-y-3 border p-4 rounded">
-        <input type="hidden" name="id" value={id} />
-        <div>
-          <label className="block text-sm">Name</label>
-          <input name="name" defaultValue={store.name} className="border p-2 w-full" required />
-        </div>
-        <div>
-          <label className="block text-sm">Shopify Domain</label>
-          <input name="shopify_domain" defaultValue={store.shopify_domain} className="border p-2 w-full" required />
-        </div>
-        <div>
-          <label className="block text-sm">Platform</label>
-          <select name="platform" defaultValue={store.platform || 'shopify'} className="border p-2 w-full">
-            <option value="shopify">Shopify</option>
-            <option value="woocommerce">WooCommerce</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-         <div>
-           <label className="block text-sm">Access Token (leave blank to keep existing)</label>
-           <input name="shopify_access_token" type="password" placeholder="shpat_... (optional to update)" className="border p-2 w-full" />
-         </div>
-         <div>
-           <label className="block text-sm">Config (JSON, optional)</label>
-           <textarea name="config" defaultValue={store.config ? JSON.stringify(store.config, null, 2) : ''} className="border p-2 w-full h-24 font-mono text-sm" />
-         </div>
-         <Button type="submit">Save Changes</Button>
-      </form>
+      <section className="cx-panel" style={{ maxWidth: '40rem' }}>
+        <form action={update} className="cx-form">
+          <input type="hidden" name="id" value={id} />
+          <div className="cx-field">
+            <label htmlFor="edit-name">Name</label>
+            <input id="edit-name" name="name" defaultValue={store.name} required />
+          </div>
+          <div className="cx-field">
+            <label htmlFor="edit-domain">Shopify domain</label>
+            <input id="edit-domain" name="shopify_domain" defaultValue={store.shopify_domain} required />
+          </div>
+          <div className="cx-field">
+            <label htmlFor="edit-platform">Platform</label>
+            <select id="edit-platform" name="platform" defaultValue={store.platform || 'shopify'}>
+              <option value="shopify">Shopify</option>
+              <option value="woocommerce">WooCommerce</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="cx-field">
+            <label htmlFor="edit-token">Access token</label>
+            <input id="edit-token" name="shopify_access_token" type="password" placeholder="Leave blank to keep existing" />
+            <p className="cx-help">Paste a new token only if you need to replace the saved one.</p>
+          </div>
+          <div className="cx-field">
+            <label htmlFor="edit-config">Config (JSON, optional)</label>
+            <textarea id="edit-config" name="config" defaultValue={store.config ? JSON.stringify(store.config, null, 2) : ''} />
+          </div>
+          <button type="submit" className="btn-cta">Save changes</button>
+        </form>
+      </section>
     </div>
   );
 }

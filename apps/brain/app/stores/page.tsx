@@ -1,10 +1,12 @@
 import { listStores, createStore } from '@/src/lib/db/stores';
 import { createAdminClient } from '@/src/lib/shopify/client';
-import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
+import { EmptyState } from '@/components/empty-state';
+import { PageHeader } from '@/components/page-header';
+import { StatusBadge } from '@/components/status-badge';
 
 async function testConnection(formData: FormData) {
   'use server';
@@ -58,7 +60,6 @@ async function addStore(formData: FormData) {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
   });
-  // Initial product sync on store add (all products)
   try {
     const { syncProductsForStore } = await import('@/src/lib/shopify/sync');
     await syncProductsForStore(newStore.id);
@@ -90,88 +91,101 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <Link href="/" className="underline mb-4 block">← Back to Dashboard</Link>
-      <h1 className="text-3xl font-bold mb-8">Store Management</h1>
+    <div className="cx-page">
+      <PageHeader
+        kicker="Stores"
+        title="Stores"
+        lede="Add a Shopify store, test the connection, and choose the active store."
+      />
 
-      {loadError && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">Error: {loadError}</div>}
-      {params.add === 'success' && <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Store added successfully.</div>}
-      {params.add === 'error' && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">Add error: {params.msg}</div>}
-      {params.test === 'success' && <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">{params.msg}</div>}
-      {params.test === 'error' && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">Test failed: {params.msg}</div>}
-      {params.updated === '1' && <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Store updated.</div>}
+      {loadError ? <p className="cx-banner cx-banner-warn" role="status">{loadError}</p> : null}
+      {params.add === 'success' ? <p className="cx-banner" role="status">Store added.</p> : null}
+      {params.add === 'error' ? <p className="cx-banner cx-banner-warn" role="status">Could not add store: {params.msg}</p> : null}
+      {params.test === 'success' ? <p className="cx-banner" role="status">{params.msg}</p> : null}
+      {params.test === 'error' ? <p className="cx-banner cx-banner-warn" role="status">Test failed: {params.msg}</p> : null}
+      {params.updated === '1' ? <p className="cx-banner" role="status">Store updated.</p> : null}
 
-      <div className="mb-8 border p-4 rounded">
-        <h2 className="font-semibold mb-4">Add New Store</h2>
-        <form action={addStore} className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium mb-1">Store Name</label>
-            <input name="name" placeholder="My Store" className="border p-2 w-full" required />
+      <section className="cx-panel">
+        <h2>Add a store</h2>
+        <form action={addStore} className="cx-form">
+          <div className="cx-field">
+            <label htmlFor="store-name">Store name</label>
+            <input id="store-name" name="name" placeholder="My Store" required />
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Platform</label>
-            <select name="platform" defaultValue="shopify" className="border p-2 w-full">
+          <div className="cx-field">
+            <label htmlFor="store-platform">Platform</label>
+            <select id="store-platform" name="platform" defaultValue="shopify">
               <option value="shopify">Shopify</option>
               <option value="woocommerce">WooCommerce</option>
               <option value="other">Other</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Shopify Domain</label>
-            <input name="shopify_domain" placeholder="your-store.myshopify.com" className="border p-2 w-full" required />
-            <p className="text-xs text-muted-foreground mt-1">Exact format, e.g. hvacusa.myshopify.com (no https://, no trailing slash)</p>
+          <div className="cx-field">
+            <label htmlFor="store-domain">Shopify domain</label>
+            <input id="store-domain" name="shopify_domain" placeholder="your-store.myshopify.com" required />
+            <p className="cx-help">Exact format, e.g. hvacusa.myshopify.com — no https://, no trailing slash.</p>
           </div>
-           <div>
-             <label className="block text-sm font-medium mb-1">Shopify Access Token</label>
-             <input name="shopify_access_token" placeholder="shpat_..." type="password" className="border p-2 w-full" required />
-              <p className="text-xs text-muted-foreground mt-1">Admin API token (starts with shpat_). Create at Shopify Admin → Settings → Apps and sales channels → Develop apps. Grant read_products + write_collections at minimum. After changing scopes, click "Install app" to generate a NEW access token and paste the updated one here.</p>
-           </div>
-           <div>
-             <label className="block text-sm font-medium mb-1">Config (JSON, optional)</label>
-             <textarea name="config" placeholder='{"placement":{"collection":{"body":{"target":"main"}}}}' className="border p-2 w-full h-24 font-mono text-sm" />
-           </div>
-           <Button type="submit">Add Store</Button>
+          <div className="cx-field">
+            <label htmlFor="store-token">Shopify access token</label>
+            <input id="store-token" name="shopify_access_token" placeholder="shpat_..." type="password" required />
+            <p className="cx-help">Admin API token. Grant read_products + write_collections at minimum. After changing scopes, install the app again and paste the new token.</p>
+          </div>
+          <div className="cx-field">
+            <label htmlFor="store-config">Config (JSON, optional)</label>
+            <textarea id="store-config" name="config" placeholder='{"placement":{"collection":{"body":{"target":"main"}}}}' />
+          </div>
+          <button type="submit" className="btn-cta">Add store</button>
         </form>
-      </div>
+      </section>
 
-      <h2 className="font-semibold mb-4">Your Stores</h2>
-      {stores.length === 0 && !loadError && <p>No stores yet. Add one above.</p>}
-      <table className="w-full border">
-        <thead>
-           <tr className="bg-muted">
-             <th className="p-2 text-left">Name</th>
-             <th className="p-2 text-left">Domain</th>
-             <th className="p-2 text-left">Platform</th>
-             <th className="p-2 text-left">Created</th>
-             <th className="p-2">Actions</th>
-           </tr>
-        </thead>
-        <tbody>
-          {stores.map((store: any) => (
-             <tr key={store.id} className="border-t">
-               <td className="p-2">{store.name}</td>
-               <td className="p-2">{store.shopify_domain}</td>
-               <td className="p-2">{store.platform || 'shopify'}</td>
-               <td className="p-2 text-sm">{new Date(store.created_at).toLocaleDateString()}</td>
-               <td className="p-2 space-x-2">
-                <form action={testConnection} className="inline">
-                  <input type="hidden" name="storeId" value={store.id} />
-                  <Button type="submit" variant="outline" size="sm">Test Connection</Button>
-                </form>
-                <form action={selectStore} className="inline">
-                  <input type="hidden" name="storeId" value={store.id} />
-                  <Button type="submit" size="sm">Select</Button>
-                </form>
-                <Link href={`/stores/${store.id}/edit`} className="underline text-sm">Edit</Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <p className="mt-4 text-sm text-muted-foreground">
-        After adding, the new store is auto-selected. Use the header selector to switch stores. New stores will appear in the dashboard immediately.
-      </p>
+      <section>
+        <h2>Your stores</h2>
+        {stores.length === 0 && !loadError ? (
+          <EmptyState message="No stores yet. Add one above." />
+        ) : stores.length > 0 ? (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Domain</th>
+                  <th>Platform</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stores.map((store: any) => (
+                  <tr key={store.id}>
+                    <td data-label="Name">{store.name}</td>
+                    <td data-label="Domain">{store.shopify_domain}</td>
+                    <td data-label="Platform">
+                      <StatusBadge label={store.platform || 'shopify'} tone="info" />
+                    </td>
+                    <td data-label="Created">{new Date(store.created_at).toLocaleDateString()}</td>
+                    <td data-label="Actions">
+                      <div className="cx-actions" style={{ marginTop: 0 }}>
+                        <form action={testConnection}>
+                          <input type="hidden" name="storeId" value={store.id} />
+                          <button type="submit" className="btn-secondary">Test connection</button>
+                        </form>
+                        <form action={selectStore}>
+                          <input type="hidden" name="storeId" value={store.id} />
+                          <button type="submit" className="btn-cta">Select</button>
+                        </form>
+                        <Link href={`/stores/${store.id}/edit`} className="btn-secondary">Edit</Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        <p className="cx-help">
+          After adding, the new store is selected. Use the store switcher in the top right to change stores.
+        </p>
+      </section>
     </div>
   );
 }
