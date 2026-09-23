@@ -19,6 +19,7 @@ import {
 import { adsCapabilityOn, adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { OfflineAttribution, type OfflineAttributionView } from '@/components/ads/offline-attribution';
+import { LeadLifecycle, type LeadLifecycleView } from '@/components/ads/lead-lifecycle';
 import { LpIntelligence, type LpIntelligenceView } from '@/components/ads/lp-intelligence';
 import { adsApi } from '@/lib/ads-bff';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
@@ -81,13 +82,20 @@ export default async function AdsCockpitPage({
   const callrailVisible = adsCapabilityVisible(cockpit.workspace, 'm52.callrail_connect');
   const bundledVisible = adsCapabilityVisible(cockpit.workspace, 'm52.bundled_call_tracking');
   const crmVisible = adsCapabilityVisible(cockpit.workspace, 'm52.crm_join');
+  const lifecycleVisible = adsCapabilityVisible(cockpit.workspace, 'm52.lead_lifecycle');
+  const bookedSignalVisible = adsCapabilityVisible(cockpit.workspace, 'm52.booked_job_signal');
   const clarityVisible = adsCapabilityVisible(cockpit.workspace, 'm52.clarity_connect');
   const lpVisible = adsCapabilityVisible(cockpit.workspace, 'm52.lp_intelligence');
   let offline: OfflineAttributionView | null = null;
+  let lifecycle: LeadLifecycleView | null = null;
   let lpIntel: LpIntelligenceView | null = null;
   if ((callrailVisible || bundledVisible || crmVisible) && selectedClient) {
     const result = await adsApi<OfflineAttributionView>(`/clients/${selectedClient.id}/offline-attribution`);
     offline = result.ok ? result.data : null;
+  }
+  if ((lifecycleVisible || crmVisible) && selectedClient) {
+    const result = await adsApi<LeadLifecycleView>(`/clients/${selectedClient.id}/lead-lifecycle`);
+    lifecycle = result.ok ? result.data : null;
   }
   if ((clarityVisible || lpVisible) && selectedClient) {
     const result = await adsApi<LpIntelligenceView>(`/clients/${selectedClient.id}/lp-intelligence`);
@@ -183,6 +191,7 @@ export default async function AdsCockpitPage({
       </section>
 
       {offline?.visible ? <OfflineAttribution client={selectedClient ?? null} view={offline} /> : null}
+      {lifecycle?.visible && lifecycleVisible ? <LeadLifecycle client={selectedClient ?? null} view={lifecycle} /> : null}
       {lpIntel?.visible ? <LpIntelligence client={selectedClient ?? null} view={lpIntel} /> : null}
 
       <section className="cx-panel">
@@ -236,7 +245,7 @@ export default async function AdsCockpitPage({
         <Link href="/ads/creatives">Creatives</Link>
         <Link href="/ads/funnel">Funnel</Link>
         <Link href="/settings#modules">Modules</Link>
-        {callrailVisible || crmVisible ? <Link href="/settings#callrail">CallRail</Link> : null}
+        {callrailVisible || crmVisible || lifecycleVisible || bookedSignalVisible ? <Link href="/settings#callrail">CallRail</Link> : null}
       </nav>
     </div>
   );

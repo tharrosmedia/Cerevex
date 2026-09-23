@@ -5,7 +5,8 @@ import { getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";
-import { isBudgetShiftWritable, isCapabilityOn } from "@cerevex/contracts";
+import { isBookedJobSignalWritable, isBudgetShiftWritable, isCapabilityOn } from "@cerevex/contracts";
+import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { LiveEntityState, MutationOutcome } from "./mutate-types";
@@ -151,9 +152,18 @@ export async function readLiveEntityState(input: {
 /** M5.1 budget-shift writes — not generic M5 high-CPA `update_budget`. */
 export function isM51BudgetShiftMutation(mutation: ApplyMutation): boolean {
   const payload = mutation.payload ?? {};
+  if (payload.m52 === "booked_job") return false;
   if (payload.m51 === "budget_shift") return true;
   const reason = payload.reason;
   return mutation.action === "update_budget" && typeof reason === "string" && reason.startsWith("shift_");
+}
+
+/** M5.2 booked-job ads signal writes — not generic or M5.1 budget shift. */
+export function isM52BookedJobMutation(mutation: ApplyMutation): boolean {
+  const payload = mutation.payload ?? {};
+  if (payload.m52 === "booked_job") return true;
+  const reason = payload.reason;
+  return mutation.action === "update_budget" && typeof reason === "string" && reason.startsWith("booked_job_");
 }
 
 /** Live apply/read always goes through the AdPlatform connector registry. */
@@ -190,11 +200,7 @@ export function classifyMutation(
       reason: "Budget shift is recommend-only or off (m51.budget_shift). No platform write.",
     };
   }
-  if (mutation.action === "review") {
-    const siteBlocked = siteApplyBlockedReason(
-      getDefaultSiteConnector(),
-      typeof mutation.payload?.action === "string" ? mutation.payload.action : null,
-    );
+  if (isM52BookedJobMutation(mutation) && !isBookedJobSignalWritable(flags)) {
     return {
       action: mutation.action,
       platform: mutation.platform,
@@ -202,8 +208,24 @@ export function classifyMutation(
       status: "skipped",
       mode: "mock",
       writes: false,
-      reason: siteBlocked
-        ? "LP intelligence is recommend-only. Site apply later — nothing writes the website."
+      reason: "Booked-job signal is recommend-only or off (m52.booked_job_signal). No platform write.",
+    };
+  }
+  if (mutation.action === "review") {
+    const payloadAction = typeof mutation.payload?.action === "string" ? mutation.payload.action : null;
+    const siteBlocked = siteApplyBlockedReason(getDefaultSiteConnector(), payloadAction);
+    const crmBlocked = crmWriteBlockedReason(payloadAction === "crm_write_later" ? "lead_lifecycle" : payloadAction);
+    return {
+      action: mutation.action,
+      platform: mutation.platform,
+      target: mutation.target,
+      status: "skipped",
+      mode: "mock",
+      writes: false,
+      reason: crmBlocked
+        ? "Lead lifecycle is recommend-only. CRM apply later — nothing writes Housecall Pro."
+        : siteBlocked
+          ? "LP intelligence is recommend-only. Site apply later — nothing writes the website."
         : "Review-only mutation. No platform write.",
     };
   }

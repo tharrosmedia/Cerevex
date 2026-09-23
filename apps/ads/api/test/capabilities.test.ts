@@ -5,6 +5,7 @@ import {
   approveOperatorEmails,
   canApproveApply,
   canApproveWithApply,
+  bookedJobSignalWriteBlockedReason,
   budgetShiftWriteBlockedReason,
   capabilityOnBlockedReason,
   DEFAULT_APPROVE_OPERATOR_EMAIL,
@@ -61,6 +62,8 @@ describe("capability registry", () => {
     expect(flags["m52.callrail_connect"]).toBe("hidden");
     expect(flags["m52.bundled_call_tracking"]).toBe("hidden");
     expect(flags["m52.crm_join"]).toBe("hidden");
+    expect(flags["m52.lead_lifecycle"]).toBe("hidden");
+    expect(flags["m52.booked_job_signal"]).toBe("hidden");
     expect(flags["m52.clarity_connect"]).toBe("hidden");
     expect(flags["m52.lp_intelligence"]).toBe("hidden");
   });
@@ -71,6 +74,8 @@ describe("capability registry", () => {
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.bundled_call_tracking")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.clarity_connect")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.lp_intelligence")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.lead_lifecycle")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.booked_job_signal")).toBe(true);
     expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toBeNull();
     expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
     expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();
@@ -89,6 +94,18 @@ describe("capability registry", () => {
     expect(budgetShiftWriteBlockedReason(hidden, "budget_shift")).toBe("capability_m51_budget_shift");
     expect(budgetShiftWriteBlockedReason(on, "budget_shift")).toBeNull();
     expect(budgetShiftWriteBlockedReason(recommendOnly, "lp_congruence")).toBeNull();
+  });
+
+  it("blocks booked-job apply writes unless m52.booked_job_signal is on", () => {
+    const hidden = defaultCapabilityFlags();
+    const recommendOnly = { ...hidden, "m52.booked_job_signal": "recommend_only" as const };
+    const on = { ...hidden, "m52.booked_job_signal": "on" as const };
+    expect(bookedJobSignalWriteBlockedReason(recommendOnly, "booked_job")).toBe(
+      "capability_m52_booked_job_signal_recommend_only",
+    );
+    expect(bookedJobSignalWriteBlockedReason(hidden, "booked_job")).toBe("capability_m52_booked_job_signal");
+    expect(bookedJobSignalWriteBlockedReason(on, "booked_job")).toBeNull();
+    expect(bookedJobSignalWriteBlockedReason(recommendOnly, "crm_booked_job")).toBeNull();
   });
 
   it("hides the leads/brainstorm surface unless m51.brainstorm is visible", () => {
@@ -130,6 +147,8 @@ describe("capability registry", () => {
     expect(envCapabilityKills({ CAPABILITY_KILL_M52_BUNDLED_CALL_TRACKING: "1" })).toEqual([
       "m52.bundled_call_tracking",
     ]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_LEAD_LIFECYCLE: "1" })).toEqual(["m52.lead_lifecycle"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_BOOKED_JOB_SIGNAL: "1" })).toEqual(["m52.booked_job_signal"]);
     const flags = applyEnvKills(defaultCapabilityFlags(), env);
     expect(flags.apply).toBe("hidden");
     expect(flags.audits).toBe("hidden");

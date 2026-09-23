@@ -197,10 +197,13 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
     const offlineSignals = {
       calls: tracking.calls,
       bookedJobs: crm?.bookedJobs ?? [],
+      leads: crm?.leads ?? [],
       callrailEnabled: tracking.source === "callrail",
       bundledEnabled: tracking.source === "bundled",
       sourceLabel: tracking.sourceLabel,
       crmEnabled: isCapabilityVisible("m52.crm_join", flags) && Boolean(crm?.connected),
+      leadLifecycleEnabled: isCapabilityVisible("m52.lead_lifecycle", flags) && Boolean(crm?.connected),
+      bookedJobSignalEnabled: isCapabilityVisible("m52.booked_job_signal", flags) && Boolean(crm?.connected),
       lpSignals: clarity?.snapshot?.signals ?? [],
       lpIntelligenceEnabled:
         isCapabilityVisible("m52.lp_intelligence", flags) && Boolean(clarity?.connected),
