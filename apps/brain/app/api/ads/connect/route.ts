@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adsApi } from '@/lib/ads-bff';
+import { publicRedirect } from '@/lib/public-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,11 +16,11 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const platform = url.searchParams.get('platform');
   const clientId = url.searchParams.get('clientId');
-  const back = new URL('/ads', url.origin);
+  const back = publicRedirect('/ads', request);
   if (clientId) back.searchParams.set('client', clientId);
 
   if (!(await consoleAuthorized())) {
-    return NextResponse.redirect(new URL('/login', url.origin));
+    return NextResponse.redirect(publicRedirect('/login', request));
   }
   if (platform !== 'meta' && platform !== 'google') {
     back.searchParams.set('connect_error', 'Choose Meta or Google.');
