@@ -8,6 +8,7 @@ import type {
   Membership,
   ClientMembership,
   FindingPublic,
+  CapabilityOverrides,
   ModuleFlags,
   OAuthPlatformConfig,
   Platform,
@@ -178,6 +179,7 @@ export async function getWorkspace(): Promise<{
 export async function patchWorkspace(input: {
   businessType?: BusinessType;
   modules?: Partial<ModuleFlags>;
+  capabilities?: CapabilityOverrides;
   applyKillSwitch?: boolean;
 }): Promise<{ workspace: WorkspaceSummary | null; canMutate: boolean; canApprove?: boolean }> {
   return api("/workspace", {

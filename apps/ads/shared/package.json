@@ -22,7 +22,9 @@
     "./mutate": "./src/mutate.ts",
     "./flags": "./src/flags.ts",
     "./approve": "./src/approve.ts",
-    "./mutations": "./src/mutations.ts"
+    "./mutations": "./src/mutations.ts",
+    "./capabilities": "./src/capabilities.ts",
+    "./connectors": "./src/connectors/index.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",

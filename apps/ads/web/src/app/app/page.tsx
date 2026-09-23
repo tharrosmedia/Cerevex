@@ -7,8 +7,8 @@ import { useWorkspace } from "@/components/cockpit/workspace-context";
 import { adsRailFor } from "@/lib/ads-nav";
 
 export default function AdsOverviewPage() {
-  const { modules, workspace } = useWorkspace();
-  const enabled = adsRailFor(modules);
+  const { modules, capabilities, workspace } = useWorkspace();
+  const enabled = adsRailFor(modules, capabilities);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">

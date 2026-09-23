@@ -16,6 +16,8 @@ import {
   parseAdsFilters,
   pickDefaultClient,
 } from '@/lib/ads-query';
+import { adsCapabilityOn, adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
+import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 import { getActiveStoreId, listStores } from '@/src/lib/db/stores';
 
@@ -68,6 +70,20 @@ export default async function AdsCockpitPage({
   const spend = lastAudit ? formatMoney(typeof lastAudit.summary.spend30dUsd === 'string' ? lastAudit.summary.spend30dUsd : null) : null;
   const hasClients = cockpit.clients.length > 0;
   const canCheck = Boolean(selectedClient) && connected.length > 0;
+  const cockpitOn = adsCapabilityOn(cockpit.workspace, 'cockpit');
+  const cockpitVisible = adsCapabilityVisible(cockpit.workspace, 'cockpit');
+  const auditsOn = adsCapabilityWritable(cockpit.workspace, 'audits');
+  const connectMeta = adsCapabilityWritable(cockpit.workspace, 'connect.meta');
+  const connectGoogle = adsCapabilityWritable(cockpit.workspace, 'connect.google');
+
+  if (!cockpitVisible) {
+    return (
+      <AdsCapabilityOff
+        title="Ads cockpit is off"
+        body="This workspace hid the ads cockpit. Existing data is still readable. Flip the cockpit flag in Settings to show it again."
+      />
+    );
+  }
 
   return (
     <div className="cx-page">
@@ -77,6 +93,9 @@ export default async function AdsCockpitPage({
         See what a check found and what Cerevex suggests. Open a suggestion to Approve, Deny, or Snooze.
       </p>
 
+      {!cockpitOn ? (
+        <p className="cx-banner">Cockpit is recommend-only for this workspace. Nothing new will apply from here.</p>
+      ) : null}
       {filters.notice ? <p className="cx-banner" role="status">{filters.notice}</p> : null}
       {cockpit.workspace?.applyKillSwitch ? (
         <p className="cx-banner cx-banner-warn">Ads are paused. Approve cannot apply until the pause is off.</p>
@@ -90,6 +109,8 @@ export default async function AdsCockpitPage({
           body={cockpit.message || 'Ads checks are not connected yet. No sample data is shown.'}
           clientId={selectedClient?.id}
           showCheckHint
+          allowMeta={connectMeta}
+          allowGoogle={connectGoogle}
         />
       ) : !hasClients ? (
         <ConnectEmpty
@@ -102,6 +123,8 @@ export default async function AdsCockpitPage({
           body="No ad accounts are connected. Cerevex will not invent spend or suggestions."
           clientId={selectedClient?.id}
           showCheckHint
+          allowMeta={connectMeta}
+          allowGoogle={connectGoogle}
         />
       ) : null}
 
@@ -147,11 +170,13 @@ export default async function AdsCockpitPage({
         <CheckAdsButton
           clientId={selectedClient?.id}
           disabledReason={
-            !selectedClient
-              ? 'Choose a client to run a check.'
-              : connected.length === 0
-                ? 'Connect Meta or Google first.'
-                : undefined
+            !auditsOn
+              ? 'Audits are off for this workspace.'
+              : !selectedClient
+                ? 'Choose a client to run a check.'
+                : connected.length === 0
+                  ? 'Connect Meta or Google first.'
+                  : undefined
           }
         />
         {!canCheck ? null : (

@@ -3,6 +3,7 @@ import { evaluateAccount } from "./audit-engine";
 import { auditRunSummarySchema, parseFindingDraft, parseRecommendationDraft } from "./audit-schemas";
 import { getDb } from "./db";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
+import { inferApplyJobType } from "./mutation-families";
 import {
   adAccounts,
   adEntities,
@@ -491,6 +492,7 @@ export async function createApplyJobForAuthorization(input: {
   authorizationId: string;
   recommendationId: string;
   proposedMutations: unknown;
+  jobType?: "mutate_existing" | "create_entity";
 }): Promise<ApplyJobPublic> {
   const db = getDb();
   const key = applyJobIdempotencyKey(input.recommendationId);
@@ -500,6 +502,7 @@ export async function createApplyJobForAuthorization(input: {
   if (existing) {
     return toApplyJobPublic(existing);
   }
+  const jobType = input.jobType ?? inferApplyJobType(input.proposedMutations);
   const [job] = await db
     .insert(applyJobs)
     .values({
@@ -511,6 +514,7 @@ export async function createApplyJobForAuthorization(input: {
       requestJson: {
         recommendationId: input.recommendationId,
         proposedMutations: input.proposedMutations,
+        jobType,
       },
     })
     .returning();

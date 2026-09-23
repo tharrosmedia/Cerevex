@@ -1,11 +1,12 @@
 /**
- * Cross-app origins for leftover ads-web links.
- * M4 cockpit lives in-shell under /ads. Prefer ADS_API_URL + BFF instead of this hostname.
+ * Leftover ads-web cross-origin links are gated (R4).
+ * Operator path is in-shell /ads + ADS_API_URL BFF.
+ * Set NEXT_PUBLIC_ADS_ORIGIN only when shell.legacy_ads_web is intentionally on.
  */
 export function adsModuleOrigin(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_ADS_ORIGIN?.replace(/\/$/, '');
-  if (fromEnv) return fromEnv;
-  if (process.env.NODE_ENV === 'production') return 'https://app.cerevex.store';
+  if (process.env.NEXT_PUBLIC_ADS_LEGACY_CHROME === '1') {
+    return (process.env.NEXT_PUBLIC_ADS_ORIGIN ?? '').replace(/\/$/, '');
+  }
   return '';
 }
 

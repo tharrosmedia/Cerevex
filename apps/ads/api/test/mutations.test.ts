@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { classifyMutation } from "@tharros/ads-shared/mutate";
-import { isCreateNewMutationAction, summarizeMutation } from "@tharros/ads-shared";
+import {
+  inferApplyJobType,
+  isCreateNewMutationAction,
+  resolveWorkspaceCapabilities,
+  summarizeMutation,
+} from "@tharros/ads-shared";
 
 describe("M5 mutation classes", () => {
   it("skips create-new and review classes", () => {
@@ -33,5 +38,34 @@ describe("M5 mutation classes", () => {
         target: { name: "Waste campaign" },
       }),
     ).toMatch(/Pause/);
+  });
+
+  it("skips bid/budget when the capability registry rolls them back", () => {
+    const flags = resolveWorkspaceCapabilities({
+      capabilities: { "apply.bid": "hidden", "apply.budget": "hidden" },
+    });
+    expect(
+      classifyMutation(
+        {
+          platform: "meta",
+          action: "update_bid",
+          target: { entityType: "adset", externalId: "1", name: "HVAC" },
+          payload: { percent: -10 },
+        },
+        flags,
+      )?.reason,
+    ).toMatch(/apply\.bid|FEATURE_BID_MUTATIONS/);
+    expect(
+      classifyMutation(
+        {
+          platform: "meta",
+          action: "update_budget",
+          target: { entityType: "campaign", externalId: "1", name: "HVAC" },
+          payload: { percent: -10 },
+        },
+        flags,
+      )?.reason,
+    ).toMatch(/apply\.budget|FEATURE_BUDGET_MUTATIONS/);
+    expect(inferApplyJobType([{ action: "create_ad" }])).toBe("create_entity");
   });
 });

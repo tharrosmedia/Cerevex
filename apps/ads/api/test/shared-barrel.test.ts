@@ -7,5 +7,7 @@ describe("@tharros/ads-shared root barrel", () => {
     expect(shared).not.toHaveProperty("requiredEnv");
     expect(shared).not.toHaveProperty("encryptSecret");
     expect(shared).not.toHaveProperty("oauthConfig");
+    expect(shared).not.toHaveProperty("metaAdPlatformConnector");
+    expect(shared).not.toHaveProperty("callRailConnector");
   });
 });

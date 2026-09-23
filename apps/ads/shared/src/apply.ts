@@ -1,8 +1,16 @@
 import { desc, eq } from "drizzle-orm";
+import { isCapabilityOn, resolveWorkspaceCapabilities } from "@shopify-brain/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { parseApplyMutations } from "./audit-schemas";
 import { getDb } from "./db";
 import { executeMutation, type MutationOutcome } from "./mutate";
+import {
+  inferApplyJobType,
+  isSealedCreateEntityJob,
+  mutationFamilySkipReason,
+  MUTATION_FAMILIES,
+  type ApplyJobType,
+} from "./mutation-families";
 import {
   adAccounts,
   applyJobs,
@@ -152,6 +160,64 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
     throw new Error("Recommendation or ad account missing for apply job");
   }
 
+  const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
+  const request = (job.requestJson as Record<string, unknown> | null) ?? {};
+  const jobType = (typeof request.jobType === "string" ? request.jobType : inferApplyJobType(request.proposedMutations)) as ApplyJobType;
+
+  if (!isCapabilityOn("apply", capabilities)) {
+    const response = {
+      writes: false,
+      outcomes: [],
+      blocked: "capability_apply",
+      jobType,
+      mode: "mock",
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "succeeded",
+        error: null,
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: "capability_apply",
+    };
+  }
+
+  if (isSealedCreateEntityJob(jobType) && !isCapabilityOn("apply.create_entity", capabilities)) {
+    const sealed = mutationFamilySkipReason(MUTATION_FAMILIES.create_entity);
+    const response = {
+      writes: false,
+      outcomes: [],
+      blocked: "create_entity_sealed",
+      jobType,
+      mode: "mock",
+      reason: sealed,
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "succeeded",
+        error: null,
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: "create_entity_sealed",
+    };
+  }
+
   const mutations = parseApplyMutations(recommendation.proposedMutationsJson);
   const outcomes: MutationOutcome[] = [];
   let failed: string | null = null;
@@ -175,6 +241,7 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
         platform: account.platform,
         accountExternalId: account.externalId,
         mutation,
+        capabilities,
       });
       outcomes.push(outcome);
       if (outcome.status === "failed") {
@@ -206,6 +273,7 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
     createNewSkipped: outcomes
       .filter((row) => row.status === "skipped" && /create-new|Create-new/i.test(row.reason ?? ""))
       .map((row) => row.action),
+    jobType,
   };
 
   await db

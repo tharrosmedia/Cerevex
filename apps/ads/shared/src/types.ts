@@ -1,3 +1,4 @@
+import type { CapabilityFlags } from "@shopify-brain/contracts";
 import type { BusinessType, ModuleFlags } from "./modules";
 
 export const ROLES = ["owner", "operator", "client_readonly"] as const;
@@ -89,6 +90,7 @@ export type WorkspaceSummary = {
   modules: ModuleFlags;
   onboardingComplete: boolean;
   onboardingCompletedAt: string | null;
+  capabilities: CapabilityFlags;
 };
 
 export type ApplyJobPublic = {

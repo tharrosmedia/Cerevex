@@ -90,3 +90,60 @@ export {
   filterItemsByModules,
 } from "./modules";
 export type { BusinessType, AdsModuleId, ModuleFlags, WorkspaceModuleSettings } from "./modules";
+
+export {
+  CAPABILITY_STATES,
+  CAPABILITY_IDS,
+  CAPABILITY_CATALOG,
+  CAPABILITY_CATALOG_LIST,
+  isCapabilityId,
+  isCapabilityState,
+  defaultCapabilityFlags,
+  capabilityEnvKillKey,
+  envCapabilityKills,
+  parseCapabilityOverrides,
+  mergeCapabilityFlags,
+  applyEnvKills,
+  resolveWorkspaceCapabilities,
+  settingsJsonWithCapabilityOverrides,
+  isCapabilityOn,
+  isCapabilityVisible,
+  isCapabilityWritable,
+  capabilityBlockMessage,
+  filterItemsByCapabilities,
+} from "./capabilities";
+export type {
+  CapabilityState,
+  CapabilityId,
+  CapabilityFlags,
+  CapabilityOverrides,
+  CapabilityCatalogEntry,
+} from "./capabilities";
+
+export {
+  ADS_NAV_SHELLS,
+  ADS_NAV_ITEM_IDS,
+  ADS_NAV_CATALOG,
+  ADS_NAV_HREFS_IN_SHELL,
+  ADS_NAV_HREFS_LEGACY_WEB,
+  adsNavHrefsFor,
+  resolveAdsNav,
+} from "./ads-nav";
+export type { AdsNavShell, AdsNavItemId, AdsNavCatalogItem, ResolvedAdsNavItem } from "./ads-nav";
+
+export {
+  CONNECTOR_KINDS,
+  AD_PLATFORM_CONNECTOR_IDS,
+  ANALYTICS_CONNECTOR_IDS,
+  CALL_TRACKING_CONNECTOR_IDS,
+  CONNECTOR_CATALOG,
+} from "./connectors";
+export type {
+  ConnectorKind,
+  AdPlatformConnectorId,
+  AnalyticsConnectorId,
+  CallTrackingConnectorId,
+  ConnectorId,
+  ConnectorImplementation,
+  ConnectorCatalogEntry,
+} from "./connectors";

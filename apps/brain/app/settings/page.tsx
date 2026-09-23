@@ -10,6 +10,7 @@ import { syncProductsForStore, syncCatalogForStore } from '@/src/lib/shopify/syn
 import { listProducts } from '@/src/lib/db/products';
 import { getDefaultSEORules } from '@/src/lib/seo/rules';
 import { SEORulesEditor } from '@/components/SEORulesEditor';
+import { WorkspaceCapabilitiesSettings } from '@/components/workspace-capabilities-settings';
 import { WorkspaceModulesSettings } from '@/components/workspace-modules-settings';
 
 async function resyncInngest() {
@@ -435,8 +436,8 @@ async function syncCatalogAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string };
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string };
   let store = null;
   try {
     store = await getActiveStore();
@@ -463,7 +464,15 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
         <div className="mb-4 p-3 border text-sm">Could not save modules. Try again.</div>
       )}
 
+      {params.capabilities === 'saved' && (
+        <div className="mb-4 p-3 border text-sm">Capability saved. Unfinished flags stay hidden until you turn them on.</div>
+      )}
+      {params.capabilities === 'error' && (
+        <div className="mb-4 p-3 border text-sm">Could not save that capability. Try again.</div>
+      )}
+
       <WorkspaceModulesSettings />
+      <WorkspaceCapabilitiesSettings />
 
       {params.resync === 'success' && (
         <div className="mb-4 p-3 bg-green-100 text-green-700 rounded text-sm">Inngest resync successful.</div>

@@ -1,8 +1,10 @@
 import {
   parseWorkspaceModuleSettings,
+  resolveWorkspaceCapabilities,
   settingsJsonWithBusinessType,
   settingsJsonWithModuleOverrides,
   type BusinessType,
+  type CapabilityFlags,
   type ModuleFlags,
   type WorkspaceModuleSettings,
 } from "@shopify-brain/contracts";
@@ -56,11 +58,13 @@ export function toWorkspaceSummary(row: {
   id: string;
   name: string;
   applyKillSwitch: boolean;
+  capabilities: CapabilityFlags;
 } & WorkspaceModuleSettings {
   return {
     id: row.id,
     name: row.name,
     applyKillSwitch: row.applyKillSwitch,
+    capabilities: resolveWorkspaceCapabilities(row.settingsJson),
     ...readWorkspaceModules(row.settingsJson),
   };
 }

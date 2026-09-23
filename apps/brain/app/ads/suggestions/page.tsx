@@ -11,6 +11,8 @@ import {
   parseAdsFilters,
   pickDefaultClient,
 } from '@/lib/ads-query';
+import { adsCapabilityVisible } from '@/lib/ads-capabilities';
+import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +35,15 @@ export default async function AdsSuggestionsPage({
   const selected = pickDefaultClient(cockpit.clients, null, filters.client);
   const accounts = await loadAccounts(cockpit.clients.map((client) => client.id));
   const suggestions = rankSuggestions(filterSuggestions(cockpit.suggestions, filters, accounts));
+
+  if (!adsCapabilityVisible(cockpit.workspace, 'cockpit')) {
+    return (
+      <AdsCapabilityOff
+        title="Suggestions are off"
+        body="The ads cockpit is hidden for this workspace. Flip the cockpit flag to show suggestions again."
+      />
+    );
+  }
 
   return (
     <div className="cx-page">

@@ -5,13 +5,18 @@ import { z } from "zod";
 import {
   applyBlockMessage,
   applyBusinessTypeSettings,
+  applyCapabilityOverrideSettings,
   applyModuleOverrideSettings,
   canApproveApply,
   canMutate,
+  CAPABILITY_IDS,
   EVENTS,
   isBusinessType,
+  isCapabilityId,
+  isCapabilityState,
   toWorkspaceSummary,
 } from "@tharros/ads-shared";
+import { capabilityPublicMeta, requireWritableCapability } from "./capabilities";
 import { latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shared/apply";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
@@ -70,6 +75,8 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         throw new HTTPException(404, { message: "Ad account not found" });
       }
     }
+
+    await requireWritableCapability(client.workspaceId, "audits");
 
     const run = await createAuditRun({
       workspaceId: client.workspaceId,
@@ -502,6 +509,11 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     });
   });
 
+  const capabilityPatchSchema = z.record(
+    z.string(),
+    z.enum(["on", "hidden", "recommend_only"]),
+  );
+
   const workspacePatchSchema = z
     .object({
       businessType: z.enum(["home_service", "agency", "ecommerce"]).optional(),
@@ -514,10 +526,20 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
           workflows: z.boolean().optional(),
         })
         .optional(),
+      capabilities: capabilityPatchSchema.optional(),
     })
-    .refine((value) => Boolean(value.businessType || value.modules || value.applyKillSwitch !== undefined), {
-      message: "businessType, modules, or applyKillSwitch is required",
-    });
+    .refine(
+      (value) =>
+        Boolean(
+          value.businessType ||
+            value.modules ||
+            value.applyKillSwitch !== undefined ||
+            value.capabilities,
+        ),
+      {
+        message: "businessType, modules, capabilities, or applyKillSwitch is required",
+      },
+    );
 
   app.get("/workspace", requireAuth, async (c) => {
     const auth = c.get("auth");
@@ -528,10 +550,12 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     const workspace = await getDb().query.workspaces.findFirst({
       where: eq(workspaces.id, workspaceId),
     });
+    const summary = workspace ? toWorkspaceSummary(workspace) : null;
     return c.json({
-      workspace: workspace ? toWorkspaceSummary(workspace) : null,
+      workspace: summary,
       canMutate: workspace ? canMutate(auth, workspace.id) : false,
       canApprove: canApproveApply(auth.user.email),
+      ...(summary ? capabilityPublicMeta(summary.capabilities) : {}),
     });
   });
 
@@ -546,7 +570,9 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
     const parsed = workspacePatchSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      throw new HTTPException(400, { message: "businessType, modules, or applyKillSwitch is required" });
+      throw new HTTPException(400, {
+        message: "businessType, modules, capabilities, or applyKillSwitch is required",
+      });
     }
 
     const workspace = await getDb().query.workspaces.findFirst({
@@ -562,6 +588,16 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
     if (parsed.data.modules) {
       next = applyModuleOverrideSettings(next, parsed.data.modules);
+    }
+    if (parsed.data.capabilities) {
+      const overrides: Record<string, "on" | "hidden" | "recommend_only"> = {};
+      for (const [id, state] of Object.entries(parsed.data.capabilities)) {
+        if (isCapabilityId(id) && isCapabilityState(state)) overrides[id] = state;
+      }
+      if (Object.keys(overrides).length === 0) {
+        throw new HTTPException(400, { message: `Unknown capability. Known: ${CAPABILITY_IDS.join(", ")}` });
+      }
+      next = applyCapabilityOverrideSettings(next, overrides);
     }
 
     const patch: { settingsJson: unknown; applyKillSwitch?: boolean } = { settingsJson: next };
@@ -593,13 +629,18 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       userId: auth.user.id,
       businessType: parsed.data.businessType,
       modules: parsed.data.modules,
+      capabilities: parsed.data.capabilities,
       applyKillSwitch: parsed.data.applyKillSwitch,
     });
 
+    const summary = updated
+      ? toWorkspaceSummary(updated)
+      : toWorkspaceSummary({ ...workspace, settingsJson: next });
     return c.json({
-      workspace: updated ? toWorkspaceSummary(updated) : toWorkspaceSummary({ ...workspace, settingsJson: next }),
+      workspace: summary,
       canMutate: true,
       canApprove: canApproveApply(auth.user.email),
+      ...capabilityPublicMeta(summary.capabilities),
     });
   });
 }

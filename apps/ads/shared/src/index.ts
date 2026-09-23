@@ -3,7 +3,24 @@ export * from "./modules";
 export * from "./roles";
 export * from "./mutations";
 export * from "./approve";
-// Node-only helpers stay on subpaths (`./env`, `./crypto`, `./oauth`).
+export * from "./capabilities";
+export * from "./mutation-families";
+export {
+  ADS_NAV_CATALOG,
+  ADS_NAV_HREFS_IN_SHELL,
+  ADS_NAV_HREFS_LEGACY_WEB,
+  resolveAdsNav,
+} from "@shopify-brain/contracts";
+export type { AdsNavItemId, AdsNavShell, ResolvedAdsNavItem } from "@shopify-brain/contracts";
+export type {
+  AdPlatformConnector,
+  AnalyticsConnector,
+  CallTrackingConnector,
+  Connector,
+  ConnectorConnectInput,
+  ConnectorConnectResult,
+} from "./connectors/types";
+// Node-only helpers stay on subpaths (`./env`, `./crypto`, `./oauth`, `./connectors`).
 // Re-exporting them here pulls `node:fs` into Next client chunks (Turbopack
 // `/app/page` build failure).
 export { mockPull } from "./platforms";
