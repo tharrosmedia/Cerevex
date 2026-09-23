@@ -144,9 +144,24 @@ Deepens Phase A `CrmConnector` (`hcp`). `m52.crm_join`, `m52.lead_lifecycle`, an
 - Booked-job recs can propose `update_budget` toward the campaign that booked work. Approve → `apply_jobs` with the same kill/freeze/audit gates. Deny/Snooze never write.
 - Core ads/cockpit stays healthy when all three flags are hidden.
 
+## M5.2 Phase E (operator hygiene)
+
+`m52.creative_fatigue`, `m52.search_negatives`, `m52.geo_discipline`, and `m52.brand_guardrails` are live product flags (`unfinished: false`). Default `hidden`. Env kills: `CAPABILITY_KILL_M52_CREATIVE_FATIGUE=1`, `CAPABILITY_KILL_M52_SEARCH_NEGATIVES=1`, `CAPABILITY_KILL_M52_GEO_DISCIPLINE=1`, `CAPABILITY_KILL_M52_BRAND_GUARDRAILS=1`.
+
+| Id | Role |
+|---|---|
+| `m52.creative_fatigue` | Refresh-cadence recs when an ad looks tired. Plain-language why; metrics behind Details. Mutations stay `review`. |
+| `m52.search_negatives` | Google search-term / negative hygiene recs. Visible when `on` or `recommend_only`. `add_negative` writes only when `on` and Approve passes. |
+| `m52.geo_discipline` | Tighten or correct geo / service area. Visible when `on` or `recommend_only`. `tighten_geo` only when `on`. Live location targeting stays out of this slice. |
+| `m52.brand_guardrails` | Block or warn on claims / brand risk. Pause writes only when `on`. Spend-up / create is skipped when the flag is visible and the target has a blocking claim. Never silent unsupervised spend past a guardrail. |
+
+- Recs enter the day-job inbox through `runAuditRun` → `evaluateAccount`. Hidden flags emit nothing and filter leftover rows from GET `/recommendations`.
+- Approve → `apply_jobs` with the same kill / freeze / audit gates. Deny / Snooze never write.
+- Core ads/cockpit stays healthy when all four flags are hidden. CallRail / bundled / Clarity / LP / CRM Phase D behavior is unchanged.
+
 ## Out of scope (still deferred)
 
-- **M5.2 later phases** — weekly narrative, seasonality. Unsupervised CRM write-backs stay out.
+- **M5.2 Phase F** — seasonality / offer calendar + owner weekly AM-style narrative. Unsupervised CRM write-backs stay out.
 - Dropping the one-release Inngest `LEGACY_ADS_*` listeners.
 - Railway service / DNS / domain cutover. Live Inngest app id `shopify-brain`. Neon schema rename.
 

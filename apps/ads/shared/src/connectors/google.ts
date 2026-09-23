@@ -313,6 +313,16 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
           },
         },
       });
+    } else if (mutation.action === "tighten_geo") {
+      return {
+        action: mutation.action,
+        platform: "google",
+        target: mutation.target,
+        status: "skipped",
+        mode: "live",
+        writes: false,
+        reason: "Service-area tighten is Approve-recorded. Live location targeting is not in this slice.",
+      };
     } else if (mutation.action === "exclude_placement") {
       const url = typeof mutation.payload.placement === "string" ? mutation.payload.placement : "example.com";
       operations.push({

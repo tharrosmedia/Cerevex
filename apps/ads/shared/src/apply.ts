@@ -1,9 +1,13 @@
 import { desc, eq } from "drizzle-orm";
 import {
   bookedJobSignalWriteBlockedReason,
+  brandGuardrailsWriteBlockedReason,
   budgetShiftWriteBlockedReason,
+  creativeFatigueWriteBlockedReason,
+  geoDisciplineWriteBlockedReason,
   isCapabilityOn,
   resolveWorkspaceCapabilities,
+  searchNegativesWriteBlockedReason,
 } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { getDefaultSiteConnector } from "./connectors/site";
@@ -281,6 +285,52 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
       outcomes: [],
       writes: false,
       blocked: siteBlocked,
+    };
+  }
+
+  const hygieneBlocks: Array<{ blocked: string | null; reason: string }> = [
+    {
+      blocked: creativeFatigueWriteBlockedReason(capabilities, recommendation.type),
+      reason: "Creative fatigue is recommend-only or off. No platform write.",
+    },
+    {
+      blocked: searchNegativesWriteBlockedReason(capabilities, recommendation.type),
+      reason: "Search-term hygiene is recommend-only or off. No platform write.",
+    },
+    {
+      blocked: geoDisciplineWriteBlockedReason(capabilities, recommendation.type),
+      reason: "Geo / service-area is recommend-only or off. No platform write.",
+    },
+    {
+      blocked: brandGuardrailsWriteBlockedReason(capabilities, recommendation.type),
+      reason: "Brand guardrails are recommend-only or off. No platform write.",
+    },
+  ];
+  for (const row of hygieneBlocks) {
+    if (!row.blocked) continue;
+    const response = {
+      writes: false,
+      outcomes: [],
+      blocked: row.blocked,
+      jobType,
+      mode: "mock",
+      reason: row.reason,
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "succeeded",
+        error: null,
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: row.blocked,
     };
   }
 

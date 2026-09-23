@@ -6,13 +6,18 @@ import { z } from "zod";
 import {
   isBookedJobSignalRecommendationType,
   isBookedJobSignalVisible,
+  isBrandGuardrailsVisible,
   isCallAttributionVisible,
   isCapabilityVisible,
+  isCreativeFatigueVisible,
+  isGeoDisciplineVisible,
+  isHygieneRecommendationType,
   isLeadLifecycleRecommendationType,
   isLeadLifecycleVisible,
   isLpIntelligenceRecommendationType,
   isLpIntelligenceVisible,
   isOfflineRecommendationType,
+  isSearchNegativesVisible,
   summarizeLeadLifecycle,
   type CapabilityFlags,
 } from "@tharros/ads-shared";
@@ -93,6 +98,12 @@ export function filterOfflineRecommendations<T extends { type: string }>(
     if (isLpIntelligenceRecommendationType(row.type)) return isLpIntelligenceVisible(flags);
     if (isLeadLifecycleRecommendationType(row.type)) return isLeadLifecycleVisible(flags);
     if (isBookedJobSignalRecommendationType(row.type)) return isBookedJobSignalVisible(flags);
+    if (isHygieneRecommendationType(row.type)) {
+      if (row.type === "creative_fatigue") return isCreativeFatigueVisible(flags);
+      if (row.type === "search_negatives") return isSearchNegativesVisible(flags);
+      if (row.type === "geo_discipline") return isGeoDisciplineVisible(flags);
+      if (row.type === "brand_guardrails") return isBrandGuardrailsVisible(flags);
+    }
     if (!isOfflineRecommendationType(row.type)) return true;
     if (row.type === "call_attribution") return isCallAttributionVisible(flags);
     if (row.type === "crm_booked_job") return isCapabilityVisible("m52.crm_join", flags);

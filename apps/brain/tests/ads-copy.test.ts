@@ -21,6 +21,13 @@ assert.ok(suggestionWhy('lead_lifecycle').toLowerCase().includes('crm apply late
 assert.equal(suggestionLabel('booked_job'), 'Booked jobs can steer ads');
 assert.equal(suggestionLabel('lp_intelligence'), 'Improve the landing page');
 assert.ok(suggestionWhy('lp_intelligence').toLowerCase().includes('site apply later'));
+assert.equal(suggestionLabel('creative_fatigue'), 'Refresh the tired ad');
+assert.ok(!suggestionWhy('creative_fatigue').toLowerCase().includes('ctr'));
+assert.equal(suggestionLabel('search_negatives'), 'Add Google negatives');
+assert.ok(suggestionWhy('search_negatives').toLowerCase().includes('approve'));
+assert.equal(suggestionLabel('geo_discipline'), 'Tighten the service area');
+assert.equal(suggestionLabel('brand_guardrails'), 'Hold a claim or brand risk');
+assert.ok(suggestionWhy('brand_guardrails').toLowerCase().includes('block'));
 assert.equal(suggestionWhy('improve_ctr'), 'People are seeing the ad but not clicking it.');
 assert.ok(!suggestionWhy('improve_ctr').toLowerCase().includes('ctr'));
 assert.ok(!suggestionWhy('review_cpa').toLowerCase().includes('roas'));

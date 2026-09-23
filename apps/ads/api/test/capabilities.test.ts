@@ -6,7 +6,11 @@ import {
   canApproveApply,
   canApproveWithApply,
   bookedJobSignalWriteBlockedReason,
+  brandGuardrailsWriteBlockedReason,
   budgetShiftWriteBlockedReason,
+  creativeFatigueWriteBlockedReason,
+  geoDisciplineWriteBlockedReason,
+  searchNegativesWriteBlockedReason,
   capabilityOnBlockedReason,
   DEFAULT_APPROVE_OPERATOR_EMAIL,
   defaultCapabilityFlags,
@@ -66,6 +70,10 @@ describe("capability registry", () => {
     expect(flags["m52.booked_job_signal"]).toBe("hidden");
     expect(flags["m52.clarity_connect"]).toBe("hidden");
     expect(flags["m52.lp_intelligence"]).toBe("hidden");
+    expect(flags["m52.creative_fatigue"]).toBe("hidden");
+    expect(flags["m52.search_negatives"]).toBe("hidden");
+    expect(flags["m52.geo_discipline"]).toBe("hidden");
+    expect(flags["m52.brand_guardrails"]).toBe("hidden");
   });
 
   it("lists live m51 flags in operator Settings and allows on", () => {
@@ -76,6 +84,10 @@ describe("capability registry", () => {
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.lp_intelligence")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.lead_lifecycle")).toBe(true);
     expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.booked_job_signal")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.creative_fatigue")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.search_negatives")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.geo_discipline")).toBe(true);
+    expect(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === "m52.brand_guardrails")).toBe(true);
     expect(capabilityOnBlockedReason("m51.brainstorm", "on")).toBeNull();
     expect(capabilityOnBlockedReason("m51.budget_shift", "recommend_only")).toBeNull();
     expect(capabilityOnBlockedReason("shell.legacy_ads_web", "on")).toBeNull();
@@ -106,6 +118,41 @@ describe("capability registry", () => {
     expect(bookedJobSignalWriteBlockedReason(hidden, "booked_job")).toBe("capability_m52_booked_job_signal");
     expect(bookedJobSignalWriteBlockedReason(on, "booked_job")).toBeNull();
     expect(bookedJobSignalWriteBlockedReason(recommendOnly, "crm_booked_job")).toBeNull();
+  });
+
+  it("blocks Phase E hygiene writes unless the matching flag is on", () => {
+    const hidden = defaultCapabilityFlags();
+    const recommendOnly = {
+      ...hidden,
+      "m52.search_negatives": "recommend_only" as const,
+      "m52.geo_discipline": "recommend_only" as const,
+      "m52.brand_guardrails": "recommend_only" as const,
+      "m52.creative_fatigue": "recommend_only" as const,
+    };
+    const on = {
+      ...hidden,
+      "m52.search_negatives": "on" as const,
+      "m52.geo_discipline": "on" as const,
+      "m52.brand_guardrails": "on" as const,
+      "m52.creative_fatigue": "on" as const,
+    };
+    expect(searchNegativesWriteBlockedReason(recommendOnly, "search_negatives")).toBe(
+      "capability_m52_search_negatives_recommend_only",
+    );
+    expect(searchNegativesWriteBlockedReason(on, "search_negatives")).toBeNull();
+    expect(geoDisciplineWriteBlockedReason(recommendOnly, "geo_discipline")).toBe(
+      "capability_m52_geo_discipline_recommend_only",
+    );
+    expect(geoDisciplineWriteBlockedReason(on, "geo_discipline")).toBeNull();
+    expect(brandGuardrailsWriteBlockedReason(recommendOnly, "brand_guardrails")).toBe(
+      "capability_m52_brand_guardrails_recommend_only",
+    );
+    expect(brandGuardrailsWriteBlockedReason(on, "brand_guardrails")).toBeNull();
+    expect(creativeFatigueWriteBlockedReason(recommendOnly, "creative_fatigue")).toBe(
+      "capability_m52_creative_fatigue_recommend_only",
+    );
+    expect(creativeFatigueWriteBlockedReason(on, "creative_fatigue")).toBeNull();
+    expect(searchNegativesWriteBlockedReason(recommendOnly, "pause_waste")).toBeNull();
   });
 
   it("hides the leads/brainstorm surface unless m51.brainstorm is visible", () => {
@@ -149,6 +196,10 @@ describe("capability registry", () => {
     ]);
     expect(envCapabilityKills({ CAPABILITY_KILL_M52_LEAD_LIFECYCLE: "1" })).toEqual(["m52.lead_lifecycle"]);
     expect(envCapabilityKills({ CAPABILITY_KILL_M52_BOOKED_JOB_SIGNAL: "1" })).toEqual(["m52.booked_job_signal"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_CREATIVE_FATIGUE: "1" })).toEqual(["m52.creative_fatigue"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_SEARCH_NEGATIVES: "1" })).toEqual(["m52.search_negatives"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_GEO_DISCIPLINE: "1" })).toEqual(["m52.geo_discipline"]);
+    expect(envCapabilityKills({ CAPABILITY_KILL_M52_BRAND_GUARDRAILS: "1" })).toEqual(["m52.brand_guardrails"]);
     const flags = applyEnvKills(defaultCapabilityFlags(), env);
     expect(flags.apply).toBe("hidden");
     expect(flags.audits).toBe("hidden");

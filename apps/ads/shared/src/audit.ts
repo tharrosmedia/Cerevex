@@ -207,6 +207,14 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       lpSignals: clarity?.snapshot?.signals ?? [],
       lpIntelligenceEnabled:
         isCapabilityVisible("m52.lp_intelligence", flags) && Boolean(clarity?.connected),
+      creativeFatigueEnabled: isCapabilityVisible("m52.creative_fatigue", flags),
+      creativeFatigueWritable: flags["m52.creative_fatigue"] === "on",
+      searchNegativesEnabled: isCapabilityVisible("m52.search_negatives", flags),
+      searchNegativesWritable: flags["m52.search_negatives"] === "on",
+      geoDisciplineEnabled: isCapabilityVisible("m52.geo_discipline", flags),
+      geoDisciplineWritable: flags["m52.geo_discipline"] === "on",
+      brandGuardrailsEnabled: isCapabilityVisible("m52.brand_guardrails", flags),
+      brandGuardrailsWritable: flags["m52.brand_guardrails"] === "on",
     };
 
     for (const account of accountRows) {

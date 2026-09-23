@@ -50,7 +50,11 @@ The kill switch is a hard product control (default **true** / ON). Approve is bl
     "m52.lead_lifecycle": "hidden",
     "m52.booked_job_signal": "hidden",
     "m52.clarity_connect": "hidden",
-    "m52.lp_intelligence": "hidden"
+    "m52.lp_intelligence": "hidden",
+    "m52.creative_fatigue": "hidden",
+    "m52.search_negatives": "hidden",
+    "m52.geo_discipline": "hidden",
+    "m52.brand_guardrails": "hidden"
   }
 }
 ```

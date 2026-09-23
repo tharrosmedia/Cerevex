@@ -106,6 +106,14 @@ export function RecommendationActions({
                 ? 'This will create a paused ad after Grok. Brainstorm did not write live.'
                 : suggestion.type === 'lp_congruence' || suggestion.type === 'lp_intelligence'
                   ? 'This suggestion is recommend-only. Site apply later — nothing writes the website.'
+                  : suggestion.type === 'creative_fatigue'
+                    ? 'This is a refresh recommendation. Approve records the decision. Nothing creates a live ad from this card.'
+                    : suggestion.type === 'search_negatives'
+                      ? 'This will add Google negatives only when search-term hygiene is on. Deny and Snooze write nothing.'
+                      : suggestion.type === 'geo_discipline'
+                        ? 'This will record a service-area tighten only when geo discipline is on. Deny and Snooze write nothing.'
+                        : suggestion.type === 'brand_guardrails'
+                          ? 'This will pause or hold spend on a claim or brand risk. Unsupervised spend cannot pass this quietly.'
                   : 'This will change live ads.'}
           </p>
           <p className="cx-help">Client: {clientName ?? 'Unknown'}</p>

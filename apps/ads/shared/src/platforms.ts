@@ -74,12 +74,35 @@ export function mockPull(platform: Platform, clientName: string): PullResult {
     externalId: campaignId,
     name: `${clientName} — ${platform === "meta" ? "Meta" : "Google"} HVAC leads`,
     status: "active",
+    raw: {
+      geo: {
+        targeting: ["United States"],
+        serviceArea: ["local service area"],
+        radiusMiles: 2500,
+      },
+      ...(platform === "google"
+        ? {
+            searchTerms: [
+              { text: "free ductless estimate", clicks: 40, conversions: 0, spendUsd: 85 },
+              { text: "diy mini split", clicks: 22, conversions: 0, spendUsd: 40 },
+              { text: "hvac jobs hiring", clicks: 18, conversions: 0, spendUsd: 30 },
+            ],
+          }
+        : {}),
+    },
   };
   const campaignB: PulledEntity = {
     entityType: "campaign",
     externalId: campaignBId,
     name: `${clientName} — ${platform === "meta" ? "Meta" : "Google"} furnace promo`,
     status: "active",
+    raw: {
+      geo: {
+        targeting: ["United States"],
+        serviceArea: ["local service area"],
+        radiusMiles: 800,
+      },
+    },
   };
   const entities: PulledEntity[] = [
     campaignA,
@@ -126,6 +149,7 @@ export function mockPull(platform: Platform, clientName: string): PullResult {
         imageUrl: "https://picsum.photos/seed/cerevex-furnace/640/640",
         landingPageUrl: landingMatch.url,
         landingPage: landingMatch,
+        brandCopy: "Guaranteed lowest price install in the USA.",
       },
     },
   ];

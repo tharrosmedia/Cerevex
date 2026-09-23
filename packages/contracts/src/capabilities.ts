@@ -42,6 +42,10 @@ export const CAPABILITY_IDS = [
   "m52.booked_job_signal",
   "m52.clarity_connect",
   "m52.lp_intelligence",
+  "m52.creative_fatigue",
+  "m52.search_negatives",
+  "m52.geo_discipline",
+  "m52.brand_guardrails",
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -234,6 +238,38 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     unfinished: false,
     group: "m52",
   },
+  "m52.creative_fatigue": {
+    id: "m52.creative_fatigue",
+    label: "Creative fatigue (M5.2)",
+    help: "Recommend a refresh when an ad looks tired, with a plain-language why and a cadence. Recommend-only mutations. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.search_negatives": {
+    id: "m52.search_negatives",
+    label: "Search-term hygiene (M5.2)",
+    help: "Recommend Google negatives for wasteful search terms. Approve applies negatives only when this is on. recommend_only shows the suggestion and writes nothing. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.geo_discipline": {
+    id: "m52.geo_discipline",
+    label: "Geo / service-area (M5.2)",
+    help: "Recommend tightening targeting to the shop's service area. Approve may record a geo tighten only when this is on. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
+  "m52.brand_guardrails": {
+    id: "m52.brand_guardrails",
+    label: "Claim & brand guardrails (M5.2)",
+    help: "Block or warn on risky claims and brand language. Never silently allow unsupervised spend past a guardrail. Pause writes only when this is on. Default hidden.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "m52",
+  },
 };
 
 export const CAPABILITY_CATALOG_LIST: CapabilityCatalogEntry[] = CAPABILITY_IDS.map(
@@ -405,6 +441,82 @@ export function isLpIntelligenceVisible(flags: CapabilityFlags): boolean {
 
 export function isLpIntelligenceWritable(flags: CapabilityFlags): boolean {
   return isCapabilityOn("m52.lp_intelligence", flags);
+}
+
+export function isCreativeFatigueVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.creative_fatigue", flags);
+}
+
+export function isSearchNegativesVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.search_negatives", flags);
+}
+
+export function isSearchNegativesWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m52.search_negatives", flags);
+}
+
+export function isGeoDisciplineVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.geo_discipline", flags);
+}
+
+export function isGeoDisciplineWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m52.geo_discipline", flags);
+}
+
+export function isBrandGuardrailsVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("m52.brand_guardrails", flags);
+}
+
+export function isBrandGuardrailsWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("m52.brand_guardrails", flags);
+}
+
+/** Creative-fatigue recs are recommend-only. Writes stay blocked unless the flag is on (safety). */
+export function creativeFatigueWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "creative_fatigue") return null;
+  if (isCapabilityOn("m52.creative_fatigue", flags)) return null;
+  return flags["m52.creative_fatigue"] === "recommend_only"
+    ? "capability_m52_creative_fatigue_recommend_only"
+    : "capability_m52_creative_fatigue";
+}
+
+/** Search-term negatives may write only when m52.search_negatives is on. */
+export function searchNegativesWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "search_negatives") return null;
+  if (isSearchNegativesWritable(flags)) return null;
+  return flags["m52.search_negatives"] === "recommend_only"
+    ? "capability_m52_search_negatives_recommend_only"
+    : "capability_m52_search_negatives";
+}
+
+/** Geo / service-area writes only when m52.geo_discipline is on. */
+export function geoDisciplineWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "geo_discipline") return null;
+  if (isGeoDisciplineWritable(flags)) return null;
+  return flags["m52.geo_discipline"] === "recommend_only"
+    ? "capability_m52_geo_discipline_recommend_only"
+    : "capability_m52_geo_discipline";
+}
+
+/** Brand/claim pause writes only when m52.brand_guardrails is on. */
+export function brandGuardrailsWriteBlockedReason(
+  flags: CapabilityFlags,
+  recommendationType?: string | null,
+): string | null {
+  if (recommendationType !== "brand_guardrails") return null;
+  if (isBrandGuardrailsWritable(flags)) return null;
+  return flags["m52.brand_guardrails"] === "recommend_only"
+    ? "capability_m52_brand_guardrails_recommend_only"
+    : "capability_m52_brand_guardrails";
 }
 
 export function isLeadLifecycleVisible(flags: CapabilityFlags): boolean {

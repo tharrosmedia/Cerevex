@@ -15,6 +15,7 @@ import {
   type CrmLead,
 } from "./lead-lifecycle";
 import { recsFromSessionSignals, type AggregatedSessionSignal } from "./lp-intelligence";
+import { evaluateOperatorHygiene } from "./operator-hygiene";
 import type { Platform, RecommendationType } from "./types";
 
 export const AUDIT_THRESHOLDS = {
@@ -32,6 +33,7 @@ export type AuditEntity = {
   name: string;
   status: string;
   parentExternalId?: string | null;
+  raw?: Record<string, unknown>;
 };
 
 export type AuditMetric = {
@@ -64,6 +66,14 @@ export type EvaluateAccountInput = {
     sourceLabel?: string;
     lpSignals?: AggregatedSessionSignal[];
     lpIntelligenceEnabled?: boolean;
+    creativeFatigueEnabled?: boolean;
+    creativeFatigueWritable?: boolean;
+    searchNegativesEnabled?: boolean;
+    searchNegativesWritable?: boolean;
+    geoDisciplineEnabled?: boolean;
+    geoDisciplineWritable?: boolean;
+    brandGuardrailsEnabled?: boolean;
+    brandGuardrailsWritable?: boolean;
   };
 };
 
@@ -530,6 +540,47 @@ export function evaluateAccount(input: EvaluateAccountInput): EvaluateAccountRes
             campaignName: draft.campaignName,
           },
           mutations,
+        }),
+      );
+    }
+  }
+
+  const hygieneDrafts = evaluateOperatorHygiene({
+    platform: input.platform,
+    entities: input.entities,
+    metrics: input.metrics,
+    creativeFatigueEnabled: Boolean(offline?.creativeFatigueEnabled),
+    creativeFatigueWritable: Boolean(offline?.creativeFatigueWritable),
+    searchNegativesEnabled: Boolean(offline?.searchNegativesEnabled),
+    searchNegativesWritable: Boolean(offline?.searchNegativesWritable),
+    geoDisciplineEnabled: Boolean(offline?.geoDisciplineEnabled),
+    geoDisciplineWritable: Boolean(offline?.geoDisciplineWritable),
+    brandGuardrailsEnabled: Boolean(offline?.brandGuardrailsEnabled),
+    brandGuardrailsWritable: Boolean(offline?.brandGuardrailsWritable),
+  });
+  if (hygieneDrafts.length > 0) {
+    const types = new Set(hygieneDrafts.map((draft) => draft.type));
+    for (const type of types) {
+      const first = hygieneDrafts.find((draft) => draft.type === type);
+      findings.push(
+        finding(input, first?.ruleId ?? type, type === "brand_guardrails" ? "high" : "info", first?.title ?? type, {
+          hint: first?.why,
+          inbox: type,
+        }),
+      );
+    }
+    for (const draft of hygieneDrafts) {
+      recommendations.push(
+        recommendation(input, {
+          type: draft.type,
+          ruleId: draft.ruleId,
+          title: draft.title,
+          rationale: draft.rationale,
+          estimatedImpactUsd: draft.estimatedImpactUsd,
+          risk: draft.risk,
+          confidence: confidence(0.6),
+          evidence: draft.evidence,
+          mutations: draft.mutations.map((row) => mutation(input.platform, row.action, row.entity, row.payload)),
         }),
       );
     }

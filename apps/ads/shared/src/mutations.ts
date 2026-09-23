@@ -47,6 +47,8 @@ export function mutationActionLabel(action: string): string {
       return "Create ad";
     case "add_keyword":
       return "Add keyword";
+    case "tighten_geo":
+      return "Tighten service area";
     case "review":
       return "Review only";
     default:

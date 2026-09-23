@@ -51,7 +51,7 @@ export default async function AdsSuggestionsPage({
       <p className="cx-kicker">Ads</p>
       <h1>Suggestions</h1>
       <p className="cx-lede">
-        Inbox of budget shifts, creative tests, landing-page matches, LP structure, and Grok alternatives. Numbers stay behind Details.
+        Inbox of budget shifts, creative tests, landing-page matches, LP structure, operator hygiene, and Grok alternatives. Numbers stay behind Details.
       </p>
 
       {!cockpit.ok ? (
