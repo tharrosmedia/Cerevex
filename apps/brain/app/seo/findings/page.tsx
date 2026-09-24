@@ -8,17 +8,24 @@ import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { SeoSubnav } from '@/components/seo-subnav';
 import { GscCatalogFindingCard, GscRecommendationCard } from '@/components/gsc-recommendation-card';
+import { Flash } from '@/components/settings-nav';
+import { SubmitButton } from '@/components/submit-button';
 import {
   GSC_KILL_SWITCH_HELP,
   GSC_POSITION_EDUCATION,
   GSC_REC_TYPE_LABELS,
   GSC_RECOMMEND_ONLY_COPY,
+  GSC_RECS_FLAG_OFF_COPY,
+  GSC_RECS_NO_STORE_COPY,
+  GSC_RECS_QUEUED_COPY,
+  GSC_RECS_TURN_ON_CTA,
   GSC_THRESHOLD_HELP,
 } from '@/src/lib/seo/gsc-copy';
 import { gscApplyIsWritable, gscRecommendationsAreVisible, gscRecommendationsCanGenerate } from '@/src/lib/seo/gsc-flags';
 import { isGscRecKind } from '@/src/lib/seo/gsc-recommendations';
 import { parsePositionThreshold, positionThresholdFromStore, withGscStoreConfig } from '@/src/lib/seo/gsc-threshold';
 import { logEvent } from '@/src/lib/brain/events';
+import { redirect } from 'next/navigation';
 
 async function dismissFinding(formData: FormData) {
   'use server';
@@ -100,12 +107,17 @@ async function startFromFinding(formData: FormData) {
 async function runRecommendations() {
   'use server';
   const storeId = await getActiveStoreId();
-  if (!storeId) return;
+  if (!storeId) {
+    redirect('/seo/findings?recs=no_store');
+  }
   const store = await getStore(storeId);
-  if (!gscRecommendationsCanGenerate(store)) return;
+  if (!gscRecommendationsCanGenerate(store)) {
+    redirect('/seo/findings?recs=flag_off');
+  }
   await inngest.send({ name: 'seo/gsc.recommendations.requested', data: { storeId } });
   await logEvent(storeId, 'human', 'gsc.recommendations.requested', { writes: false });
   revalidatePath('/seo/findings');
+  redirect('/seo/findings?recs=queued');
 }
 
 async function runAudit() {
@@ -141,8 +153,8 @@ async function saveThreshold(formData: FormData) {
 
 export const dynamic = 'force-dynamic';
 
-export default async function SeoFindings({ searchParams }: { searchParams?: Promise<{ type?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { type?: string };
+export default async function SeoFindings({ searchParams }: { searchParams?: Promise<{ type?: string; recs?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { type?: string; recs?: string };
   let findings: any[] = [];
   let store: any = null;
   let recsOn = false;
@@ -173,7 +185,7 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
           <div className="cx-actions" style={{ marginTop: 0 }}>
             {recsOn ? (
               <form action={runRecommendations}>
-                <button type="submit" className="btn-cta">Refresh recommendations</button>
+                <SubmitButton className="btn-cta" pendingLabel="Refreshing…">Refresh recommendations</SubmitButton>
               </form>
             ) : null}
             <form action={runAudit}>
@@ -183,6 +195,17 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
         }
       />
       <SeoSubnav />
+
+      {params.recs === 'queued' && <Flash>{GSC_RECS_QUEUED_COPY}</Flash>}
+      {params.recs === 'no_store' && <Flash tone="warn">{GSC_RECS_NO_STORE_COPY}</Flash>}
+      {params.recs === 'flag_off' && (
+        <Flash tone="warn">
+          <p style={{ margin: 0 }}>{GSC_RECS_FLAG_OFF_COPY}</p>
+          <div className="cx-actions" style={{ marginTop: '0.75rem' }}>
+            <Link href="/settings#capabilities" className="btn-cta">{GSC_RECS_TURN_ON_CTA}</Link>
+          </div>
+        </Flash>
+      )}
 
       {recsOn ? (
         <section className="cx-panel">
@@ -220,7 +243,9 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
       ) : (
         <p className="cx-help">
           Search recommendations are off for this workspace. Connect and Sync still work on{' '}
-          <Link href="/seo/search">Search Console</Link>.
+          <Link href="/seo/search">Search Console</Link>. Turn the flag on in{' '}
+          <Link href="/settings#capabilities">Settings → Capability flags</Link>
+          {' '}to generate cards — this page does not flip it.
         </p>
       )}
 
@@ -230,7 +255,7 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
           action={
             <div className="cx-actions">
               <form action={runRecommendations}>
-                <button type="submit" className="btn-cta">Refresh recommendations</button>
+                <SubmitButton className="btn-cta" pendingLabel="Refreshing…">Refresh recommendations</SubmitButton>
               </form>
               <Link href="/seo/search" className="btn-secondary">Open Search Console</Link>
             </div>

@@ -4,24 +4,40 @@ import { listGscRows, summarizeGscRows } from '@/src/lib/db/gsc';
 import { isGscConfigured } from '@/src/lib/gsc/client';
 import { inngest } from '@/src/inngest/client';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { EmptyState } from '@/components/empty-state';
+import { Flash } from '@/components/settings-nav';
 import { PageHeader } from '@/components/page-header';
 import { SeoSubnav } from '@/components/seo-subnav';
 import { StatusBadge } from '@/components/status-badge';
+import { SubmitButton } from '@/components/submit-button';
 import { gscRecommendationsAreVisible } from '@/src/lib/seo/gsc-flags';
+import {
+  GSC_RECS_NO_STORE_COPY,
+  GSC_RECS_TURN_ON_CTA,
+  GSC_SYNC_QUEUED_COPY,
+  GSC_SYNC_RECS_OFF_COPY,
+} from '@/src/lib/seo/gsc-copy';
 
 async function syncGsc() {
   'use server';
   const storeId = await getActiveStoreId();
-  if (storeId) {
-    await inngest.send({ name: 'seo/gsc.sync.requested', data: { storeId } });
-    revalidatePath('/seo/search');
+  if (!storeId) {
+    redirect('/seo/search?sync=no_store');
   }
+  const store = await getStore(storeId);
+  await inngest.send({ name: 'seo/gsc.sync.requested', data: { storeId } });
+  revalidatePath('/seo/search');
+  if (!gscRecommendationsAreVisible(store)) {
+    redirect('/seo/search?sync=recs_off');
+  }
+  redirect('/seo/search?sync=queued');
 }
 
 export const dynamic = 'force-dynamic';
 
-export default async function SeoSearch() {
+export default async function SeoSearch({ searchParams }: { searchParams?: Promise<{ sync?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { sync?: string };
   let storeId: string | null = null;
   let store: any = null;
   let rows: any[] = [];
@@ -49,13 +65,24 @@ export default async function SeoSearch() {
         backHref="/seo"
         actions={
           <form action={syncGsc}>
-            <button type="submit" className="btn-secondary" disabled={!connected}>
+            <SubmitButton className="btn-secondary" disabled={!connected} pendingLabel="Syncing…">
               Sync 28 days
-            </button>
+            </SubmitButton>
           </form>
         }
       />
       <SeoSubnav />
+
+      {params.sync === 'queued' && <Flash>{GSC_SYNC_QUEUED_COPY}</Flash>}
+      {params.sync === 'no_store' && <Flash tone="warn">{GSC_RECS_NO_STORE_COPY}</Flash>}
+      {params.sync === 'recs_off' && (
+        <Flash>
+          <p style={{ margin: 0 }}>{GSC_SYNC_RECS_OFF_COPY}</p>
+          <div className="cx-actions" style={{ marginTop: '0.75rem' }}>
+            <Link href="/settings#capabilities" className="btn-cta">{GSC_RECS_TURN_ON_CTA}</Link>
+          </div>
+        </Flash>
+      )}
 
       <p className="cx-help" style={{ marginBottom: '1rem' }}>
         <StatusBadge
@@ -88,10 +115,12 @@ export default async function SeoSearch() {
           <p className="cx-help">
             {recsOn
               ? 'Use Recommendations for what to change. Tables stay collapsed here.'
-              : 'Search recommendations are off. Connect and sync still work.'}
+              : 'Search recommendations are off. Connect and sync still work. Turn the flag on in Settings to generate cards — this page does not flip it.'}
           </p>
           <div className="cx-actions">
-            {recsOn ? <Link href="/seo/findings" className="btn-cta">Open recommendations</Link> : null}
+            {recsOn ? <Link href="/seo/findings" className="btn-cta">Open recommendations</Link> : (
+              <Link href="/settings#capabilities" className="btn-cta">{GSC_RECS_TURN_ON_CTA}</Link>
+            )}
             <Link href="/settings#connects" className="btn-secondary">Settings → Connects</Link>
           </div>
         </section>
@@ -102,7 +131,7 @@ export default async function SeoSearch() {
           message="No Search Console data yet. Sync the last 28 days to load queries."
           action={
             <form action={syncGsc}>
-              <button type="submit" className="btn-cta">Sync 28 days</button>
+              <SubmitButton className="btn-cta" pendingLabel="Syncing…">Sync 28 days</SubmitButton>
             </form>
           }
         />

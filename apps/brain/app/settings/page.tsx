@@ -18,6 +18,8 @@ import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { GscPropertyField } from '@/components/gsc-property-field';
 import { WordpressConnectSettings } from '@/components/wordpress-connect-settings';
+import { SubmitButton } from '@/components/submit-button';
+import { GSC_RECS_TURN_ON_CTA, GSC_SYNC_QUEUED_COPY, GSC_SYNC_RECS_OFF_COPY } from '@/src/lib/seo/gsc-copy';
 
 async function resyncInngest() {
   'use server';
@@ -466,6 +468,26 @@ async function saveGscRecsAction(formData: FormData) {
   redirect('/settings?gsc=recs');
 }
 
+async function syncGscAction() {
+  'use server';
+  const { revalidatePath } = await import('next/cache');
+  const { redirect } = await import('next/navigation');
+  const { inngest } = await import('@/src/inngest/client');
+  const { gscRecommendationsAreVisible } = await import('@/src/lib/seo/gsc-flags');
+  const s = await getActiveStore();
+  if (!s?.id) {
+    redirect('/settings?gsc=error&message=' + encodeURIComponent('No active store'));
+    return;
+  }
+  await inngest.send({ name: 'seo/gsc.sync.requested', data: { storeId: s.id } });
+  revalidatePath('/settings');
+  revalidatePath('/seo/search');
+  if (!gscRecommendationsAreVisible(s)) {
+    redirect('/settings?gsc=recs_off');
+  }
+  redirect('/settings?gsc=synced');
+}
+
 async function signOutAction() {
   'use server';
   const { cookies } = await import('next/headers');
@@ -574,6 +596,15 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
       {params.gsc === 'connected' && <Flash>Google Search Console connected. Choose a property below.</Flash>}
       {params.gsc === 'property' && <Flash>Search Console property saved.</Flash>}
       {params.gsc === 'recs' && <Flash>Search recommendation cutoff saved for this store. Nothing was written to the site.</Flash>}
+      {params.gsc === 'synced' && <Flash>{GSC_SYNC_QUEUED_COPY}</Flash>}
+      {params.gsc === 'recs_off' && (
+        <Flash>
+          <p style={{ margin: 0 }}>{GSC_SYNC_RECS_OFF_COPY}</p>
+          <div className="cx-actions" style={{ marginTop: '0.75rem' }}>
+            <a href="/settings#capabilities" className="btn-cta">{GSC_RECS_TURN_ON_CTA}</a>
+          </div>
+        </Flash>
+      )}
       {params.gsc === 'error' && <Flash tone="warn">Search Console error: {params.message ? decodeURIComponent(params.message) : ''}</Flash>}
       {params.seoRules === 'saved' && <Flash>SEO rules saved. New jobs will use them.</Flash>}
       {params.seoRules === 'reset' && <Flash>SEO rules reset to defaults.</Flash>}
@@ -629,15 +660,10 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
             }}>
               <button type="submit" className="btn-secondary">Disconnect</button>
             </form>
-            <form action={async () => {
-              'use server';
-              const { revalidatePath } = await import('next/cache');
-              const { inngest } = await import('@/src/inngest/client');
-              const s = await getActiveStore();
-              if (s?.id) await inngest.send({ name: 'seo/gsc.sync.requested', data: { storeId: s.id } });
-              revalidatePath('/settings');
-            }}>
-              <button type="submit" className="btn-secondary" disabled={!config.gsc?.refreshTokenEnc}>Sync 28 days</button>
+            <form action={syncGscAction}>
+              <SubmitButton className="btn-secondary" disabled={!config.gsc?.refreshTokenEnc} pendingLabel="Syncing…">
+                Sync 28 days
+              </SubmitButton>
             </form>
           </div>
           <GscPropertyField

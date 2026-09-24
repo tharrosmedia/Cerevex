@@ -37,6 +37,23 @@ export const GSC_KILL_SWITCH_HELP =
 export const GSC_THRESHOLD_HELP =
   '“Update this page” uses this cutoff. Soft start is worse than 3. You can raise or lower it. It is saved for this store.';
 
+export const GSC_RECS_FLAG_OFF_COPY =
+  'Search recommendations are off for this workspace. Turn them on in Settings → Capability flags. Connect and Sync still work. This does not turn the flag on.';
+
+export const GSC_RECS_NO_STORE_COPY =
+  'No store is selected. Choose a store, then refresh recommendations.';
+
+export const GSC_RECS_QUEUED_COPY =
+  'Recommendations refresh queued. Cards update when the job finishes.';
+
+export const GSC_SYNC_QUEUED_COPY =
+  'Search Console sync queued. The last-28-days table updates when the job finishes.';
+
+export const GSC_SYNC_RECS_OFF_COPY =
+  'Search Console sync queued. Search recommendations are off — turn them on in Settings → Capability flags to generate cards. This does not turn the flag on.';
+
+export const GSC_RECS_TURN_ON_CTA = 'Turn on Search recommendations';
+
 export function gscRecTypeLabel(id: string | null | undefined): string {
   if (id && id in GSC_REC_TYPE_LABELS) return GSC_REC_TYPE_LABELS[id as GscRecTypeId];
   return 'Search recommendation';

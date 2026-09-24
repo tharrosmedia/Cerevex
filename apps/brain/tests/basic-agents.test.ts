@@ -40,6 +40,7 @@ async function run() {
     'seo-audit',
     'seo-wordpress-sync',
     'seo-wordpress-apply',
+    'seo-gsc-sync',
     'seo-gsc-recommendations',
     'seo-gsc-apply',
   ]) {
