@@ -26,3 +26,24 @@ export async function listGscRows(storeId: string, limit = 500) {
     `;
   } catch { return []; }
 }
+
+export async function summarizeGscRows(storeId: string) {
+  const sql = neon(process.env.DATABASE_URL!);
+  try {
+    const rows = await sql`
+      SELECT
+        count(*)::int as rows,
+        count(DISTINCT query)::int as queries,
+        count(DISTINCT page)::int as pages,
+        coalesce(sum(impressions), 0)::int as impressions,
+        coalesce(sum(clicks), 0)::int as clicks,
+        min(date_start) as "dateStart",
+        max(date_end) as "dateEnd"
+      FROM gsc_rows
+      WHERE store_id = ${storeId}
+    `;
+    return rows[0] || { rows: 0, queries: 0, pages: 0, impressions: 0, clicks: 0, dateStart: null, dateEnd: null };
+  } catch {
+    return { rows: 0, queries: 0, pages: 0, impressions: 0, clicks: 0, dateStart: null, dateEnd: null };
+  }
+}

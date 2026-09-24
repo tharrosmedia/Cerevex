@@ -23,12 +23,15 @@ import { writeKnowledge } from '@brain/lib/brain/memory';
 import { listProducts, searchProducts } from '@brain/lib/db/products';
 import { selectProductsForCollection } from '@brain/lib/agents/seo/select-products';
 import { checkTopicGate } from '@brain/lib/agents/seo/topic-gate';
+import { gscApplyIsWritable, gscApplyWriteBlockedReason, isGscSourcedJob } from '@brain/lib/seo/gsc-flags';
+import { applyWordpressMutation } from '@brain/lib/wordpress/apply';
+import { isWordpressStore } from '@brain/lib/wordpress/store';
 import * as Sentry from "@sentry/nextjs";
 
 export const seoJob = inngest.createFunction(
   { id: 'seo-job', retries: 2, triggers: [{ event: 'seo/job.requested' }] },
   async ({ event, step }: any) => {
-    const data = event.data as { storeId: string; keyword: string; jobId?: string; job_id?: string; type?: string; platform?: string; brandVoice?: any; seoRules?: any; mode?: 'create'|'improve'; shopifyId?: string; handle?: string; liveSnapshot?: any; gscQueries?: string[] };
+    const data = event.data as { storeId: string; keyword: string; jobId?: string; job_id?: string; type?: string; platform?: string; brandVoice?: any; seoRules?: any; mode?: 'create'|'improve'; shopifyId?: string; handle?: string; liveSnapshot?: any; gscQueries?: string[]; source?: string; gscRecType?: string };
     const storeId = data.storeId;
     const keyword = data.keyword;
     const type = data.type || 'collection';
@@ -485,12 +488,58 @@ export const seoJob = inngest.createFunction(
         data: { storeId, actor, action: 'approval.' + approvalData.status, payload: approvalData, jobId: job.id },
       });
 
-      if (approvalData.status === 'rejected' || approvalData.status === 'snoozed') {
+      if (approvalData.status === 'rejected' || approvalData.status === 'snoozed' || approvalData.status === 'denied') {
+        const closed = approvalData.status === 'snoozed' ? 'snoozed' : 'rejected';
         await step.invoke('update-job-rejected', {
           function: updateJobStatusFn,
-          data: { jobId: job.id, status: approvalData.status },
+          data: { jobId: job.id, status: closed },
         });
-        return { status: approvalData.status };
+        if (isGscSourcedJob(data)) {
+          await step.invoke('log-gsc-no-write', {
+            function: logEventFn,
+            data: { storeId, actor: 'human', action: `gsc.apply.${closed}`, payload: { writes: false, status: approvalData.status }, jobId: job.id },
+          });
+        }
+        return { status: closed, writes: false };
+      }
+
+      if (isGscSourcedJob(data)) {
+        const storeForGate = await getStore(storeId);
+        const blocked = gscApplyWriteBlockedReason(storeForGate);
+        if (blocked || !gscApplyIsWritable(storeForGate)) {
+          await step.run('gsc-recommend-only', async () => {
+            await updateJobStatus(job.id, 'approved');
+            await logEvent(storeId, 'system', 'gsc.apply.blocked', { reason: blocked || 'flag_off', writes: false }, job.id);
+          });
+          return { status: 'approved', writes: false, reason: blocked || 'flag_off' };
+        }
+        if (isWordpressStore(storeForGate)) {
+          const wpResult = await step.run('gsc-wordpress-apply', async () => {
+            const edited = approvalData.status === 'edited' && approvalData.editedPayload ? approvalData.editedPayload : null;
+            return applyWordpressMutation({
+              storeId,
+              jobId: job.id,
+              actor: 'human',
+              payload: {
+                approved: true,
+                approvalId: job.id,
+                approvedAt: new Date().toISOString(),
+                storeId,
+                externalId: String(shopifyId || liveSnapshot?.externalId || '').replace(/^wp:(post|page):/, ''),
+                resourceType: (type === 'blog' || type === 'wp_post' ? 'post' : 'page') as 'post' | 'page',
+                title: edited?.title,
+                bodyHtml: edited?.bodyHtml,
+                seoTitle: edited?.metaTitle,
+                seoDescription: edited?.metaDescription,
+              },
+            });
+          });
+          await step.invoke('update-job-wp', {
+            function: updateJobStatusFn,
+            data: { jobId: job.id, status: wpResult.ok ? 'completed' : 'failed', output: wpResult },
+          });
+          return { status: wpResult.ok ? 'completed' : 'failed', writes: !!wpResult.writes, wordpress: wpResult };
+        }
       }
 
       // Immediate status for fast user feedback (even while publish runs in background)

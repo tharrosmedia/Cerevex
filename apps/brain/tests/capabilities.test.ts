@@ -24,6 +24,9 @@ import {
   wordpressApplyBlockedReason,
   wordpressConnectBlockedReason,
   wordpressSyncBlockedReason,
+  isGscRecommendationsVisible,
+  isGscApplyWritable,
+  gscApplyBlockedReason,
 } from '@cerevex/contracts';
 import { adsSub } from '../lib/ads-nav';
 
@@ -48,6 +51,8 @@ assert.equal(flags['m52.owner_weekly_narrative'], 'hidden');
 assert.equal(flags['site.wordpress.connect'], 'hidden');
 assert.equal(flags['site.wordpress.sync'], 'hidden');
 assert.equal(flags['site.wordpress.apply'], 'hidden');
+assert.equal(flags['seo.gsc.recommendations'], 'hidden');
+assert.equal(flags['seo.gsc.apply'], 'hidden');
 assert.equal(flags['sync.live'], 'on');
 assert.equal(flags['shell.legacy_ads_web'], 'hidden');
 assert.equal(isPlatformSyncLiveOn(flags), true);
@@ -71,6 +76,11 @@ assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.own
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'site.wordpress.connect'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'site.wordpress.sync'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'site.wordpress.apply'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'seo.gsc.recommendations'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'seo.gsc.apply'));
+assert.equal(isGscRecommendationsVisible(flags), false);
+assert.equal(isGscApplyWritable(flags), false);
+assert.equal(gscApplyBlockedReason(flags), 'capability_seo_gsc_apply');
 assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), null);
 assert.equal(capabilityOnBlockedReason('m51.budget_shift', 'recommend_only'), null);
 assert.equal(capabilityOnBlockedReason('cockpit', 'on'), null);

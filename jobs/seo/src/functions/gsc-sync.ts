@@ -17,6 +17,12 @@ export const gscSyncFn = inngest.createFunction(
         await updateStore(storeId, { name: store.name, shopify_domain: store.shopify_domain, shopify_access_token: '', platform: store.platform || 'shopify', config: cfg });
       }
       await logEvent(storeId, 'system', 'gsc.synced', { count: data.rows.length });
+      try {
+        const { gscRecommendationsCanGenerate } = await import('@brain/lib/seo/gsc-flags');
+        if (gscRecommendationsCanGenerate(store)) {
+          await inngest.send({ name: 'seo/gsc.recommendations.requested', data: { storeId } });
+        }
+      } catch {}
       return { synced: data.rows.length };
     });
   }

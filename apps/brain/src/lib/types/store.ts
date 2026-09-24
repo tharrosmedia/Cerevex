@@ -55,6 +55,9 @@ export interface StoreConfig {
     refreshTokenEnc?: string;
     connectedAt?: string;
     lastSyncedAt?: string;
+    positionThreshold?: number;
+    applyKillSwitch?: boolean;
+    lastRecommendationsAt?: string;
   };
   wordpress?: {
     siteUrl?: string;

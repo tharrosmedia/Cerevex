@@ -164,6 +164,12 @@ export {
   wordpressConnectBlockedReason,
   wordpressSyncBlockedReason,
   wordpressApplyBlockedReason,
+  isGscRecommendationsVisible,
+  isGscRecommendationsOn,
+  isGscApplyVisible,
+  isGscApplyWritable,
+  gscRecommendationsBlockedReason,
+  gscApplyBlockedReason,
 } from "./capabilities";
 export type {
   CapabilityState,

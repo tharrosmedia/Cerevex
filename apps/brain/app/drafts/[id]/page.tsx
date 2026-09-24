@@ -14,6 +14,8 @@ import {
   wordpressApplyBlockedByKillSwitch,
   wordpressFlagsFromStore,
 } from '@/src/lib/wordpress';
+import { gscApplyIsWritable, isGscSourcedJob } from '@/src/lib/seo/gsc-flags';
+import { GSC_APPLY_OFF_REVIEW_COPY } from '@/src/lib/seo/gsc-copy';
 
 async function decide(formData: FormData) {
   'use server';
@@ -172,14 +174,20 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
   let jobType = 'collection';
   let jobStatus = '';
   let wordpressApplyOn = true;
+  let gscApplyOn = true;
+  let gscJob = false;
   try {
     const j = await getJob(draft.jobId);
     brandVoice = j?.input?.brandVoice || null;
     jobType = j?.type || 'collection';
     jobStatus = j?.status || '';
-    if (j?.type === 'seo.wordpress' && j.storeId) {
+    gscJob = isGscSourcedJob(j?.input);
+    if (j?.storeId) {
       const s = await getStore(j.storeId);
-      wordpressApplyOn = isWordpressApplyWritable(wordpressFlagsFromStore(s));
+      if (j?.type === 'seo.wordpress') {
+        wordpressApplyOn = isWordpressApplyWritable(wordpressFlagsFromStore(s));
+      }
+      if (gscJob) gscApplyOn = gscApplyIsWritable(s);
     }
   } catch {}
 
@@ -273,6 +281,9 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
         <input type="hidden" name="jobId" value={draft.jobId} />
         {!wordpressApplyOn && jobType === 'seo.wordpress' ? (
           <p className="text-sm">WordPress apply is off. You can Deny or Snooze. Approve will not write the site.</p>
+        ) : null}
+        {gscJob && !gscApplyOn ? (
+          <p className="text-sm">{GSC_APPLY_OFF_REVIEW_COPY}</p>
         ) : null}
 
         <div>
