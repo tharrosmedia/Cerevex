@@ -10,6 +10,10 @@ import {
 } from '@cerevex/contracts';
 import { shopifySiteConnector } from '@cerevex/connector-shopify';
 import { createWordPressConnector, validateApprovedApplyPayload } from '@cerevex/connector-wordpress';
+import {
+  newWordpressStoreConfig,
+  wordpressConnectBlockedFromSource,
+} from '../src/lib/wordpress/connect-config';
 import { wordpressApplyBlockedByKillSwitch } from '../src/lib/wordpress/store';
 import { wordpressFlagsFromStore } from '../src/lib/wordpress/capabilities';
 
@@ -31,6 +35,9 @@ const recommendOnly = wordpressFlagsFromStore({
 });
 assert.equal(wordpressApplyBlockedReason(recommendOnly), 'capability_site_wordpress_apply_recommend_only');
 
+assert.equal(wordpressApplyBlockedByKillSwitch({}), true);
+assert.equal(wordpressApplyBlockedByKillSwitch({ config: {} }), true);
+assert.equal(wordpressApplyBlockedByKillSwitch({ config: { wordpress: {} } }), true);
 assert.equal(
   wordpressApplyBlockedByKillSwitch({ config: { wordpress: { applyKillSwitch: true } } }),
   true,
@@ -40,6 +47,40 @@ assert.equal(
   true,
 );
 assert.equal(wordpressApplyBlockedByKillSwitch({ config: { wordpress: { applyKillSwitch: false } } }), false);
+assert.equal(
+  wordpressApplyBlockedByKillSwitch({
+    config: { wordpress: { applyKillSwitch: false }, workspace: { wordpressApplyKillSwitch: true } },
+  }),
+  true,
+);
+
+const sourceWorkspace = {
+  capabilities: {
+    'site.wordpress.connect': 'on',
+    'site.wordpress.sync': 'on',
+    'site.wordpress.apply': 'on',
+  },
+};
+assert.equal(wordpressConnectBlockedFromSource({ store: null }), 'capability_site_wordpress_connect');
+assert.equal(wordpressConnectBlockedFromSource({ workspaceSettings: {} }), 'capability_site_wordpress_connect');
+assert.equal(wordpressConnectBlockedFromSource({ workspaceSettings: sourceWorkspace }), null);
+assert.equal(
+  wordpressConnectBlockedFromSource({
+    store: { config: { workspace: sourceWorkspace } },
+  }),
+  null,
+);
+
+const seeded = newWordpressStoreConfig({
+  wordpress: { siteUrl: 'https://hvac-pilot.example', pluginKeyEnc: 'enc' },
+  workspaceSettings: sourceWorkspace,
+});
+assert.equal(seeded.wordpress.applyKillSwitch, true);
+assert.deepEqual(seeded.workspace, sourceWorkspace);
+assert.equal(
+  wordpressConnectBlockedFromSource({ workspaceSettings: seeded.workspace }),
+  null,
+);
 
 const unsigned = validateApprovedApplyPayload({
   approved: false,

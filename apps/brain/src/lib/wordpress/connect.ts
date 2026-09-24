@@ -3,7 +3,8 @@ import { siteCmsPlainError, wordpressConnectBlockedReason } from '@cerevex/contr
 import { createWordPressConnector, normalizeSiteUrl } from '@cerevex/connector-wordpress';
 import { createStore, getStore, updateStore } from '../db/stores';
 import { logEvent } from '../brain/events';
-import { wordpressFlagsFromStore } from './capabilities';
+import { wordpressConnectBlockedFromSource, newWordpressStoreConfig } from './connect-config';
+import { wordpressFlagsFromStore, wordpressWorkspaceSettingsFromStore } from './capabilities';
 import {
   encryptWordpressPluginKey,
   isWordpressStore,
@@ -12,6 +13,8 @@ import {
 
 export type WordpressConnectInput = {
   storeId?: string | null;
+  /** Workspace/capability source the Settings UI used (active store). Required for new-site Connect. */
+  workspaceSettings?: Record<string, unknown> | null;
   name?: string;
   siteUrl: string;
   pluginKey: string;
@@ -50,8 +53,8 @@ export async function connectWordpressStore(input: WordpressConnectInput): Promi
     }
 
     let store = input.storeId ? await getStore(input.storeId) : null;
-    const flagsStore = store;
-    const blocked = wordpressConnectBlockedReason(wordpressFlagsFromStore(flagsStore));
+    const workspaceSettings = input.workspaceSettings ?? wordpressWorkspaceSettingsFromStore(store);
+    const blocked = wordpressConnectBlockedFromSource({ workspaceSettings, store });
     if (blocked) {
       return { ok: false, code: 'capability_off', reason: siteCmsPlainError('capability_off') };
     }
@@ -61,13 +64,15 @@ export async function connectWordpressStore(input: WordpressConnectInput): Promi
 
     const encrypted = encryptWordpressPluginKey(pluginKey);
     const name = (input.name || '').trim() || hostLabel(siteUrl);
+    const previous = wordpressConfigFromStore(store);
     const wordpress = {
-      ...wordpressConfigFromStore(store),
+      ...previous,
       siteUrl,
       pluginKeyEnc: encrypted,
       connectedAt: new Date().toISOString(),
       lastHealthAt: new Date().toISOString(),
       lastHealthOk: true,
+      applyKillSwitch: previous.applyKillSwitch ?? true,
     };
 
     if (store && isWordpressStore(store)) {
@@ -89,7 +94,7 @@ export async function connectWordpressStore(input: WordpressConnectInput): Promi
       shopify_access_token: pluginKey,
       platform: 'wordpress',
       connector_type: 'wordpress',
-      config: { wordpress },
+      config: newWordpressStoreConfig({ wordpress, workspaceSettings }),
     });
     const jar = await cookies();
     jar.set('activeStoreId', created.id, {
@@ -119,7 +124,7 @@ export async function disconnectWordpressStore(storeId: string): Promise<Wordpre
     const previous = wordpressConfigFromStore(store);
     current.wordpress = {
       siteUrl: previous.siteUrl,
-      applyKillSwitch: previous.applyKillSwitch,
+      applyKillSwitch: previous.applyKillSwitch ?? true,
       lastSyncedAt: previous.lastSyncedAt,
       disconnectedAt: new Date().toISOString(),
     };

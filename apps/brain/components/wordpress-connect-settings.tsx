@@ -13,8 +13,10 @@ import {
   isWordpressStore,
   syncWordpressForStore,
   testWordpressConnection,
+  wordpressApplyBlockedByKillSwitch,
   wordpressConfigFromStore,
   wordpressFlagsFromStore,
+  wordpressWorkspaceSettingsFromStore,
 } from '@/src/lib/wordpress';
 import { StatusBadge } from '@/components/status-badge';
 
@@ -43,8 +45,7 @@ export async function WordpressConnectSettings() {
   const applyWritable = isWordpressApplyWritable(flags);
   const wp = wordpressConfigFromStore(store);
   const connected = isWordpressStore(store) && Boolean(wp.pluginKeyEnc || store?.shopify_access_token);
-  const killOn = wp.applyKillSwitch === true
-    || (store?.config && typeof store.config === 'object' && (store.config as { workspace?: { wordpressApplyKillSwitch?: boolean } }).workspace?.wordpressApplyKillSwitch === true);
+  const killOn = wordpressApplyBlockedByKillSwitch(store);
 
   return (
     <div className="cx-panel">
@@ -75,7 +76,7 @@ export async function WordpressConnectSettings() {
             <form action={saveWordpressKillSwitchAction} className="cx-form" style={{ marginTop: '1rem' }}>
               <label className="cx-field">
                 <span>
-                  <input type="checkbox" name="applyKillSwitch" defaultChecked={wp.applyKillSwitch === true} /> Block WordPress writes
+                  <input type="checkbox" name="applyKillSwitch" defaultChecked={wp.applyKillSwitch !== false} /> Block WordPress writes
                 </span>
                 <p className="cx-help">When on, Approve still records a decision. Nothing is written to the site.</p>
               </label>
@@ -147,6 +148,7 @@ async function connectWordpressAction(formData: FormData) {
   const store = await getActiveStore();
   const result = await connectWordpressStore({
     storeId: store && isWordpressStore(store) ? store.id : null,
+    workspaceSettings: wordpressWorkspaceSettingsFromStore(store),
     name,
     siteUrl,
     pluginKey,
