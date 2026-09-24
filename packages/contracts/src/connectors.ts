@@ -2,7 +2,8 @@
  * Connector identity catalog. Runtime interfaces live in @tharros/ads-shared/connectors.
  * Meta/Google/mock implement AdPlatformConnector. CallRail is the M5.2 connect path.
  * Bundled is the Twilio-class lean add-on. Clarity is the analytics/session path.
- * HCP is recommend+join only. Site (WordPress) is stub — no LP mutation in v0.
+ * HCP is recommend+join only. Site (WordPress) Brain CMS is live behind
+ * site.wordpress.* flags. Ads landing-page mutation stays later.
  */
 
 export const CONNECTOR_KINDS = ["ad_platform", "analytics", "call_tracking", "crm", "site"] as const;
@@ -108,7 +109,7 @@ export const CONNECTOR_CATALOG: ConnectorCatalogEntry[] = [
     kind: "site",
     id: "wordpress",
     label: "WordPress / Site",
-    implementation: "stub",
-    help: "Landing-page apply when a Site connector can mutate. v0 is recommend-only — Site apply later.",
+    implementation: "live",
+    help: "WordPress Site/CMS connector. Brain SEO connect/sync/apply sit behind site.wordpress.* flags. Ads landing-page apply stays later.",
   },
 ];

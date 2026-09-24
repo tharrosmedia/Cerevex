@@ -485,12 +485,12 @@ export const seoJob = inngest.createFunction(
         data: { storeId, actor, action: 'approval.' + approvalData.status, payload: approvalData, jobId: job.id },
       });
 
-      if (approvalData.status === 'rejected') {
+      if (approvalData.status === 'rejected' || approvalData.status === 'snoozed') {
         await step.invoke('update-job-rejected', {
           function: updateJobStatusFn,
-          data: { jobId: job.id, status: 'rejected' },
+          data: { jobId: job.id, status: approvalData.status },
         });
-        return { status: 'rejected' };
+        return { status: approvalData.status };
       }
 
       // Immediate status for fast user feedback (even while publish runs in background)

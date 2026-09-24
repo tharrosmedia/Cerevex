@@ -41,12 +41,12 @@ export default async function Review({ searchParams }: { searchParams: Promise<{
       <PageHeader
         kicker="Review"
         title="Review"
-        lede="Drafts waiting for a decision before they publish."
+        lede="Drafts waiting for a decision before they publish. WordPress writes wait for Approve too."
       />
 
       {params.success === 'decision-submitted' ? (
         <p className="cx-banner" role="status">
-          Decision submitted. Publishing to Shopify usually takes under 30 seconds.
+          Decision submitted. Approved Shopify and WordPress writes usually finish in under 30 seconds. Deny and Snooze never write.
         </p>
       ) : null}
 

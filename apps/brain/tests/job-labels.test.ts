@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { jobInputDetails, jobInputLabel, jobStatusLabel, jobStatusTone, jobTypeLabel } from '../lib/job-labels';
 
 assert.equal(jobTypeLabel('seo.generate'), 'SEO create');
+assert.equal(jobTypeLabel('seo.wordpress'), 'WordPress change');
+assert.equal(jobStatusLabel('snoozed'), 'Snoozed');
+assert.equal(jobStatusTone('snoozed'), 'info');
 assert.equal(jobStatusLabel('awaiting_approval'), 'Needs review');
 assert.equal(jobStatusLabel('completed'), 'Done');
 assert.equal(jobStatusTone('completed'), 'trust');

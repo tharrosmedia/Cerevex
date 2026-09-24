@@ -7,6 +7,13 @@ import { cookies } from 'next/headers';
 import { getActiveStoreId, getStore } from '@/src/lib/db/stores';
 import { createAdminClient } from '@/src/lib/shopify/client';
 import { fetchMetafieldDefinitions } from '@/src/lib/shopify/content';
+import { logEvent } from '@/src/lib/brain/events';
+import { isWordpressApplyWritable } from '@cerevex/contracts';
+import {
+  isWordpressStore,
+  wordpressApplyBlockedByKillSwitch,
+  wordpressFlagsFromStore,
+} from '@/src/lib/wordpress';
 
 async function decide(formData: FormData) {
   'use server';
@@ -66,6 +73,59 @@ async function decide(formData: FormData) {
     await updateDraft(draftId, editedPayload);
   }
 
+  const job = jobId ? await getJob(jobId).catch(() => null) : null;
+  const isWordpressJob = job?.type === 'seo.wordpress';
+  if (isWordpressJob) {
+    const store = job?.storeId ? await getStore(job.storeId) : null;
+    const flags = wordpressFlagsFromStore(store);
+    if (status === 'rejected' || status === 'snoozed') {
+      await updateJobStatus(jobId, status);
+      await logEvent(job.storeId, 'human', `wordpress.${status}`, { notes, jobId }, jobId);
+      const { revalidatePath } = await import('next/cache');
+      revalidatePath('/review');
+      redirect('/review?success=decision-submitted');
+    }
+    const draft = await getDraft(draftId);
+    const brief = draft?.brief || {};
+    const payload = {
+      approved: true as const,
+      approvalId: draftId,
+      approvedAt: new Date().toISOString(),
+      storeId: job.storeId,
+      externalId: String(brief.externalId || job.input?.externalId || ''),
+      resourceType: (brief.resourceType || job.input?.resourceType || 'page') as 'post' | 'page',
+      title: editedPayload?.title || draft?.title,
+      bodyHtml: editedPayload?.bodyHtml || draft?.bodyHtml,
+      seoTitle: editedPayload?.metaTitle || draft?.metaTitle,
+      seoDescription: editedPayload?.metaDescription || draft?.metaDescription,
+    };
+    if (!store || !isWordpressStore(store) || !isWordpressApplyWritable(flags) || wordpressApplyBlockedByKillSwitch(store)) {
+      await updateJobStatus(jobId, 'approved');
+      await logEvent(job.storeId, 'human', 'wordpress.apply.blocked', {
+        notes,
+        killSwitch: store ? wordpressApplyBlockedByKillSwitch(store) : false,
+        applyOff: !isWordpressApplyWritable(flags),
+      }, jobId);
+      const { revalidatePath } = await import('next/cache');
+      revalidatePath('/review');
+      redirect('/review?success=decision-submitted');
+    }
+    await updateJobStatus(jobId, 'publishing');
+    await logEvent(job.storeId, 'human', 'wordpress.approved', { notes, approvalId: draftId }, jobId);
+    try {
+      await inngest.send({
+        name: 'seo/wordpress.apply',
+        data: { storeId: job.storeId, payload, actor: 'human', jobId },
+      });
+    } catch (e: any) {
+      console.error('Failed to enqueue WordPress apply', e);
+      await updateJobStatus(jobId, 'failed', { reason: e?.message || 'enqueue failed' });
+    }
+    const { revalidatePath } = await import('next/cache');
+    revalidatePath('/review');
+    redirect('/review?success=decision-submitted');
+  }
+
   console.log('[INNGEST] sending approval/decided', { jobId, status });
   try {
     await inngest.send({ name: 'approval/decided', data: { status, notes, editedPayload, jobId, draftId } });
@@ -74,7 +134,7 @@ async function decide(formData: FormData) {
     console.error('Failed to send approval to Inngest', e);
   }
 
-  const finalStatus = status === 'approved' || status === 'edited' ? 'approved' : 'rejected';
+  const finalStatus = status === 'approved' || status === 'edited' ? 'approved' : status === 'snoozed' ? 'snoozed' : 'rejected';
   await updateJobStatus(jobId, finalStatus);
 
   const { revalidatePath } = await import('next/cache');
@@ -111,11 +171,16 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
   let brandVoice: any = null;
   let jobType = 'collection';
   let jobStatus = '';
+  let wordpressApplyOn = true;
   try {
     const j = await getJob(draft.jobId);
     brandVoice = j?.input?.brandVoice || null;
     jobType = j?.type || 'collection';
     jobStatus = j?.status || '';
+    if (j?.type === 'seo.wordpress' && j.storeId) {
+      const s = await getStore(j.storeId);
+      wordpressApplyOn = isWordpressApplyWritable(wordpressFlagsFromStore(s));
+    }
   } catch {}
 
   let availableMetafields: any[] = [];
@@ -206,13 +271,21 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
       <form action={decide} className="space-y-4 border p-4 rounded">
         <input type="hidden" name="draftId" value={draft.id} />
         <input type="hidden" name="jobId" value={draft.jobId} />
+        {!wordpressApplyOn && jobType === 'seo.wordpress' ? (
+          <p className="text-sm">WordPress apply is off. You can Deny or Snooze. Approve will not write the site.</p>
+        ) : null}
 
         <div>
           <label className="block mb-1">Decision</label>
           <select name="status" className="border p-2 w-full">
-            <option value="approved">Approve</option>
-            <option value="rejected">Reject</option>
-            <option value="edited">Edit &amp; Approve</option>
+            {wordpressApplyOn || jobType !== 'seo.wordpress' ? (
+              <>
+                <option value="approved">Approve</option>
+                <option value="edited">Edit &amp; Approve</option>
+              </>
+            ) : null}
+            <option value="rejected">Deny</option>
+            <option value="snoozed">Snooze</option>
           </select>
         </div>
 

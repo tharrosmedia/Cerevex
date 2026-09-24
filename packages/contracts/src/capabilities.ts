@@ -48,6 +48,9 @@ export const CAPABILITY_IDS = [
   "m52.brand_guardrails",
   "m52.seasonality_calendar",
   "m52.owner_weekly_narrative",
+  "site.wordpress.connect",
+  "site.wordpress.sync",
+  "site.wordpress.apply",
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -60,7 +63,7 @@ export type CapabilityCatalogEntry = {
   help: string;
   defaultState: CapabilityState;
   unfinished: boolean;
-  group: "product" | "apply" | "shell" | "m51" | "m52";
+  group: "product" | "apply" | "shell" | "m51" | "m52" | "site";
 };
 
 export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = {
@@ -287,6 +290,30 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+  },
+  "site.wordpress.connect": {
+    id: "site.wordpress.connect",
+    label: "WordPress connect",
+    help: "Connect a WordPress site with the Cerevex plugin. Default hidden until the pilot is enabled. Off never 500s SEO or ads.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "site",
+  },
+  "site.wordpress.sync": {
+    id: "site.wordpress.sync",
+    label: "WordPress sync",
+    help: "Sync posts and pages into Brain for this store. Default hidden. Off hides Sync and refuses the job without taking down SEO.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "site",
+  },
+  "site.wordpress.apply": {
+    id: "site.wordpress.apply",
+    label: "WordPress apply",
+    help: "Approve-gated title/body/meta writes through the plugin. Default hidden. recommend_only shows the draft and writes nothing.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "site",
   },
 };
 
@@ -685,4 +712,49 @@ export function filterItemsByCapabilities<T extends { capability?: CapabilityId 
   flags: CapabilityFlags,
 ): T[] {
   return items.filter((item) => item.capability == null || isCapabilityVisible(item.capability, flags));
+}
+
+export function isWordpressConnectVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("site.wordpress.connect", flags);
+}
+
+export function isWordpressConnectWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("site.wordpress.connect", flags);
+}
+
+export function isWordpressSyncVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("site.wordpress.sync", flags);
+}
+
+export function isWordpressSyncWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("site.wordpress.sync", flags);
+}
+
+export function isWordpressApplyVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("site.wordpress.apply", flags);
+}
+
+export function isWordpressApplyWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("site.wordpress.apply", flags);
+}
+
+export function wordpressConnectBlockedReason(flags: CapabilityFlags): string | null {
+  if (isWordpressConnectWritable(flags)) return null;
+  return flags["site.wordpress.connect"] === "recommend_only"
+    ? "capability_site_wordpress_connect_recommend_only"
+    : "capability_site_wordpress_connect";
+}
+
+export function wordpressSyncBlockedReason(flags: CapabilityFlags): string | null {
+  if (isWordpressSyncWritable(flags)) return null;
+  return flags["site.wordpress.sync"] === "recommend_only"
+    ? "capability_site_wordpress_sync_recommend_only"
+    : "capability_site_wordpress_sync";
+}
+
+export function wordpressApplyBlockedReason(flags: CapabilityFlags): string | null {
+  if (isWordpressApplyWritable(flags)) return null;
+  return flags["site.wordpress.apply"] === "recommend_only"
+    ? "capability_site_wordpress_apply_recommend_only"
+    : "capability_site_wordpress_apply";
 }

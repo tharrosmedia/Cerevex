@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getActiveStoreId, getStore, updateStore } from '@/src/lib/db/stores';
 import { listCatalogResources } from '@/src/lib/db/catalog';
 import { syncCatalogForStore } from '@/src/lib/shopify/sync';
@@ -6,18 +7,26 @@ import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { SeoSubnav } from '@/components/seo-subnav';
 import { operatorLoadError } from '@/lib/ui-copy';
+import { isWordpressStore, syncWordpressForStore } from '@/src/lib/wordpress';
 
 async function syncNow() {
   'use server';
   const storeId = await getActiveStoreId();
   if (!storeId) return;
-  const result = await syncCatalogForStore(storeId);
   const store = await getStore(storeId);
+  if (store && isWordpressStore(store)) {
+    await syncWordpressForStore(storeId);
+    revalidatePath('/seo/live');
+    revalidatePath('/settings');
+    return;
+  }
+  const result = await syncCatalogForStore(storeId);
   if (store) {
     const current = store.config || {};
     await updateStore(storeId, {
       name: store.name, shopify_domain: store.shopify_domain, shopify_access_token: '',
       platform: store.platform || 'shopify',
+      connector_type: store.connector_type || store.platform || 'shopify',
       config: { ...current, catalogLastSynced: new Date().toISOString(), catalogSyncedCount: result.synced },
     });
   }
@@ -41,7 +50,7 @@ export default async function SeoLive() {
       <PageHeader
         kicker="SEO"
         title="Live catalog"
-        lede="Collections, pages, and articles synced from the store."
+        lede="Collections, pages, articles, and WordPress posts synced for this store."
         backHref="/seo"
         actions={
           <form action={syncNow}>
@@ -79,7 +88,9 @@ export default async function SeoLive() {
               {resources.map((r: any) => (
                 <tr key={r.id}>
                   <td data-label="Type">{r.resourceType}</td>
-                  <td data-label="Title">{r.title}</td>
+                  <td data-label="Title">
+                    <Link href={`/seo/live/${r.id}`}>{r.title}</Link>
+                  </td>
                   <td data-label="Handle">/{r.handle}</td>
                   <td data-label="SEO title">{r.seoTitle || '—'}</td>
                   <td data-label="Products">{r.productCount ?? '—'}</td>

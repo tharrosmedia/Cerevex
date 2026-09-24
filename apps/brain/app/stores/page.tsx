@@ -17,6 +17,9 @@ async function testConnection(formData: FormData) {
   if (!store || !store.shopify_access_token) {
     redirect(`/stores?test=error&msg=${encodeURIComponent('No credentials')}`);
   }
+  if ((store.connector_type || store.platform) === 'wordpress') {
+    redirect(`/stores?test=error&msg=${encodeURIComponent('Test WordPress from Settings → Connects.')}`);
+  }
   let shop: any;
   try {
     const client = createAdminClient(store.shopify_domain, store.shopify_access_token);
@@ -54,7 +57,7 @@ async function addStore(formData: FormData) {
   if (!name || !shopify_domain || !shopify_access_token) {
     redirect(`/stores?add=error&msg=${encodeURIComponent('All fields required')}`);
   }
-  const newStore = await createStore({ name, shopify_domain, shopify_access_token, platform, config });
+  const newStore = await createStore({ name, shopify_domain, shopify_access_token, platform, connector_type: platform, config });
   const cookieStore = await cookies();
   cookieStore.set('activeStoreId', newStore.id, {
     path: '/',
@@ -96,7 +99,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
       <PageHeader
         kicker="Stores"
         title="Stores"
-        lede="Add a Shopify store, test the connection, and choose the active store."
+        lede="Add a Shopify store here. Connect WordPress from Settings when that module is on."
       />
 
       {loadError ? <p className="cx-banner cx-banner-warn" role="status">{loadError}</p> : null}
@@ -117,8 +120,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
             <label htmlFor="store-platform">Platform</label>
             <select id="store-platform" name="platform" defaultValue="shopify">
               <option value="shopify">Shopify</option>
-              <option value="woocommerce">WooCommerce</option>
-              <option value="other">Other</option>
+              <option value="wordpress">WordPress (use Settings → Connects)</option>
             </select>
           </div>
           <div className="cx-field">

@@ -163,6 +163,7 @@ async function persistSettings(next: Record<string, unknown>) {
     shopify_domain: store.shopify_domain,
     shopify_access_token: '',
     platform: store.platform || 'shopify',
+    connector_type: store.connector_type || store.platform || 'shopify',
     config: { ...currentConfig, workspace: next },
   });
 }

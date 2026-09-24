@@ -8,6 +8,9 @@ import { upsertCatalogResource } from '../db/catalog';
 
 export async function syncProductsForStore(storeId: string) {
   const store = await getStore(storeId);
+  if ((store?.connector_type || store?.platform) === 'wordpress') {
+    return { synced: 0, totalFetched: 0, skipped: 'wordpress' as const };
+  }
   if (!store || !store.shopify_access_token) {
     throw new Error('No Shopify credentials for store');
   }
@@ -41,6 +44,9 @@ export async function syncProductsForStore(storeId: string) {
 
 export async function syncCatalogForStore(storeId: string) {
   const store = await getStore(storeId);
+  if ((store?.connector_type || store?.platform) === 'wordpress') {
+    return { synced: 0, totalFetched: 0, skipped: 'wordpress' as const };
+  }
   if (!store || !store.shopify_access_token) {
     throw new Error('No Shopify credentials for store');
   }

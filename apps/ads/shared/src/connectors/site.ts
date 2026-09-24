@@ -1,6 +1,7 @@
 /**
- * Site connector stub (M5.2 Phase C).
- * v0 does not mutate WordPress / Multi-CMS. LP recs stay Site apply later.
+ * Ads Site connector (LP mutation). Brain CMS WordPress lives in
+ * connectors/wordpress behind site.wordpress.* flags. Ads landing-page
+ * apply stays later — supportsLandingPageMutation remains false.
  */
 
 import type { ConnectorConnectInput, ConnectorConnectResult, SiteConnector } from "./types";

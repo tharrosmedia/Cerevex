@@ -56,6 +56,18 @@ export interface StoreConfig {
     connectedAt?: string;
     lastSyncedAt?: string;
   };
+  wordpress?: {
+    siteUrl?: string;
+    pluginKeyEnc?: string;
+    connectedAt?: string;
+    lastSyncedAt?: string;
+    lastHealthAt?: string;
+    lastHealthOk?: boolean;
+    applyKillSwitch?: boolean;
+    pluginVersion?: string;
+    disconnectedAt?: string;
+  };
+  workspace?: Record<string, unknown>;
 }
 
 export interface Store {
@@ -63,5 +75,6 @@ export interface Store {
   name: string;
   shopifyDomain: string;
   platform?: string;
+  connectorType?: string;
   config?: StoreConfig;
 }

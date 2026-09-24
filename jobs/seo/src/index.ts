@@ -16,6 +16,8 @@ import { logEventFn } from './functions/log-event';
 import { catalogSyncFn } from './functions/catalog-sync';
 import { gscSyncFn } from './functions/gsc-sync';
 import { auditFn } from './functions/audit';
+import { wordpressSyncFn } from './functions/wordpress-sync';
+import { wordpressApplyFn } from './functions/wordpress-apply';
 
 export { inngest } from './client';
 
@@ -44,4 +46,6 @@ export const functions = [
   catalogSyncFn,
   gscSyncFn,
   auditFn,
+  wordpressSyncFn,
+  wordpressApplyFn,
 ];

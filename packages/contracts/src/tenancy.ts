@@ -2,9 +2,10 @@
  * Shared tenancy envelopes.
  *
  * Product lock — Client ↔ store_id:
- * - One Client maps to N Shopify stores (`store_id`).
+ * - One Client maps to N stores (`store_id`) — Shopify or WordPress.
  * - OS AdAccounts hang off Client (`clientId`), never `store_id`.
  * - Brain keeps `store_id` keys until a later optional `client_id` backfill.
+ * - A WordPress site is a store with connector_type=wordpress.
  */
 
 export type WorkspaceId = string;
@@ -48,6 +49,8 @@ export type Store = {
   name?: string;
   shopifyDomain?: string;
   platform?: string;
+  /** Architecture 1.0: shopify | wordpress. WP sites are stores, not a side-car tenant. */
+  connectorType?: string;
 };
 
 /**

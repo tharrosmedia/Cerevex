@@ -17,11 +17,12 @@ import { Flash, SettingsNav } from '@/components/settings-nav';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { GscPropertyField } from '@/components/gsc-property-field';
+import { WordpressConnectSettings } from '@/components/wordpress-connect-settings';
 
 async function resyncInngest() {
   'use server';
   const apiKey = process.env.INNGEST_API_KEY;
-  const appId = process.env.INNGEST_APP_ID || 'shopify-brain';
+  const appId = process.env.INNGEST_APP_ID || 'Cerevex';
   const base = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
   const handlerUrl = base ? `${base}/api/inngest` : '';
   const { revalidatePath } = await import('next/cache');
@@ -451,8 +452,8 @@ async function signOutAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string };
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string };
   let store = null;
   try {
     store = await getActiveStore();
@@ -557,7 +558,19 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
 
       <section id="connects" className="cx-settings-section">
         <h2>Connects</h2>
-        <p className="cx-lede">Shopify sync and Search Console live here. CallRail, Clarity, GA4, and Housecall Pro stay hidden until their flags are on.</p>
+        <p className="cx-lede">Shopify sync and Search Console live here. WordPress, CallRail, Clarity, GA4, and Housecall Pro stay hidden until their flags are on.</p>
+
+        {params.wordpress === 'connected' && <Flash>Connected.</Flash>}
+        {params.wordpress === 'tested' && <Flash>Connected. Save Connect WordPress to keep this site.</Flash>}
+        {params.wordpress === 'disconnected' && <Flash>Disconnected. Review history was kept.</Flash>}
+        {params.wordpress === 'syncing' && <Flash>WordPress sync queued. Posts and pages will show in Review and live catalog.</Flash>}
+        {params.wordpress === 'synced' && <Flash>WordPress synced ({params.count || '0'} posts and pages).</Flash>}
+        {params.wordpress === 'kill' && <Flash>WordPress write block saved. Nothing was written to the site.</Flash>}
+        {params.wordpress === 'error' && (
+          <Flash tone="warn">{params.message ? decodeURIComponent(params.message) : "Couldn't complete that WordPress step."}</Flash>
+        )}
+
+        <WordpressConnectSettings />
 
         <div className="cx-panel">
           <h2>Search Console</h2>
