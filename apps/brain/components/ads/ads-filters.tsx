@@ -1,4 +1,5 @@
 import type { AdsClient } from '@/lib/ads-bff';
+import { SubmitButton } from '@/components/submit-button';
 
 export type AdsFilterState = {
   client?: string;
@@ -69,7 +70,7 @@ export function AdsFilters({
           </select>
         </label>
       ) : null}
-      <button type="submit" className="btn-secondary">Apply filters</button>
+      <SubmitButton className="btn-secondary" pendingLabel="Applying…">Apply filters</SubmitButton>
     </form>
   );
 }

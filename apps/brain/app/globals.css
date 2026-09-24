@@ -76,9 +76,22 @@ a { color: var(--foreground); }
   cursor: not-allowed;
 }
 
-.btn-cta:hover,
-.btn-cta:focus-visible {
+.btn-cta:hover:not(:disabled):not([aria-disabled="true"]),
+.btn-cta:focus-visible:not(:disabled):not([aria-disabled="true"]) {
   opacity: 0.88;
+}
+
+.btn-cta:active:not(:disabled):not([aria-disabled="true"]) {
+  opacity: 0.76;
+}
+
+.btn-secondary:hover:not(:disabled):not([aria-disabled="true"]),
+.btn-secondary:focus-visible:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--bg-muted);
+}
+
+.btn-secondary:active:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--border);
 }
 
 .site-header {

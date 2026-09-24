@@ -19,8 +19,17 @@ import { isGscSourcedJob } from '../src/lib/seo/gsc-flags';
 import {
   GSC_POSITION_EDUCATION,
   GSC_REC_TYPE_LABELS,
+  GSC_RECS_FLAG_OFF_COPY,
+  GSC_RECS_NO_STORE_COPY,
+  GSC_RECS_QUEUED_COPY,
+  GSC_RECS_TURN_ON_CTA,
+  GSC_SYNC_QUEUED_COPY,
+  GSC_SYNC_RECS_OFF_COPY,
   gscRecTypeLabel,
 } from '../src/lib/seo/gsc-copy';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   defaultCapabilityFlags,
   gscApplyBlockedReason,
@@ -56,6 +65,34 @@ assert.deepEqual(withGscStoreConfig({ gsc: { propertyUrl: 'sc-domain:hvacusa.sto
 });
 
 assert.ok(GSC_POSITION_EDUCATION.includes('position 5'));
+assert.ok(GSC_RECS_FLAG_OFF_COPY.includes('Capability flags'));
+assert.ok(GSC_RECS_FLAG_OFF_COPY.includes('does not turn the flag on'));
+assert.ok(GSC_RECS_NO_STORE_COPY.includes('No store'));
+assert.ok(GSC_RECS_QUEUED_COPY.includes('queued'));
+assert.ok(GSC_SYNC_QUEUED_COPY.includes('queued'));
+assert.ok(GSC_SYNC_RECS_OFF_COPY.includes('does not turn the flag on'));
+assert.ok(GSC_SYNC_RECS_OFF_COPY.includes('Capability flags'));
+assert.equal(GSC_RECS_TURN_ON_CTA, 'Turn on Search recommendations');
+
+const here = dirname(fileURLToPath(import.meta.url));
+const gscSyncSrc = readFileSync(join(here, '../../../jobs/seo/src/functions/gsc-sync.ts'), 'utf8');
+assert.ok(gscSyncSrc.includes("from '@brain/lib/seo/gsc-flags'"), 'gsc-sync must static-import flag helpers');
+assert.ok(!gscSyncSrc.includes("await import('@brain/lib/seo/gsc-flags')"), 'gsc-sync must not dynamically import flag helpers');
+assert.ok(gscSyncSrc.includes('step.sendEvent'), 'gsc-sync must emit recommendations via step.sendEvent');
+assert.ok(!gscSyncSrc.includes('inngest.send'), 'gsc-sync must not nest inngest.send inside step.run');
+assert.ok(!/catch\s*\{\s*\}/.test(gscSyncSrc), 'gsc-sync must not swallow emit failures');
+assert.ok(gscSyncSrc.includes('gsc.recommendations.skipped'), 'flag-off must log a skip reason');
+assert.ok(gscSyncSrc.includes('gsc.recommendations.emit_failed'), 'emit failure must log a system event');
+
+const findingsSrc = readFileSync(join(here, '../app/seo/findings/page.tsx'), 'utf8');
+assert.ok(findingsSrc.includes("redirect('/seo/findings?recs=flag_off')"));
+assert.ok(findingsSrc.includes("redirect('/seo/findings?recs=no_store')"));
+assert.ok(!/if \(!gscRecommendationsCanGenerate\(store\)\) return;/.test(findingsSrc));
+
+const searchSrc = readFileSync(join(here, '../app/seo/search/page.tsx'), 'utf8');
+assert.ok(searchSrc.includes('sync=recs_off'));
+assert.ok(searchSrc.includes(GSC_RECS_TURN_ON_CTA) || searchSrc.includes('GSC_RECS_TURN_ON_CTA'));
+assert.ok(searchSrc.includes('SubmitButton'));
 assert.ok(!/SERP|volatility|soft rank/i.test(GSC_POSITION_EDUCATION));
 assert.equal(gscRecTypeLabel('gsc_u'), GSC_REC_TYPE_LABELS.gsc_u);
 assert.equal(isGscRecKind('gsc_a'), true);

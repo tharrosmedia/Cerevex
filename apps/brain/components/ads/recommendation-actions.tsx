@@ -3,7 +3,14 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AdsSuggestion } from '@/lib/ads-bff';
-import { platformFromRecord, platformLabel, riskLabel } from '@/lib/ads-copy';
+import {
+  ADS_APPROVE_FROZEN,
+  ADS_APPROVE_PAUSED,
+  ADS_APPROVE_SOFT_LAUNCH,
+  platformFromRecord,
+  platformLabel,
+  riskLabel,
+} from '@/lib/ads-copy';
 
 type Mutation = {
   action?: string;
@@ -44,7 +51,39 @@ export function RecommendationActions({
     [mutations],
   );
 
+  function approveBlockReason(): string | null {
+    if (!canApprove) return ADS_APPROVE_SOFT_LAUNCH;
+    if (killSwitchOn) return ADS_APPROVE_PAUSED;
+    if (frozen) return ADS_APPROVE_FROZEN;
+    return null;
+  }
+
+  function onApprove() {
+    const blocked = approveBlockReason();
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
+    if (busy) {
+      setError('Still saving the last decision.');
+      return;
+    }
+    setError(null);
+    setConfirm(true);
+  }
+
   async function decide(action: 'approve' | 'deny' | 'snooze') {
+    if (action === 'approve') {
+      const blocked = approveBlockReason();
+      if (blocked) {
+        setError(blocked);
+        return;
+      }
+    }
+    if (busy) {
+      setError('Still saving the last decision.');
+      return;
+    }
     setBusy(action);
     setError(null);
     try {
@@ -78,10 +117,10 @@ export function RecommendationActions({
           <button
             type="button"
             className="btn-cta"
-            disabled={!canApprove || killSwitchOn || frozen || busy !== null}
-            onClick={() => setConfirm(true)}
+            disabled={busy !== null}
+            onClick={onApprove}
           >
-            Approve
+            {busy === 'approve' ? 'Approving…' : 'Approve'}
           </button>
           <button type="button" className="btn-secondary" disabled={busy !== null} onClick={() => decide('deny')}>
             {busy === 'deny' ? 'Saving…' : 'Deny'}
@@ -91,9 +130,7 @@ export function RecommendationActions({
           </button>
         </div>
       ) : null}
-      {!canApprove && open ? (
-        <p className="cx-help">Approve is limited to Adam during soft-launch. Deny and Snooze never write platforms.</p>
-      ) : null}
+      {!canApprove && open ? <p className="cx-help">{ADS_APPROVE_SOFT_LAUNCH}</p> : null}
       {confirm ? (
         <div className="cx-panel" role="dialog" aria-labelledby="approve-title">
           <h3 id="approve-title">

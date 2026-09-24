@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ConnectButtons } from '@/components/ads/connect-buttons';
 
 export function ConnectEmpty({
   title,
@@ -15,37 +16,11 @@ export function ConnectEmpty({
   allowMeta?: boolean;
   allowGoogle?: boolean;
 }) {
-  const metaHref = allowMeta && clientId
-    ? `/api/ads/connect?platform=meta&clientId=${encodeURIComponent(clientId)}`
-    : undefined;
-  const googleHref = allowGoogle && clientId
-    ? `/api/ads/connect?platform=google&clientId=${encodeURIComponent(clientId)}`
-    : undefined;
-
   return (
     <section className="cx-panel">
       <h2 className="cx-card-title">{title}</h2>
       <p className="cx-help">{body}</p>
-      <div className="cx-actions">
-        {allowMeta ? (
-          metaHref ? (
-            <a className="btn-cta" href={metaHref}>Connect Meta</a>
-          ) : (
-            <span className="btn-cta" aria-disabled="true">Connect Meta</span>
-          )
-        ) : (
-          <span className="btn-secondary" aria-disabled="true">Meta connect is off</span>
-        )}
-        {allowGoogle ? (
-          googleHref ? (
-            <a className="btn-secondary" href={googleHref}>Connect Google</a>
-          ) : (
-            <span className="btn-secondary" aria-disabled="true">Connect Google</span>
-          )
-        ) : (
-          <span className="btn-secondary" aria-disabled="true">Google connect is off</span>
-        )}
-      </div>
+      <ConnectButtons clientId={clientId} allowMeta={allowMeta} allowGoogle={allowGoogle} />
       {!clientId ? (
         <p className="cx-help">Choose a client first, or add one in Ads settings when that is ready.</p>
       ) : null}

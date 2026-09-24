@@ -5,6 +5,7 @@ import {
   isCapabilityState,
 } from '@cerevex/contracts';
 import { getWorkspaceProductSettings, saveCapabilityOverrides } from '@/src/lib/db/workspace-modules';
+import { SubmitButton } from '@/components/submit-button';
 
 async function saveCapabilityAction(formData: FormData) {
   'use server';
@@ -55,7 +56,7 @@ export async function WorkspaceCapabilitiesSettings() {
                 <option value="recommend_only">Recommend only</option>
                 <option value="hidden">Hidden</option>
               </select>
-              <button type="submit" className="btn-secondary">Save</button>
+              <SubmitButton className="btn-secondary" pendingLabel="Saving…">Save</SubmitButton>
             </span>
           </form>
         ))}

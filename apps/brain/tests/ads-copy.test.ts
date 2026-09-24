@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
 import {
+  ADS_APPROVE_FROZEN,
+  ADS_APPROVE_PAUSED,
+  ADS_APPROVE_SOFT_LAUNCH,
+  ADS_CHECK_NO_CLIENT,
+  ADS_CONNECT_NO_CLIENT,
+  ADS_CONNECT_PENDING,
+  ADS_SYNC_NO_ACCOUNT,
+  ADS_SYNC_PENDING,
+  ADS_SYNC_QUEUED,
   findingLabel,
   rankSuggestions,
   riskLabel,
@@ -70,5 +79,15 @@ assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/connect'), tr
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/pull'), true);
 assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/planning`), true);
 assert.equal(isAllowedAdsProxyRequest('POST', `/clients/${recId}/planning/calendar`), true);
+
+assert.equal(ADS_CONNECT_PENDING, 'Connecting…');
+assert.ok(ADS_CONNECT_NO_CLIENT.includes('Choose a client'));
+assert.equal(ADS_SYNC_PENDING, 'Syncing…');
+assert.ok(ADS_SYNC_QUEUED.includes('queued'));
+assert.ok(ADS_SYNC_NO_ACCOUNT.includes('Connect Meta'));
+assert.ok(ADS_CHECK_NO_CLIENT.includes('Choose a client'));
+assert.ok(ADS_APPROVE_SOFT_LAUNCH.includes('Adam'));
+assert.ok(ADS_APPROVE_PAUSED.includes('paused'));
+assert.ok(ADS_APPROVE_FROZEN.includes('frozen'));
 
 console.log('ads-copy: ok');

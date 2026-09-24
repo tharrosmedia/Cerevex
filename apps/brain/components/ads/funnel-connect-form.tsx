@@ -17,6 +17,18 @@ export function FunnelConnectForm({
   const [measurementId, setMeasurementId] = useState('');
 
   async function connect(connectorId: 'ga4' | 'first_party') {
+    if (busy) {
+      setError('Still saving the last connect.');
+      return;
+    }
+    if (!canWrite) {
+      setError('Funnel connect is recommend-only or off. Nothing new will be stored.');
+      return;
+    }
+    if (!clientId) {
+      setError('Choose a client first, then connect.');
+      return;
+    }
     setBusy(connectorId);
     setError(null);
     try {
@@ -56,10 +68,10 @@ export function FunnelConnectForm({
         <input value={measurementId} onChange={(event) => setMeasurementId(event.target.value)} placeholder="G-XXXX" />
       </label>
       <div className="cx-actions">
-        <button type="button" className="btn-cta" disabled={!canWrite || busy !== null} onClick={() => connect('ga4')}>
+        <button type="button" className="btn-cta" disabled={busy !== null} onClick={() => connect('ga4')}>
           {busy === 'ga4' ? 'Saving…' : 'Connect GA4'}
         </button>
-        <button type="button" className="btn-secondary" disabled={!canWrite || busy !== null} onClick={() => connect('first_party')}>
+        <button type="button" className="btn-secondary" disabled={busy !== null} onClick={() => connect('first_party')}>
           {busy === 'first_party' ? 'Saving…' : 'Turn on Cerevex pixel'}
         </button>
       </div>
