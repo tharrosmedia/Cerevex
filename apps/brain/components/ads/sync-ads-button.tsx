@@ -61,7 +61,7 @@ export function SyncAdsButton({
       >
         {busy ? ADS_SYNC_PENDING : 'Sync accounts'}
       </button>
-      {disabledReason ? <p className="cx-help">{disabledReason}</p> : null}
+      {!message && disabledReason ? <p className="cx-help">{disabledReason}</p> : null}
       {message ? <p className="cx-help" role="status">{message}</p> : null}
     </div>
   );
