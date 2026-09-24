@@ -51,6 +51,8 @@ export const CAPABILITY_IDS = [
   "site.wordpress.connect",
   "site.wordpress.sync",
   "site.wordpress.apply",
+  "seo.gsc.recommendations",
+  "seo.gsc.apply",
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -63,7 +65,7 @@ export type CapabilityCatalogEntry = {
   help: string;
   defaultState: CapabilityState;
   unfinished: boolean;
-  group: "product" | "apply" | "shell" | "m51" | "m52" | "site";
+  group: "product" | "apply" | "shell" | "m51" | "m52" | "site" | "seo";
 };
 
 export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = {
@@ -314,6 +316,22 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "site",
+  },
+  "seo.gsc.recommendations": {
+    id: "seo.gsc.recommendations",
+    label: "Search recommendations",
+    help: "Turn synced Search Console data into conversion-biased recommendations. Default hidden. Off hides the cards and skips generation; Connect and Sync still work.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "seo",
+  },
+  "seo.gsc.apply": {
+    id: "seo.gsc.apply",
+    label: "Search recommendation apply",
+    help: "Approve-gated Shopify (or WordPress) writes from Search recommendations. Default hidden. recommend_only keeps drafts and writes nothing.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "seo",
   },
 };
 
@@ -757,4 +775,32 @@ export function wordpressApplyBlockedReason(flags: CapabilityFlags): string | nu
   return flags["site.wordpress.apply"] === "recommend_only"
     ? "capability_site_wordpress_apply_recommend_only"
     : "capability_site_wordpress_apply";
+}
+
+export function isGscRecommendationsVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("seo.gsc.recommendations", flags);
+}
+
+export function isGscRecommendationsOn(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("seo.gsc.recommendations", flags);
+}
+
+export function isGscApplyVisible(flags: CapabilityFlags): boolean {
+  return isCapabilityVisible("seo.gsc.apply", flags);
+}
+
+export function isGscApplyWritable(flags: CapabilityFlags): boolean {
+  return isCapabilityOn("seo.gsc.apply", flags);
+}
+
+export function gscRecommendationsBlockedReason(flags: CapabilityFlags): string | null {
+  if (isGscRecommendationsOn(flags) || flags["seo.gsc.recommendations"] === "recommend_only") return null;
+  return "capability_seo_gsc_recommendations";
+}
+
+export function gscApplyBlockedReason(flags: CapabilityFlags): string | null {
+  if (isGscApplyWritable(flags)) return null;
+  return flags["seo.gsc.apply"] === "recommend_only"
+    ? "capability_seo_gsc_apply_recommend_only"
+    : "capability_seo_gsc_apply";
 }

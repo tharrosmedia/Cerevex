@@ -440,6 +440,32 @@ async function syncCatalogAction() {
   }
 }
 
+async function saveGscRecsAction(formData: FormData) {
+  'use server';
+  const { revalidatePath } = await import('next/cache');
+  const { redirect } = await import('next/navigation');
+  const { parsePositionThreshold, withGscStoreConfig } = await import('@/src/lib/seo/gsc-threshold');
+  const store = await getActiveStore();
+  if (!store) {
+    revalidatePath('/settings');
+    redirect('/settings?gsc=error&message=' + encodeURIComponent('No active store'));
+    return;
+  }
+  const threshold = parsePositionThreshold(formData.get('positionThreshold'));
+  const applyKillSwitch = formData.get('applyKillSwitch') === 'on';
+  const next = withGscStoreConfig(store.config || {}, { positionThreshold: threshold, applyKillSwitch });
+  await updateStore(store.id, {
+    name: store.name,
+    shopify_domain: store.shopify_domain,
+    shopify_access_token: '',
+    platform: store.platform || 'shopify',
+    config: next,
+  });
+  revalidatePath('/settings');
+  revalidatePath('/seo/findings');
+  redirect('/settings?gsc=recs');
+}
+
 async function signOutAction() {
   'use server';
   const { cookies } = await import('next/headers');
@@ -547,6 +573,7 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
       )}
       {params.gsc === 'connected' && <Flash>Google Search Console connected. Choose a property below.</Flash>}
       {params.gsc === 'property' && <Flash>Search Console property saved.</Flash>}
+      {params.gsc === 'recs' && <Flash>Search recommendation cutoff saved for this store. Nothing was written to the site.</Flash>}
       {params.gsc === 'error' && <Flash tone="warn">Search Console error: {params.message ? decodeURIComponent(params.message) : ''}</Flash>}
       {params.seoRules === 'saved' && <Flash>SEO rules saved. New jobs will use them.</Flash>}
       {params.seoRules === 'reset' && <Flash>SEO rules reset to defaults.</Flash>}
@@ -618,6 +645,41 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
             propertyUrl={config.gsc?.propertyUrl}
             storeId={store?.id}
           />
+        </div>
+
+        <div id="gsc-recs" className="cx-panel">
+          <h2>Search recommendations</h2>
+          <p className="cx-help">Saved per store. “Update this page” uses this cutoff. Generation stays off until the Search recommendations flag is on.</p>
+          <form action={saveGscRecsAction} className="cx-form">
+            <div className="cx-field">
+              <label htmlFor="positionThreshold">Place cutoff</label>
+              <input
+                id="positionThreshold"
+                name="positionThreshold"
+                type="number"
+                min={1}
+                max={20}
+                step={0.1}
+                defaultValue={config.gsc?.positionThreshold ?? 3}
+              />
+              <p className="cx-help">Soft start is worse than 3. You can raise or lower it.</p>
+            </div>
+            <p className="cx-help">
+              Google often tests your page in different spots between about position 5 and position 1 while it decides whether you deserve a higher place. Sites usually only settle above about position 5 when the page is more useful to the person searching than what is already ranking there. Raising rank without making the page more useful (and more likely to convert) does not stick.
+            </p>
+            <label className="cx-field">
+              <span>
+                <input
+                  type="checkbox"
+                  name="applyKillSwitch"
+                  defaultChecked={config.gsc?.applyKillSwitch !== false}
+                />{' '}
+                Block writes to the site
+              </span>
+              <p className="cx-help">When this block is on, Approve never writes Shopify or WordPress from a Search recommendation. Deny and Snooze never write.</p>
+            </label>
+            <button type="submit" className="btn-cta">Save Search recommendation settings</button>
+          </form>
         </div>
 
         <div className="cx-panel">

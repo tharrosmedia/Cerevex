@@ -4,6 +4,7 @@ import { listCatalogResources } from '@brain/lib/db/catalog';
 import { listGscRows } from '@brain/lib/db/gsc';
 import { upsertOpenFinding, listOpenFindings } from '@brain/lib/db/findings';
 import { logEvent } from '@brain/lib/brain/events';
+import { gscRecommendationsCanGenerate } from '@brain/lib/seo/gsc-flags';
 
 function median(arr: number[]) {
   if (!arr.length) return 0;
@@ -17,6 +18,8 @@ export const auditFn = inngest.createFunction(
   async ({ event, step }: any) => {
     const { storeId } = event.data;
     await step.run('run-audit', async () => {
+      const store = await getStore(storeId);
+      const skipLegacyGsc = gscRecommendationsCanGenerate(store);
       const catalog = await listCatalogResources(storeId, 1000);
       const gsc = await listGscRows(storeId, 2000);
       const byShopify: Record<string, any> = {};
@@ -55,33 +58,34 @@ export const auditFn = inngest.createFunction(
         }
       }
 
-      // GSC based
-      const imps = gscMapped.filter((g: any) => g.impressions >= 50).map((g: any) => g.impressions);
-      const med = median(imps);
-      for (const g of gscMapped) {
-        if (g.impressions >= 50 && g.position >= 4 && g.position <= 20) {
-          await emit({ storeId, shopifyId: g.catalog?.shopifyId || null, handle: g.handle || g.page, resourceType: g.resourceType || 'unknown', kind: 'striking_distance', severity: 'high', title: `Striking distance: ${g.query}`, detail: { query: g.query, pos: g.position, impressions: g.impressions } });
+      // Legacy GSC kinds stay off when Brief 1.1 generation is enabled (no duplicate noise).
+      if (!skipLegacyGsc) {
+        const imps = gscMapped.filter((g: any) => g.impressions >= 50).map((g: any) => g.impressions);
+        const med = median(imps);
+        for (const g of gscMapped) {
+          if (g.impressions >= 50 && g.position >= 4 && g.position <= 20) {
+            await emit({ storeId, shopifyId: g.catalog?.shopifyId || null, handle: g.handle || g.page, resourceType: g.resourceType || 'unknown', kind: 'striking_distance', severity: 'high', title: `Striking distance: ${g.query}`, detail: { query: g.query, pos: g.position, impressions: g.impressions } });
+          }
+          const lowCtr = g.impressions >= 100 && (g.ctr < 0.02 || (med > 0 && g.impressions > med && g.ctr < 0.015));
+          if (lowCtr) {
+            await emit({ storeId, shopifyId: g.catalog?.shopifyId || null, handle: g.handle || g.page, resourceType: g.resourceType || 'unknown', kind: 'low_ctr', severity: 'med', title: `Low CTR: ${g.query}`, detail: { ctr: g.ctr, impressions: g.impressions } });
+          }
+          if (g.impressions >= 50 && !g.catalog) {
+            await emit({ storeId, shopifyId: null, handle: g.handle || g.page, resourceType: g.resourceType || 'unknown', kind: 'content_gap', severity: 'high', title: `Content gap for query ${g.query}`, detail: { query: g.query, page: g.page, impressions: g.impressions } });
+          }
         }
-        const lowCtr = g.impressions >= 100 && (g.ctr < 0.02 || (med > 0 && g.impressions > med && g.ctr < 0.015));
-        if (lowCtr) {
-          await emit({ storeId, shopifyId: g.catalog?.shopifyId || null, handle: g.handle || g.page, resourceType: g.resourceType || 'unknown', kind: 'low_ctr', severity: 'med', title: `Low CTR: ${g.query}`, detail: { ctr: g.ctr, impressions: g.impressions } });
-        }
-        if (g.impressions >= 50 && !g.catalog) {
-          await emit({ storeId, shopifyId: null, handle: g.handle || g.page, resourceType: g.resourceType || 'unknown', kind: 'content_gap', severity: 'high', title: `Content gap for query ${g.query}`, detail: { query: g.query, page: g.page, impressions: g.impressions } });
-        }
-      }
 
-      // cannibalization simple
-      const byQuery: Record<string, any[]> = {};
-      for (const g of gscMapped) {
-        if ((g.impressions || 0) >= 20) {
-          (byQuery[g.query] ||= []).push(g);
+        const byQuery: Record<string, any[]> = {};
+        for (const g of gscMapped) {
+          if ((g.impressions || 0) >= 20) {
+            (byQuery[g.query] ||= []).push(g);
+          }
         }
-      }
-      for (const [q, list] of Object.entries(byQuery)) {
-        const urls = new Set(list.map((x: any) => x.page));
-        if (urls.size >= 2) {
-          await emit({ storeId, shopifyId: null, handle: q, resourceType: 'multiple', kind: 'cannibalization', severity: 'med', title: `Cannibalization on "${q}"`, detail: { query: q, pages: Array.from(urls).slice(0,5) } });
+        for (const [q, list] of Object.entries(byQuery)) {
+          const urls = new Set(list.map((x: any) => x.page));
+          if (urls.size >= 2) {
+            await emit({ storeId, shopifyId: null, handle: q, resourceType: 'multiple', kind: 'cannibalization', severity: 'med', title: `Cannibalization on "${q}"`, detail: { query: q, pages: Array.from(urls).slice(0,5) } });
+          }
         }
       }
 

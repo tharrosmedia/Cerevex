@@ -15,6 +15,8 @@ import { updateJobStatusFn } from './functions/update-job-status';
 import { logEventFn } from './functions/log-event';
 import { catalogSyncFn } from './functions/catalog-sync';
 import { gscSyncFn } from './functions/gsc-sync';
+import { gscRecommendationsFn } from './functions/gsc-recommendations';
+import { gscApplyFn } from './functions/gsc-apply';
 import { auditFn } from './functions/audit';
 import { wordpressSyncFn } from './functions/wordpress-sync';
 import { wordpressApplyFn } from './functions/wordpress-apply';
@@ -45,6 +47,8 @@ export const functions = [
   logEventFn,
   catalogSyncFn,
   gscSyncFn,
+  gscRecommendationsFn,
+  gscApplyFn,
   auditFn,
   wordpressSyncFn,
   wordpressApplyFn,
