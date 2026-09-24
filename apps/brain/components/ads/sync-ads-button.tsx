@@ -2,55 +2,49 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ADS_CHECK_NO_CLIENT, ADS_CHECK_PENDING, auditStatusLabel } from '@/lib/ads-copy';
+import { ADS_SYNC_NO_ACCOUNT, ADS_SYNC_PENDING, ADS_SYNC_QUEUED } from '@/lib/ads-copy';
 
-export function CheckAdsButton({
-  clientId,
-  adAccountId,
+export function SyncAdsButton({
+  accountIds,
   disabledReason,
 }: {
-  clientId?: string;
-  adAccountId?: string;
+  accountIds: string[];
   disabledReason?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function runCheck() {
+  async function sync() {
     if (busy) {
-      setMessage(ADS_CHECK_PENDING);
+      setMessage(ADS_SYNC_PENDING);
       return;
     }
     if (disabledReason) {
       setMessage(disabledReason);
       return;
     }
-    if (!clientId) {
-      setMessage(ADS_CHECK_NO_CLIENT);
+    if (accountIds.length === 0) {
+      setMessage(ADS_SYNC_NO_ACCOUNT);
       return;
     }
     setBusy(true);
-    setMessage(ADS_CHECK_PENDING);
+    setMessage(ADS_SYNC_PENDING);
     try {
-      const res = await fetch('/api/ads/checks', {
+      const res = await fetch('/api/ads/sync', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ clientId, adAccountId }),
+        body: JSON.stringify({ accountIds }),
       });
-      const body = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        audit?: { id: string; status: string };
-      };
-      if (!res.ok || !body.audit) {
-        setMessage(body.error ?? 'Could not start the check.');
+      const body = (await res.json().catch(() => ({}))) as { error?: string; queued?: number };
+      if (!res.ok) {
+        setMessage(body.error ?? 'Could not queue sync.');
         return;
       }
-      setMessage(auditStatusLabel(body.audit.status));
-      router.push(`/ads/audits/${body.audit.id}`);
+      setMessage(ADS_SYNC_QUEUED);
       router.refresh();
     } catch {
-      setMessage('Could not start the check.');
+      setMessage('Could not queue sync.');
     } finally {
       setBusy(false);
     }
@@ -60,12 +54,12 @@ export function CheckAdsButton({
     <div className="cx-actions">
       <button
         type="button"
-        className="btn-cta"
-        onClick={runCheck}
+        className="btn-secondary"
+        onClick={sync}
         disabled={busy}
         aria-busy={busy}
       >
-        {busy ? ADS_CHECK_PENDING : 'Check ads'}
+        {busy ? ADS_SYNC_PENDING : 'Sync accounts'}
       </button>
       {disabledReason ? <p className="cx-help">{disabledReason}</p> : null}
       {message ? <p className="cx-help" role="status">{message}</p> : null}

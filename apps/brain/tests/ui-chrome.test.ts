@@ -49,4 +49,21 @@ assert.ok(settingsSrc.includes('SubmitButton'));
 assert.ok(capsSrc.includes('SubmitButton'));
 assert.ok(capsSrc.includes('Saving…'));
 
+const connectSrc = readFileSync(join(here, '../components/ads/connect-buttons.tsx'), 'utf8');
+const checkSrc = readFileSync(join(here, '../components/ads/check-ads-button.tsx'), 'utf8');
+const recActionsSrc = readFileSync(join(here, '../components/ads/recommendation-actions.tsx'), 'utf8');
+const syncSrc = readFileSync(join(here, '../components/ads/sync-ads-button.tsx'), 'utf8');
+const filtersSrc = readFileSync(join(here, '../components/ads/ads-filters.tsx'), 'utf8');
+const syncRouteSrc = readFileSync(join(here, '../app/api/ads/sync/route.ts'), 'utf8');
+assert.ok(connectSrc.includes('ADS_CONNECT_PENDING'));
+assert.ok(connectSrc.includes('ADS_CONNECT_NO_CLIENT'));
+assert.ok(!/if \(!clientId \|\| busy\) return;/.test(checkSrc));
+assert.ok(checkSrc.includes('ADS_CHECK_NO_CLIENT'));
+assert.ok(recActionsSrc.includes('ADS_APPROVE_SOFT_LAUNCH'));
+assert.ok(recActionsSrc.includes('onApprove'));
+assert.ok(syncSrc.includes('ADS_SYNC_PENDING'));
+assert.ok(filtersSrc.includes('SubmitButton'));
+assert.ok(syncRouteSrc.includes('/ad-accounts/'));
+assert.ok(syncRouteSrc.includes('Connect Meta or Google first.'));
+
 console.log('ui-chrome: ok');

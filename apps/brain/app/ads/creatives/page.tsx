@@ -3,10 +3,11 @@ import { redirect } from 'next/navigation';
 import { GrokAdaptForm } from '@/components/ads/grok-adapt-form';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { ConnectEmpty } from '@/components/ads/connect-empty';
+import { SyncAdsButton } from '@/components/ads/sync-ads-button';
 import { adsApi, loadAdsCockpit } from '@/lib/ads-bff';
 import { adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
 import { formatMoney, platformLabel } from '@/lib/ads-copy';
-import { parseAdsFilters, pickDefaultClient } from '@/lib/ads-query';
+import { loadAccounts, parseAdsFilters, pickDefaultClient } from '@/lib/ads-query';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 
 export const dynamic = 'force-dynamic';
@@ -51,6 +52,8 @@ export default async function AdsCreativesPage({
     );
   }
 
+  const accounts = selected ? await loadAccounts([selected.id]) : [];
+  const connected = accounts.filter((account) => account.connectionStatus === 'connected' || account.hasCredentials);
   const bundle = selected
     ? await adsApi<{ creatives: CreativeRow[]; analysis: { why?: string } | null }>(`/clients/${selected.id}/creatives`)
     : null;
@@ -70,6 +73,16 @@ export default async function AdsCreativesPage({
       ) : creatives.length === 0 ? (
         <section className="cx-panel">
           <p className="cx-help">No ads synced yet. Connect Meta or Google, sync, then come back.</p>
+          <SyncAdsButton
+            accountIds={connected.map((account) => account.id)}
+            disabledReason={
+              !selected
+                ? 'Choose a client to sync.'
+                : connected.length === 0
+                  ? 'Connect Meta or Google first.'
+                  : undefined
+            }
+          />
         </section>
       ) : (
         <>

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { CheckAdsButton } from '@/components/ads/check-ads-button';
+import { SyncAdsButton } from '@/components/ads/sync-ads-button';
 import { AdsFilters } from '@/components/ads/ads-filters';
 import { ConnectEmpty } from '@/components/ads/connect-empty';
 import { loadAdsCockpit } from '@/lib/ads-bff';
@@ -82,6 +83,18 @@ export default async function AdsAuditsPage({
                   ? 'Audits are off for this workspace.'
                   : !selected && !filters.client
                     ? 'Choose a client to run a check.'
+                    : undefined
+              }
+            />
+            <SyncAdsButton
+              accountIds={accounts
+                .filter((account) => account.clientId === (selected?.id ?? filters.client) && (account.connectionStatus === 'connected' || account.hasCredentials))
+                .map((account) => account.id)}
+              disabledReason={
+                !selected && !filters.client
+                  ? 'Choose a client to sync.'
+                  : accounts.filter((account) => account.connectionStatus === 'connected' || account.hasCredentials).length === 0
+                    ? 'Connect Meta or Google first.'
                     : undefined
               }
             />

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { CheckAdsButton } from '@/components/ads/check-ads-button';
+import { SyncAdsButton } from '@/components/ads/sync-ads-button';
 import { AdsFilters } from '@/components/ads/ads-filters';
 import { ConnectEmpty } from '@/components/ads/connect-empty';
 import { RecommendationCard } from '@/components/ads/recommendation-card';
@@ -226,6 +227,16 @@ export default async function AdsCockpitPage({
                 : connected.length === 0
                   ? 'Connect Meta or Google first.'
                   : undefined
+          }
+        />
+        <SyncAdsButton
+          accountIds={connected.map((account) => account.id)}
+          disabledReason={
+            !selectedClient
+              ? 'Choose a client to sync.'
+              : connected.length === 0
+                ? 'Connect Meta or Google first.'
+                : undefined
           }
         />
         {!canCheck ? null : (
