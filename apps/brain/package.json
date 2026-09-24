@@ -15,7 +15,7 @@
     "test:shopify": "tsx scripts/test-shopify.ts",
     "inngest:sync": "tsx scripts/sync-inngest.ts",
     "test:prompt": "tsx scripts/test-prompt.ts",
-    "test": "tsx tests/basic-agents.test.ts && tsx tests/nav-section.test.ts && tsx tests/modules.test.ts && tsx tests/capabilities.test.ts && tsx tests/module-origins.test.ts && tsx tests/workspace-sync.test.ts && tsx tests/job-labels.test.ts && tsx tests/ads-copy.test.ts && tsx tests/ui-chrome.test.ts && tsx tests/public-url.test.ts && tsx tests/auth-cookie.test.ts && tsx tests/gsc-sites.test.ts",
+    "test": "tsx tests/basic-agents.test.ts && tsx tests/nav-section.test.ts && tsx tests/modules.test.ts && tsx tests/capabilities.test.ts && tsx tests/module-origins.test.ts && tsx tests/workspace-sync.test.ts && tsx tests/job-labels.test.ts && tsx tests/ads-copy.test.ts && tsx tests/ui-chrome.test.ts && tsx tests/public-url.test.ts && tsx tests/auth-cookie.test.ts && tsx tests/gsc-sites.test.ts && tsx tests/gsc-search.test.ts",
     "ingest:knowledge": "tsx scripts/ingest-knowledge.ts"
   },
   "keywords": [],

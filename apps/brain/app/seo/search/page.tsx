@@ -5,6 +5,7 @@ import { isGscConfigured } from '@/src/lib/gsc/client';
 import { inngest } from '@/src/inngest/client';
 import { revalidatePath } from 'next/cache';
 import { EmptyState } from '@/components/empty-state';
+import { GscSearchRows } from '@/components/gsc-search-rows';
 import { PageHeader } from '@/components/page-header';
 import { SeoSubnav } from '@/components/seo-subnav';
 import { StatusBadge } from '@/components/status-badge';
@@ -79,35 +80,10 @@ export default async function SeoSearch() {
           }
         />
       ) : (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Query</th>
-                <th>Page</th>
-                <th>Clicks</th>
-                <th>Impr</th>
-                <th>CTR</th>
-                <th>Pos</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r: any, i: number) => (
-                <tr key={i}>
-                  <td data-label="Query">{r.query}</td>
-                  <td data-label="Page">{r.page || '—'}</td>
-                  <td data-label="Clicks">{r.clicks}</td>
-                  <td data-label="Impr">{r.impressions}</td>
-                  <td data-label="CTR">{(r.ctr * 100).toFixed(1)}%</td>
-                  <td data-label="Pos">{r.position?.toFixed(1) ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <GscSearchRows rows={rows} />
       )}
       <p className="cx-help">
-        Rows are from the last sync.{' '}
+        Sorted by clicks, then impressions. Rows are from the last sync.{' '}
         <Link href="/settings#connects">Settings → Connects</Link>
       </p>
     </div>

@@ -22,7 +22,7 @@ export async function listGscRows(storeId: string, limit = 500) {
   try {
     return await sql`
       SELECT id, store_id as "storeId", date_start as "dateStart", date_end as "dateEnd", query, page, clicks, impressions, ctr, position, created_at as "createdAt"
-      FROM gsc_rows WHERE store_id = ${storeId} ORDER BY date_end DESC, impressions DESC LIMIT ${limit}
+      FROM gsc_rows WHERE store_id = ${storeId} ORDER BY clicks DESC NULLS LAST, impressions DESC NULLS LAST LIMIT ${limit}
     `;
   } catch { return []; }
 }
