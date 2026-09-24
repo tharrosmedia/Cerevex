@@ -68,7 +68,7 @@ export function CheckAdsButton({
         {busy ? ADS_CHECK_PENDING : 'Check ads'}
       </button>
       {!message && disabledReason ? <p className="cx-help">{disabledReason}</p> : null}
-      {message ? <p className="cx-help" role="status">{message}</p> : null}
+      {message ? <p className="cx-banner" role="status">{message}</p> : null}
     </div>
   );
 }

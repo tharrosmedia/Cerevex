@@ -51,7 +51,7 @@ export function ConnectButtons({
           <span className="btn-secondary" aria-disabled="true">Google connect is off</span>
         )}
       </div>
-      {notice ? <p className="cx-help" role="status">{notice}</p> : null}
+      {notice ? <p className="cx-banner" role="status">{notice}</p> : null}
     </>
   );
 }
