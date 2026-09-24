@@ -21,6 +21,9 @@ import {
   legacyAdsWebGate,
   resolveAdsNav,
   resolveWorkspaceCapabilities,
+  wordpressApplyBlockedReason,
+  wordpressConnectBlockedReason,
+  wordpressSyncBlockedReason,
 } from '@cerevex/contracts';
 import { adsSub } from '../lib/ads-nav';
 
@@ -42,6 +45,9 @@ assert.equal(flags['m52.geo_discipline'], 'hidden');
 assert.equal(flags['m52.brand_guardrails'], 'hidden');
 assert.equal(flags['m52.seasonality_calendar'], 'hidden');
 assert.equal(flags['m52.owner_weekly_narrative'], 'hidden');
+assert.equal(flags['site.wordpress.connect'], 'hidden');
+assert.equal(flags['site.wordpress.sync'], 'hidden');
+assert.equal(flags['site.wordpress.apply'], 'hidden');
 assert.equal(flags['sync.live'], 'on');
 assert.equal(flags['shell.legacy_ads_web'], 'hidden');
 assert.equal(isPlatformSyncLiveOn(flags), true);
@@ -62,6 +68,9 @@ assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.geo
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.brand_guardrails'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.seasonality_calendar'));
 assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'm52.owner_weekly_narrative'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'site.wordpress.connect'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'site.wordpress.sync'));
+assert.ok(OPERATOR_CAPABILITY_CATALOG_LIST.some((entry) => entry.id === 'site.wordpress.apply'));
 assert.equal(capabilityOnBlockedReason('m51.brainstorm', 'on'), null);
 assert.equal(capabilityOnBlockedReason('m51.budget_shift', 'recommend_only'), null);
 assert.equal(capabilityOnBlockedReason('cockpit', 'on'), null);
@@ -149,5 +158,14 @@ assert.equal(canApproveWithApply(false, applyOn), false);
 assert.equal(canApproveWithApply(true, { ...applyOn, apply: 'hidden' }), false);
 assert.equal(canApproveWithApply(true, { ...applyOn, apply: 'recommend_only' }), false);
 assert.equal(canApproveWithApply(true, { ...applyOn, apply: 'on' }), true);
+assert.equal(wordpressConnectBlockedReason(applyOn), 'capability_site_wordpress_connect');
+assert.equal(wordpressSyncBlockedReason(applyOn), 'capability_site_wordpress_sync');
+assert.equal(wordpressApplyBlockedReason(applyOn), 'capability_site_wordpress_apply');
+assert.equal(
+  wordpressApplyBlockedReason({ ...applyOn, 'site.wordpress.apply': 'recommend_only' }),
+  'capability_site_wordpress_apply_recommend_only',
+);
+assert.equal(wordpressApplyBlockedReason({ ...applyOn, 'site.wordpress.apply': 'on' }), null);
+assert.equal(resolveWorkspaceCapabilities({}, { CAPABILITY_KILL: 'site.wordpress.connect' })['site.wordpress.connect'], 'hidden');
 
 console.log('capabilities: ok');

@@ -1,0 +1,19 @@
+{
+  "name": "@cerevex/connector-shopify",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shopify Site/CMS connector adapter. Live Admin API writes stay in apps/brain.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cerevex/contracts": "*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

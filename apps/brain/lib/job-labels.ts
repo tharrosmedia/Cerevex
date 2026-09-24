@@ -7,6 +7,7 @@ const TYPE_LABELS: Record<string, string> = {
   "seo.refresh": "SEO refresh",
   "seo.publish": "Publish SEO page",
   "seo.research": "SEO research",
+  "seo.wordpress": "WordPress change",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -16,7 +17,8 @@ const STATUS_LABELS: Record<string, string> = {
   publishing: "Publishing",
   awaiting_approval: "Needs review",
   approved: "Approved",
-  rejected: "Rejected",
+  rejected: "Denied",
+  snoozed: "Snoozed",
   completed: "Done",
   failed: "Failed",
 };
@@ -55,6 +57,9 @@ export function jobStatusTone(status: string | null | undefined): StatusTone {
   }
   if (value === "failed" || value === "rejected" || value === "error") {
     return "danger";
+  }
+  if (value === "snoozed") {
+    return "info";
   }
   if (
     value === "queued" ||

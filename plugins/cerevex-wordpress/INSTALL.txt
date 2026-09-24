@@ -1,0 +1,12 @@
+Cerevex WordPress plugin — install note
+
+1. Download the private zip from Cerevex Settings → Connects (WordPress).
+2. In WordPress: Plugins → Add New → Upload Plugin → choose the zip → Activate.
+3. Open Settings → Cerevex. Copy the site URL and plugin key.
+4. Paste both in Cerevex Settings and choose Test connection.
+
+Cerevex reads posts and pages (title, body, meta). It writes those fields only after a human Approve. Unsigned or unapproved payloads are rejected.
+
+Pilot client name and URL are TBD. HVAC-adjacent test sites are fine for QA.
+
+Out of scope: WooCommerce, themes, multisite, auto-apply, WordPress.org listing.

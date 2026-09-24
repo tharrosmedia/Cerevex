@@ -38,6 +38,8 @@ async function run() {
     'seo-write-draft',
     'seo-publish',
     'seo-audit',
+    'seo-wordpress-sync',
+    'seo-wordpress-apply',
   ]) {
     assert.ok(ids.includes(id), `missing Inngest function id ${id}`);
   }

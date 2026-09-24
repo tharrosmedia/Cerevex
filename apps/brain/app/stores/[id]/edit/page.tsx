@@ -19,7 +19,7 @@ async function update(formData: FormData) {
   if (!name || !shopify_domain) {
     redirect(`/stores/${id}/edit?error=missing`);
   }
-  await updateStore(id, { name, shopify_domain, shopify_access_token: shopify_access_token || '', platform, config });
+  await updateStore(id, { name, shopify_domain, shopify_access_token: shopify_access_token || '', platform, connector_type: platform, config });
   revalidatePath('/stores');
   redirect('/stores?updated=1');
 }
@@ -68,8 +68,7 @@ export default async function EditStore({ params, searchParams }: { params: Prom
             <label htmlFor="edit-platform">Platform</label>
             <select id="edit-platform" name="platform" defaultValue={store.platform || 'shopify'}>
               <option value="shopify">Shopify</option>
-              <option value="woocommerce">WooCommerce</option>
-              <option value="other">Other</option>
+              <option value="wordpress">WordPress</option>
             </select>
           </div>
           <div className="cx-field">

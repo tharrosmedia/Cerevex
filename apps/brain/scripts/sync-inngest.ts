@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 const apiKey = process.env.INNGEST_API_KEY;
-const appId = process.env.INNGEST_APP_ID || 'shopify-brain';
+const appId = process.env.INNGEST_APP_ID || 'Cerevex';
 const base = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
 const handlerUrl = base ? `${base}/api/inngest` : 'https://your-domain.example/api/inngest';
 

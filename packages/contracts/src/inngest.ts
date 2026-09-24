@@ -7,7 +7,8 @@
  *
  * Legacy `os/*`, `meta/ads/*`, and `google/ads/*` stay registered as one-release
  * aliases so in-flight Cerevex ads jobs are not stranded. Remove LEGACY_* after
- * that release. Live Inngest app ids stay `shopify-brain` (SEO) and `cerevex-ads`.
+ * that release. Live Inngest app ids: Brain SEO `Cerevex` (env INNGEST_APP_ID),
+ * ads `cerevex-ads`. Do not put WordPress sync/apply on cerevex-ads.
  */
 
 export const INNGEST_PREFIXES = {
@@ -57,6 +58,8 @@ export const SEO_EVENTS = {
   catalogSyncRequested: "seo/catalog.sync.requested",
   gscSyncRequested: "seo/gsc.sync.requested",
   auditRequested: "seo/audit.requested",
+  wordpressSync: "seo/wordpress.sync",
+  wordpressApply: "seo/wordpress.apply",
 } as const;
 
 export const SEO_FUNCTION_IDS = {
@@ -76,6 +79,8 @@ export const SEO_FUNCTION_IDS = {
   catalogSync: "seo-catalog-sync",
   gscSync: "seo-gsc-sync",
   audit: "seo-audit",
+  wordpressSync: "seo-wordpress-sync",
+  wordpressApply: "seo-wordpress-apply",
 } as const;
 
 /** Canonical Cerevex ads events. Platform is payload data, not the name. */

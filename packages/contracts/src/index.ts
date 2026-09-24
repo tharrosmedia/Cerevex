@@ -155,6 +155,15 @@ export {
   legacyAdsWebGate,
   capabilityBlockMessage,
   filterItemsByCapabilities,
+  isWordpressConnectVisible,
+  isWordpressConnectWritable,
+  isWordpressSyncVisible,
+  isWordpressSyncWritable,
+  isWordpressApplyVisible,
+  isWordpressApplyWritable,
+  wordpressConnectBlockedReason,
+  wordpressSyncBlockedReason,
+  wordpressApplyBlockedReason,
 } from "./capabilities";
 export type {
   CapabilityState,
@@ -216,3 +225,29 @@ export type {
   ConnectorImplementation,
   ConnectorCatalogEntry,
 } from "./connectors";
+
+export {
+  STORE_CONNECTOR_TYPES,
+  SITE_CMS_RESOURCE_TYPES,
+  SITE_CMS_ERROR_CODES,
+  SITE_CMS_PLAIN_ERRORS,
+  isStoreConnectorType,
+  isSiteCmsResourceType,
+  wordpressCatalogResourceType,
+  parseWordpressCatalogResourceType,
+  wordpressExternalCatalogId,
+  parseWordpressExternalCatalogId,
+  siteCmsPlainError,
+} from "./site-cms";
+export type {
+  StoreConnectorType,
+  SiteCmsResourceType,
+  SiteCmsErrorCode,
+  SiteCmsEntity,
+  SiteCmsHealth,
+  SiteCmsListResult,
+  SiteCmsApplyPayload,
+  SiteCmsApplyResult,
+  SiteCmsConnectorId,
+  SiteCmsConnector,
+} from "./site-cms";

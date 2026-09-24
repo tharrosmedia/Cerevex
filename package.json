@@ -8,13 +8,14 @@
     "jobs/seo",
     "jobs/meta/*",
     "jobs/google/*",
-    "packages/*"
+    "packages/*",
+    "connectors/*"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@cerevex/brain",
     "build": "npm run build --workspace=@cerevex/brain",
     "start": "npm run start --workspace=@cerevex/brain",
-    "typecheck": "npm run typecheck --workspace=@cerevex/brain && npm run typecheck --workspace=@cerevex/jobs-seo && npm run typecheck --workspace=@cerevex/contracts",
+    "typecheck": "npm run typecheck --workspace=@cerevex/brain && npm run typecheck --workspace=@cerevex/jobs-seo && npm run typecheck --workspace=@cerevex/contracts && npm run typecheck --workspace=@cerevex/connector-wordpress && npm run typecheck --workspace=@cerevex/connector-shopify",
     "typecheck:brain": "npm run typecheck --workspace=@cerevex/brain",
     "typecheck:seo": "npm run typecheck --workspace=@cerevex/jobs-seo",
     "test": "npm run test --workspace=@cerevex/brain",
