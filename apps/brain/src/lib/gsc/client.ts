@@ -1,5 +1,6 @@
-import { getStore, updateStore } from '../db/stores';
-import { encrypt, decrypt } from '../encryption';
+import { getStore } from '../db/stores';
+import { decrypt } from '../encryption';
+import { fetchGscSites, type GscSite } from './sites';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GSC_API = 'https://www.googleapis.com/webmasters/v3';
@@ -74,14 +75,36 @@ export function mapGscPageToResource(pageUrl: string): { resourceType: 'collecti
   } catch { return { resourceType: null, handle: null }; }
 }
 
-export async function fetchSearchAnalytics(storeId: string, days = 28) {
+async function accessTokenForStore(storeId: string) {
   const store = await getStore(storeId);
   const gscCfg = store?.config?.gsc;
-  if (!gscCfg?.refreshTokenEnc || !gscCfg?.propertyUrl) throw new Error('GSC not connected for store');
+  if (!gscCfg?.refreshTokenEnc) throw new Error('GSC not connected for store');
   const refresh = decrypt(gscCfg.refreshTokenEnc, process.env.ENCRYPTION_KEY!);
   const tok = await refreshAccessToken(refresh);
-  const access = tok.access_token;
+  const access = tok.access_token as string | undefined;
   if (!access) throw new Error('No access token after refresh');
+  return { access, store, gscCfg };
+}
+
+export { fetchGscSites };
+
+export async function listSites(storeId: string): Promise<GscSite[]> {
+  const { access } = await accessTokenForStore(storeId);
+  return fetchGscSites(access);
+}
+
+export async function loadGscSitesForStore(storeId: string): Promise<{ sites: GscSite[]; error: string | null }> {
+  try {
+    return { sites: await listSites(storeId), error: null };
+  } catch (e) {
+    console.error('[listSites]', e);
+    return { sites: [], error: 'Could not load Search Console properties from Google.' };
+  }
+}
+
+export async function fetchSearchAnalytics(storeId: string, days = 28) {
+  const { access, gscCfg } = await accessTokenForStore(storeId);
+  if (!gscCfg?.propertyUrl) throw new Error('GSC not connected for store');
 
   const end = new Date();
   const start = new Date(end.getTime() - days * 86400000);

@@ -16,6 +16,7 @@ import { WorkspaceModulesSettings } from '@/components/workspace-modules-setting
 import { Flash, SettingsNav } from '@/components/settings-nav';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
+import { GscPropertyField } from '@/components/gsc-property-field';
 
 async function resyncInngest() {
   'use server';
@@ -543,7 +544,8 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
           Could not sync catalog{params.message ? `: ${decodeURIComponent(params.message)}` : '.'}
         </Flash>
       )}
-      {params.gsc === 'connected' && <Flash>Google Search Console connected.</Flash>}
+      {params.gsc === 'connected' && <Flash>Google Search Console connected. Choose a property below.</Flash>}
+      {params.gsc === 'property' && <Flash>Search Console property saved.</Flash>}
       {params.gsc === 'error' && <Flash tone="warn">Search Console error: {params.message ? decodeURIComponent(params.message) : ''}</Flash>}
       {params.seoRules === 'saved' && <Flash>SEO rules saved. New jobs will use them.</Flash>}
       {params.seoRules === 'reset' && <Flash>SEO rules reset to defaults.</Flash>}
@@ -598,24 +600,11 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
               <button type="submit" className="btn-secondary" disabled={!config.gsc?.refreshTokenEnc}>Sync 28 days</button>
             </form>
           </div>
-          <form action={async (fd: FormData) => {
-            'use server';
-            const { revalidatePath } = await import('next/cache');
-            const prop = (fd.get('propertyUrl') as string) || '';
-            const s = await getActiveStore();
-            if (s) {
-              const c = { ...(s.config || {}), gsc: { ...(s.config?.gsc || {}), propertyUrl: prop } };
-              await updateStore(s.id, { name: s.name, shopify_domain: s.shopify_domain, shopify_access_token: '', platform: s.platform || 'shopify', config: c });
-            }
-            revalidatePath('/settings');
-          }} className="cx-form" style={{ marginTop: '1rem' }}>
-            <div className="cx-field">
-              <label htmlFor="propertyUrl">Property</label>
-              <input id="propertyUrl" name="propertyUrl" defaultValue={config.gsc?.propertyUrl || ''} placeholder="https://www.example.com/ or sc-domain:example.com" />
-              <p className="cx-help">The Search Console property Cerevex should read.</p>
-            </div>
-            <button type="submit" className="btn-secondary">Save property</button>
-          </form>
+          <GscPropertyField
+            connected={!!config.gsc?.refreshTokenEnc}
+            propertyUrl={config.gsc?.propertyUrl}
+            storeId={store?.id}
+          />
         </div>
 
         <div className="cx-panel">
