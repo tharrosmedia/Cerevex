@@ -1,16 +1,9 @@
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adsApi } from '@/lib/ads-bff';
 import { adsProxyPath, isAllowedAdsProxyRequest } from '@/lib/ads-proxy-allowlist';
+import { consoleAuthorized } from '@/lib/console-auth';
 
 export const dynamic = 'force-dynamic';
-
-async function consoleAuthorized(): Promise<boolean> {
-  const password = process.env.APP_PASSWORD;
-  if (!password) return true;
-  const jar = await cookies();
-  return jar.get('auth')?.value === password;
-}
 
 async function handle(request: Request, parts: string[]) {
   if (!(await consoleAuthorized())) {

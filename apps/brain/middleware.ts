@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { AUTH_COOKIE_NAME, setAuthCookie } from './lib/auth-cookie';
 
 const PASSWORD = process.env.APP_PASSWORD;
 
@@ -17,10 +18,12 @@ export function middleware(request: NextRequest) {
     return withPathname(request, next);
   }
 
-  const authCookie = request.cookies.get('auth')?.value;
+  const authCookie = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
   if (authCookie === PASSWORD) {
-    return withPathname(request, next);
+    const response = withPathname(request, next);
+    setAuthCookie(response.cookies, authCookie);
+    return response;
   }
 
   if (request.nextUrl.pathname === '/login') {
