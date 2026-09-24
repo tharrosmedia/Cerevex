@@ -442,8 +442,9 @@ async function signOutAction() {
   'use server';
   const { cookies } = await import('next/headers');
   const { redirect } = await import('next/navigation');
+  const { clearAuthCookie } = await import('@/lib/auth-cookie');
   const jar = await cookies();
-  jar.delete('auth');
+  clearAuthCookie(jar as never);
   redirect('/login');
 }
 
