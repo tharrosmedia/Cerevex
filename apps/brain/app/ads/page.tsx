@@ -247,7 +247,7 @@ export default async function AdsCockpitPage({
         </div>
         {suggestions.length === 0 ? (
           <div className="cx-panel">
-            <p className="cx-help">No suggestions yet — run an audit.</p>
+            <p className="cx-help">No suggestions yet. Run a check to get some.</p>
           </div>
         ) : (
           <div className="cx-card-grid">
