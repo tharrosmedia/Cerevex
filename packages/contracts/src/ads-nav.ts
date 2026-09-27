@@ -103,6 +103,13 @@ export const ADS_NAV_HREFS_LEGACY_WEB: Record<AdsNavItemId, string> = {
 
 export type ResolvedAdsNavItem = AdsNavCatalogItem & { href: string };
 
+/** Placeholder pages with nothing to use yet. Kept out of menus even when the module flag is on. */
+export const ADS_NAV_NOT_BUILT: readonly AdsNavItemId[] = ["sales", "workflows"];
+
+export function isAdsModuleBuilt(id: AdsModuleId): boolean {
+  return !(ADS_NAV_NOT_BUILT as readonly string[]).includes(id);
+}
+
 export function adsNavHrefsFor(shell: AdsNavShell): Record<AdsNavItemId, string> {
   return shell === "legacyWeb" ? ADS_NAV_HREFS_LEGACY_WEB : ADS_NAV_HREFS_IN_SHELL;
 }
@@ -118,5 +125,7 @@ export function resolveAdsNav(input: {
   const capabilities = input.capabilities ?? defaultCapabilityFlags();
   const byModule = filterItemsByModules(ADS_NAV_CATALOG, modules);
   const byCapability = filterItemsByCapabilities(byModule, capabilities);
-  return byCapability.map((item) => ({ ...item, href: hrefs[item.id] }));
+  return byCapability
+    .filter((item) => !ADS_NAV_NOT_BUILT.includes(item.id))
+    .map((item) => ({ ...item, href: hrefs[item.id] }));
 }
