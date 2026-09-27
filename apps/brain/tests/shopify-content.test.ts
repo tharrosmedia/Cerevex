@@ -3,6 +3,7 @@ import { catalogSyncSummary, describeShopifyError, fetchCatalogResources } from 
 import { createAndPublishPage, updatePage } from '../src/lib/shopify/pages';
 import { createAndPublishArticle, updateArticle } from '../src/lib/shopify/blogs';
 import { seoMetafields } from '../src/lib/shopify/seo-metafields';
+import { SHOPIFY_REQUIRED_SCOPES, missingShopifyScopes, normalizeShopDomain, verifyShopifyClient } from '../src/lib/shopify/verify';
 
 type Call = { query: string; variables: any };
 
@@ -145,6 +146,25 @@ assert.deepEqual(seoMetafields(null, undefined), []);
   const client = fakeClient(() => ({ data: { articleUpdate: { article: { id: 'a' }, userErrors: [{ field: ['title'], message: 'Title is too long' }] } } }));
   await assert.rejects(() => updateArticle(client, 'a', { title: 'x'.repeat(300) }), /Title is too long/);
   assert.ok(client.calls[0].query.includes('ArticleUpdateInput!'));
+}
+
+// Store address normalization and permission checks for Add store.
+assert.equal(normalizeShopDomain('mystore'), 'mystore.myshopify.com');
+assert.equal(normalizeShopDomain(' https://MyStore.myshopify.com/admin/products '), 'mystore.myshopify.com');
+assert.equal(normalizeShopDomain('admin.shopify.com/store/my-store'), 'my-store.myshopify.com');
+assert.equal(normalizeShopDomain('www.example.com'), null);
+assert.equal(normalizeShopDomain(''), null);
+assert.deepEqual(
+  missingShopifyScopes(['write_products', 'read_content', 'read_publications', 'write_publications']),
+  ['write_content'],
+);
+{
+  const ok = await verifyShopifyClient(fakeClient(() => ({
+    data: { shop: { name: 'Got Ductless' }, currentAppInstallation: { accessScopes: SHOPIFY_REQUIRED_SCOPES.map((handle) => ({ handle })) } },
+  })));
+  assert.deepEqual(ok, { ok: true, shopName: 'Got Ductless', missingScopes: [] });
+  const bad = await verifyShopifyClient(fakeClient(() => { throw new Error('[API] Invalid API key or access token (unrecognized login or wrong password)'); }));
+  assert.deepEqual(bad, { ok: false, error: 'Shopify rejected the access token. Replace it in Settings → Sites.' });
 }
 
 console.log('shopify-content: ok');
