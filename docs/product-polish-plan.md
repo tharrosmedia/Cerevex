@@ -1,194 +1,356 @@
 # Product polish plan
 
-Goal: make every page understandable to a store owner on first visit. Today most pages work, but they read like engineering notes, hide the parameters they use, and give little feedback after an action.
+Goal: every page should make sense to a store owner the first time they see it. Today most pages technically work, but they ask for things they don't need, bury the useful information, give no feedback after an action, and read like engineering notes.
 
-The Search Console page is the reference case. The button says "Sync 28 days", the window is fixed in code, the user can't pick Google's standard ranges or a custom range, and the copy explains what the page *doesn't* do ("this page does not flip it"). Almost every page has some version of this.
+This plan is organized **page by page**. Section 1 covers root causes that break many pages at once. Section 2 covers navigation. Sections 3 and 4 are the page specs. The later sections cover shared building blocks, decisions, order of work, and a checklist every page must pass.
 
-This plan was scoped from a full read of `apps/brain` (console) and `apps/ads/web` (legacy ads cockpit). File and line references are as of `c7f984d`.
+File and line references are as of `c7f984d`.
 
 ---
 
-## 1. What's wrong, by pattern
+## 1. Root causes that affect many pages
 
-| # | Pattern | Where it shows up |
+Fixing these first makes several pages better at once.
+
+### 1.1 Half the console has no styling
+Tailwind is installed in `apps/brain/package.json` but never wired up: there's no `postcss.config.*` and `app/globals.css` has no `@import "tailwindcss"`. Every Tailwind class (`p-8`, `grid-cols-2`, `border`, `text-sm`, …) does nothing. These files render as bare HTML:
+
+- `app/drafts/[id]/page.tsx` (the approve/deny page)
+- `app/jobs/[id]/page.tsx`, `app/history/page.tsx`, `app/error.tsx`, `app/loading.tsx`
+- Settings panels: `components/workspace-{callrail,clarity,bundled-call-tracking,capabilities,modules,seasonality}-settings.tsx`, `components/SEORulesEditor.tsx`
+- All of `components/ui/*` (shadcn)
+
+This is why the draft page isn't responsive and why parts of Settings look unlike the rest. **Fix:** move these pages onto the console's own `cx-*` / `btn-*` classes as each page is rebuilt below, and delete the unused Tailwind and shadcn dependencies at the end. That leaves one styling system. Turning Tailwind on instead would restyle every existing page through Tailwind's CSS reset, so it isn't the shortcut it looks like.
+
+### 1.2 Errors are swallowed and look like "no data"
+There are 20 `catch {}` blocks in pages, plus silent `console.warn`s in sync code. A failed Shopify call, database call, or background-job send renders as an empty list or a fake success. The catalog sync bug (4.3) is the clearest example.
+
+### 1.3 Background work never reports back
+Sync, check, draft, and recommendation jobs show "queued" at best and then nothing. Users have to refresh, or navigate somewhere else to find the result.
+
+### 1.4 Forms ask for everything up front
+Fields are shown whether they apply or not. The Stores form asks for Shopify keys even after you pick WordPress. Raw JSON boxes sit next to plain fields.
+
+### 1.5 Engineering language and hidden parameters
+Examples: "Sync 28 days", "Config (JSON, optional)", "Brief / Research / Gate (P2)", "Re-send to Inngest", "Capability flags", "(M5.2)", "kill switch", "this page does not flip it". Separately, fixed windows and limits are hidden from the user (28-day sync, 200 rows, 20 drafts).
+
+---
+
+## 2. Navigation changes
+
+**Top bar today:** SEO · Ads · Review · Stores · Settings, plus a store switcher.
+**Top bar proposed:** SEO · Ads · Settings, plus the site switcher.
+
+| Item | Change | Why |
 |---|---|---|
-| P1 | **Hidden or hard-coded parameters.** Actions bake in a value the user should choose, or hide which period a number covers. | GSC "Sync 28 days" (`app/seo/search/page.tsx:69,134`, `app/settings/page.tsx:665`, `components/gsc-property-field.tsx:80`, `jobs/seo/src/functions/gsc-sync.ts:13`). Ads spend cards say "From the last check" but are 30-day (`app/ads/page.tsx:191-196`). Creatives always label "Spend (30 days)" even when falling back to another window (`app/ads/creatives/page.tsx:101-125`). No account/campaign/date picker on Check or Sync. |
-| P2 | **Engineering language in the UI.** Milestone codes, flag names, env vars, internal names, and "this page does not…" notes. | "Brief / Research / Gate (P2)", "Re-send to Inngest", "Capability flags", "(M5.2)", "kill switch", "Flip the cockpit flag", "this slice", "Site Brain redeploy", "Approve is limited to Adam during soft-launch", `APP_PASSWORD`, `CALLRAIL_*`, "mock (QA)", "Pilot client name and URL are still TBD", "Tokens stay in the spine". |
-| P3 | **Inconsistent vocabulary.** Same concept, different names across pages. | Findings vs Recommendations (nav says Recommendations, URL/cards/empty states say findings). Suggestions vs Recommendations (ads). Check vs Audit vs Sync. Deny vs Dismiss vs Dismissed. Snooze vs Later. Leads vs Brainstorm. Approve vs authorized. Sync vs Sync now vs Sync 28 days. |
-| P4 | **Async actions without closure.** Background jobs show "queued" and then nothing; the user has to refresh or guess. | GSC sync (flash says the table updates, but the page never refreshes), catalog check, create job, recommendations refresh, ads Sync (partial failures reported as success, `components/ads/sync-ads-button.tsx:44-45`), funnel connect (silent `router.refresh()`), ads-web sync (fake 1.2s sleep). |
-| P5 | **Swallowed errors that look like empty data.** `catch {}` renders "No data yet" when the DB or API failed. | 20 occurrences across `app/layout.tsx`, `app/page.tsx`, `seo/*`, `settings`, `stores`, `drafts/[id]` (5). `seo/live/[id]` redirects with `?error=` but never reads it. |
-| P6 | **Raw data shown to users.** UUIDs, `JSON.stringify` blobs, enum strings, unformatted numbers, inconsistent dates. | `/drafts/[id]`, `/jobs/[id]`, `/history` are the worst. Raw `resourceType`, `d.type`, `severity`, `kind`, `ad.status`, `row.status`. Impressions/clicks unformatted. Dates via bare `toLocaleString()` everywhere except Ads (`lib/ads-copy.ts` has `formatMoney`/`shortWhen`). |
-| P7 | **Hidden limits, no table controls.** | 200 GSC rows, 200 catalog rows, 100 recommendations, 50 jobs, 20 drafts — never disclosed, no pagination, sort, filter, or search. |
-| P8 | **Settings as the only place to act.** Pages bounce to a single 890-line Settings page with hash anchors instead of letting the user act in place. | GSC connect, "turn on recommendations", WordPress connect, capability flags. Settings mixes integrations, feature flags, store config, brand voice, a placement JSON helper, and an Inngest resync tool (README calls it temporary). |
-| P9 | **High-stakes actions under-explained.** | Approve on `/drafts/[id]` publishes to Shopify/WordPress with no confirmation (`Submit Decision`, L340). Deny/Snooze are one-click everywhere. Ads-web Freeze/Disconnect have no confirm. The ads kill-switch banner uses destructive styling when ads are *running* and calm styling when paused (inverted). |
-| P10 | **Two design systems and two ads apps.** | `cx-*`/`btn-*` classes vs hand-rolled Tailwind (`p-8 max-w-*` on drafts/jobs/history; raw `<button>` in CallRail/Clarity/seasonality settings) vs shadcn `components/ui/*` (only used by `SEORulesEditor`). ~44 inline `style={{}}`. Separately, `apps/ads/web` duplicates the ads cockpit with different auth, copy, and broken cross-origin links. |
+| **Stores** | Moves into **Settings → Sites**. `/stores` redirects. | You add or edit a site rarely, and switching sites is already in the header switcher. It doesn't need top-level space. |
+| **Review** | Moves into the **SEO sub-menu** with a count badge ("Review 3"). `/review` stays as a route. | Every review item today is SEO content, and people reach it from Recommendations. Ads approvals already live in Ads. |
+| **SEO sub-menu** | Order follows the workflow: **Overview · Search Console · Catalog · Recommendations · Review · Activity · New content**. | Today "New content" comes second and Review is missing. The sub-menu should match the order you actually use the pages. |
+| **"GSC" rail label** | Becomes "Search Console". | Not everyone knows the acronym. |
+| **SEO jobs + History** | Merge into **Activity**. | They show the same data in two layouts, and History isn't in any menu. |
+| **Mobile** | A menu button that opens the full nav, instead of a header that shrinks and overflows. | The header can't fit the items today. |
+| **Breadcrumbs** | One back link per page, from `PageHeader`, with no hand-written "← A \| ← B" chains. Detail pages show `SEO / Review / Title` as plain text links. | The draft page has three links pointing to two places. |
+
+"Store" becomes **"Site"** throughout the UI, since WordPress sites are supported. The database keeps `store_id`.
 
 ---
 
-## 2. Bugs found during the audit (fix first, independent of polish)
+## 3. The pages you called out
 
-These are correctness issues, not taste. Each is small.
+### 3.1 Settings (`app/settings/page.tsx`, 887 lines)
 
-1. **GSC data duplicates on every sync.** `gsc_rows` has no unique key (`db/migrations/0009_gsc.sql`), so `ON CONFLICT DO NOTHING` in `src/lib/db/gsc.ts:12` never fires. Each sync appends another full copy. `summarizeGscRows` sums all copies, so Impressions/Clicks grow every time someone presses Sync. Recommendations (`listGscRows(…, 4000)`) and the audit job also read duplicated rows.
-2. **GSC window is off by one and includes incomplete data.** `fetchSearchAnalytics` sends `today-28 … today` in UTC (29 inclusive days). Google reports in `America/Los_Angeles` and the last 1-3 days are preliminary. Only 5,000 rows are requested with no `startRow` paging (API allows 25,000 per page).
-3. **GSC summary won't match Google's numbers.** Totals are summed from query×page rows, which exclude anonymized queries. Google's own totals come from a query without the `query` dimension.
-4. **SEO Jobs shows every job.** `app/seo/jobs/page.tsx:18` filters with `j.domain === 'seo' || true`.
-5. **Review queue isn't a queue.** `app/review/page.tsx:33` calls `listDrafts(storeId, undefined, 20)` with no status, so already-decided drafts sit in "waiting for a decision".
-6. **Approve can fail silently.** `app/drafts/[id]/page.tsx:131-137` only `console.error`s when the Inngest send fails, then redirects as if it succeeded.
-7. **Error never shown on catalog detail.** `app/seo/live/[id]/page.tsx:90` redirects with `?error=` but the page doesn't read `searchParams`.
-8. **Store config JSON errors are dropped.** Invalid JSON on `/stores/[id]/edit` is ignored in a `catch {}` and the save "succeeds".
-9. **Ads pixel snippet uses a relative URL** (`app/ads/funnel/page.tsx:81`), so it breaks when pasted on an external landing page.
-10. **Ads Sync reports partial failure as success** (`api/ads/sync/route.ts:49-52` + `sync-ads-button.tsx:44-45`). OAuth error text is dropped (`lib/ads-query.ts:15-16`).
-11. **Ads-web links 404.** Creatives/Funnel nav items keep bare `/ads/...` paths on the ads-web origin; Brainstorm links to relative `/ads/leads`.
-12. **Ads-web sign-in pre-fills seed credentials** (`adam@tharrosmedia.com` / `local-dev-only`, `apps/ads/web/src/app/sign-in/page.tsx:14-15,84`).
-13. **`/sentry-example-page` is excluded from auth** (`apps/brain/middleware.ts:39`) and ships to production.
+**Problem:** one long page with five anchor sections whose names don't match what's inside them. "Connects" mixes WordPress, Search Console, a recommendation threshold, a write-block switch, Shopify sync, an Ads pointer, and call tracking. "Store" mixes brand voice, a JSON placement helper, and an Inngest resync tool. "Modules & flags" is raw feature flags. About 25 different success/error banners are driven by URL parameters.
+
+**Proposed structure:** separate pages with a left menu on desktop. On mobile, `/settings` is the list and each section opens as its own page.
+
+```
+Settings
+├─ Sites                    all sites: add, manage, remove   (was the Stores page)
+├─ This site: {site name}
+│  ├─ Connections           Shopify / WordPress connection, Google Search Console,
+│  │                        Meta & Google Ads, call tracking, analytics
+│  ├─ Content & SEO         brand voice, SEO rules, recommendation sensitivity
+│  └─ Publishing            what can publish without review, allowed content types,
+│                           pause all site changes
+├─ Ads                      Ads sections on/off, seasonality calendar
+├─ Account                  password, sign out
+└─ Admin (operators only)   raw feature flags, resync jobs, content placement rules,
+                            raw site config
+```
+
+**Where every current panel goes**
+
+| Today (line) | New home |
+|---|---|
+| WordPress connect (631) | Sites → site → Connection |
+| Search Console connect / property / disconnect / "Sync 28 days" (633-674) | Connections → Google Search Console (Sync moves to the Search Console page) |
+| Search recommendations threshold + "Block writes" (676-709) | Threshold → Content & SEO. Block writes → Publishing, as "Pause all site changes" |
+| Shopify catalog sync (711-723) | Sites → site (status + Sync) and the Catalog page |
+| Ads accounts pointer (725-731) | Connections → Meta / Google Ads, showing real status |
+| CallRail / bundled tracking / Clarity (733-735) | Connections |
+| Autonomy (738-765) | Publishing, with checkboxes per content type instead of a comma-separated text box |
+| Ads modules, Capabilities (770-771) | Ads (plain on/off). Raw flag ids go to Admin. |
+| Seasonality (772) | Ads → Seasonality |
+| SEO rules editor (774-784) | Content & SEO |
+| Active store status dump (791-819) | Sites → site overview |
+| Brand voice (821-847) | Content & SEO |
+| Placement helper (849-860) | Admin |
+| Job runner / Resync Inngest (862-868) | Admin |
+| Account password (871-884), which names `APP_PASSWORD` | Account, without the variable name |
+
+**Behavior**
+- Each form saves on its own, shows inline validation, marks unsaved changes, and confirms with a toast instead of a URL banner.
+- Every integration uses the same card layout: name, status badge (Connected / Needs attention + reason / Not connected), connected account, last sync, and Connect / Reconnect / Disconnect.
+- A disabled control shows its reason next to it (e.g. "Connect Search Console first").
+- Deep links (`/settings#connects`, `#capabilities`, `#gsc-recs`) are updated to the new routes.
+
+### 3.2 Sites (was the Stores page, `app/stores/page.tsx` + `stores/[id]/edit`)
+
+**Problems confirmed in code**
+- Platform is the second question. The Shopify domain and token fields are always shown and always `required` (L126-134), so picking "WordPress (use Settings → Connects)" still demands Shopify keys. You can't actually add a WordPress site here.
+- "Config (JSON, optional)" (L136-139) is a raw placement-rules box for where generated content lands in the theme. Invalid JSON is silently ignored (L55). It's an operator tool, not a merchant question.
+- The site is saved *before* the token is verified. "Test connection" is a separate button afterwards, and the first product sync's errors are swallowed (L67-70).
+- The "Your stores" table isn't usable on mobile. The CSS turns rows into label/value lines with `justify-content: space-between`, and three buttons plus an "Actions" label don't fit in that line.
+- The success message shows a raw Shopify ID (`gid://shopify/Shop/…`).
+
+**New flow: Settings → Sites → Add a site**
+1. **What kind of site?** Two large choices, Shopify or WordPress. Nothing else shows until one is picked.
+2. **Connect**, with only that platform's fields:
+   - *Shopify:* store address (accepts `mystore`, `mystore.myshopify.com`, or a full URL, then normalized), and an Admin API access token. A "How to create a token" disclosure lists the exact permissions the app needs; the list is taken from the queries the code runs and kept in one constant.
+   - *WordPress:* site URL, a plugin download, and the plugin key. This reuses `connectWordpressStore`, which can already create a site.
+3. **Verify, then save.** The site is only saved once the connection works. The site name is pre-filled from the Shopify shop name or WordPress site title and can be edited.
+4. **Land on the new site's page.** The first catalog sync runs in the background with visible progress.
+
+**Sites list:** cards instead of a table. Each card shows the name, platform, address, and connection health, meaning Connected or Needs attention with the reason (e.g. "Token missing permission: read_content"). It also shows the last catalog sync and an "Active" marker, with two actions: **Switch to this site** and **Manage**. Test connection becomes a health check that runs automatically; "Check again" lives on the manage page.
+
+**Site page (was Edit):** name, connection (replace token / reconnect), catalog sync status, and Remove site with confirmation. Raw config JSON moves to Admin. If placement rules turn out to be needed by merchants, they get a structured form later.
+
+### 3.3 Review (`app/review/page.tsx`)
+
+**Problems confirmed in code**
+- It isn't really a queue. `listDrafts(storeId, undefined, 20)` (L33) has no status filter, so approved and denied drafts are mixed in with waiting ones.
+- There's no grouping by platform or content type. Type shows as a raw code (`seo.wordpress`, `collection`), plus a handle and a full timestamp.
+- On mobile each row becomes five label/value lines with no separation between drafts, which is why it reads as one wall of text.
+- It isn't in the SEO sub-menu, so clicking "Review" on Recommendations leaves no way there except the top menu.
+
+**New page (SEO → Review)**
+- Tabs: **Waiting (n)** · **Approved** · **Dismissed & snoozed**.
+- **Sections by platform** (e.g. "Shopify: My Store", "WordPress: blog.example.com"), each with a count. Inside a section, one compact row per draft:
+  - a content-type badge (Collection, Page, Blog post, WordPress post, Search snippet update);
+  - the title;
+  - one line saying where it came from (keyword "hvac filters", or the recommendation "Improve CTR for /collections/filters");
+  - its age ("2 h ago");
+  - a **Review** button.
+- Filter by content type; sort by newest or oldest. The list paginates past 25 items and says so.
+- On mobile each row is a small card (title, one meta line, button), not a stacked table.
+- The empty state says what feeds Review ("Drafts appear here when you create content or act on a recommendation") and links to both.
+
+**Recommendations → Review handoff:** the "Review" button on a recommendation becomes **Draft a fix**. Clicking it:
+1. shows a toast: "Drafting… it will appear in Review";
+2. changes the card to *Drafting*, then *Ready for review* with an **Open draft** link;
+3. updates the Review count in the SEO sub-menu.
+
+Today the job is queued with no redirect and no message (`startFromFinding`, `app/seo/findings/page.tsx`).
+
+### 3.4 Draft page (`app/drafts/[id]/page.tsx`)
+
+**Problems confirmed in code**
+- No styling at all (1.1). Wide `<pre>` JSON blocks, fixed-width textareas, and unconstrained preview HTML overflow on phones.
+- Three navigation links to two places: "← Back to Review | ← Back to Job" (L214-216) plus "View full job audit" (L222). A raw job UUID sits in the subtitle (L221).
+- Internal debug output: "Brief / Research / Gate (P2)", `JSON.stringify` of the brief and scores, "ON-TOPIC" (L252-265). An "Available Metafields on store" dump (L267-276).
+- The decision is a dropdown plus one "Submit Decision" button (L289-340). Approve publishes live with no confirmation. The edit fields are always visible even when you're not editing ("Edit Fields (only for edited)"), and three of them are raw JSON.
+- If the background job fails to send, the page still redirects as if it worked (L131-137).
+
+**New page**
+- Standard header: one back link "← Review" and the title. A meta line shows the content type, site, keyword, and "Created 2 h ago".
+- **Desktop:** preview on the left, a decision panel on the right that stays in view while scrolling. **Mobile:** one column, with Approve / Edit / Dismiss / Snooze in a bar fixed to the bottom of the screen.
+- **Preview tabs:**
+  - *Page:* images and tables constrained to the screen width.
+  - *Google result:* a search snippet built from the SEO title and meta description, with character counts.
+  - *Products* (collections only): product names and images instead of JSON.
+- **Edit** turns the fields editable in place: title, URL handle, SEO title, meta description, and body. Metafields become labelled inputs; schema and product JSON move under "Advanced".
+- **Approve** opens a confirmation: "Publish *Title* to *My Store* as a Collection. It will be live at *URL*." **Dismiss** asks for an optional reason. **Snooze** offers 1 day / 1 week.
+- **"How this was made"** is a collapsed section with a research summary, the brief in plain sentences, and quality checks as a checklist (e.g. "On topic ✓"). The link to the job's activity lives here, not in the header.
+- A failed send shows an error and keeps the draft in Waiting.
+
+### 3.5 SEO jobs becomes Activity (`app/seo/jobs/page.tsx` + `app/history/page.tsx` + `app/jobs/[id]`)
+
+**Problems confirmed in code**
+- The first column is `j.id.slice(0, 8)` (L51). The keyword is stored in `job.input.keyword` but never shown.
+- The filter `j.domain === 'seo' || true` (L18) shows every job.
+- There's no step or progress, no error reason, no result link, a hidden 50-row cap, and errors are swallowed (L17).
+- History shows the same jobs as JSON blobs in the unstyled layout.
+
+**New page (SEO → Activity)**
+- Each row leads with **what it worked on**: the keyword for new content, the page title for recommendation fixes, or the post title for WordPress proposals. Then the content type, a human status, the start time as relative time, and the result: **Open draft**, **View live page**, or **Retry**.
+  - Status examples: Researching, Writing, Waiting for review, Published, Failed with the reason.
+- Running jobs update live. Failed jobs show why.
+- Filters by status and type, keyword search, and pagination with "Showing 1-25 of 140".
+- **Job detail:** a plain timeline of steps (Researched → Drafted → Reviewed → Published) instead of the pipeline string and raw event log. "Re-send to Inngest" becomes **Retry**. Output leads with the live link; JSON goes under "Technical details". The back link returns to Activity.
+- What's running right now is also summarized on the SEO Overview, so Activity is where you look things up, not a page you need to watch.
+
+### 3.6 Live catalog becomes Catalog (`app/seo/live/page.tsx`)
+
+**Why it doesn't sync (likely root cause, confirm against a real store's logs)**
+- The collections and pages queries in `src/lib/shopify/catalog.ts` request `publishedOnCurrentPublication`. For a custom-app token, Shopify rejects that field unless the token has `read_product_listings` and the app has its own sales-channel publication. The Stores form only asks for `read_products + write_collections`, and pages and blog posts also need `read_content`.
+- Each resource type is fetched in its own `try { … } catch { console.warn }`, so failures are silently skipped. The sync then records zero items as a success.
+- Blog posts come only from the first blog.
+- The sync runs inside the button click with no pending state and no result message. The only way to tell it did something is to reload and compare.
+- Nothing syncs automatically, and nothing on the page explains what the catalog is for.
+
+**Fixes**
+- Remove `publishedOnCurrentPublication` and read published state from fields covered by the normal read permissions (or look up the Online Store publication once and use `publishedOnPublication`). Fetch every blog.
+- When a site connects, read the token's granted permissions (`currentAppInstallation { accessScopes }`) and show any missing ones on the Sites card with instructions.
+- Move sync to a background job with live status. Report results per type, for example: "Synced 42 collections and 8 pages. Blog posts failed: token is missing read_content."
+- Sync automatically: daily, and after anything is published.
+
+**New page (SEO → Catalog)**
+- Header: "58 items · last synced 3 min ago" and a **Sync** button.
+- Tabs with counts: Collections · Pages · Blog posts · WordPress posts. Search, and sort by title or last updated.
+- Columns that make the page useful for SEO: title, URL, **SEO title**, **meta description** (with flags for missing or too long), published or hidden, and last updated on the site.
+- Row action **Improve** drafts an update and sends it to Review, the same path as Recommendations. Row action **View** opens the live page.
+- Catalog detail (`/seo/live/[id]`): Shopify items get the same "Propose an improvement" flow WordPress has. Errors passed back in the URL get displayed (today `?error=` is written but never read, L90).
 
 ---
 
-## 3. Decisions needed before building
+## 4. Remaining pages
 
-These change the shape of the work; defaults are proposed so work can start without blocking.
+### 4.1 Search Console (`app/seo/search/page.tsx`)
+- **Data fixes:**
+  - `gsc_rows` has no unique key, so every sync appends a duplicate copy and the Impressions and Clicks totals grow each time. Add the key and de-duplicate.
+  - Add a small daily-totals table so totals match Google's numbers for any range.
+  - Use Pacific-time dates and finalized data.
+  - Page through results at 25,000 rows per request.
+- **Sync:** the button is labelled **Sync** and refreshes the selected range. It also syncs automatically every day, and backfills history on first connect.
+- **Date range picker:** Last 7 days · Last 28 days · **Last 3 months (default, same as Google)** · 6 / 12 / 16 months · Custom.
+- **Page layout:**
+  - cards for Clicks, Impressions, Avg. CTR, and Avg. position, each with change vs the previous period;
+  - a trend chart;
+  - sortable, searchable Queries and Pages tabs;
+  - connect Search Console from this page, not only from Settings.
+- **Copy:** remove the engineering notes ("this page does not write the site", "Do not treat this table as the product").
+
+### 4.2 Recommendations (`app/seo/findings/page.tsx`)
+- Rename the route to `/seo/recommendations` and use "Recommendations" consistently. The dashboard and empty states still say "findings".
+- Buttons: **Draft a fix** (see 3.3) · **Snooze** · **Dismiss** (drop "Deny").
+- State the time window the recommendations are based on. Replace "Place cutoff / Save cutoff" with a labelled sensitivity setting.
+- "Run catalog check" becomes **Check pages** and shows progress. List paginated, with filters by type and impact.
+
+### 4.3 Dashboard (`app/page.tsx`) and onboarding
+- One **"Needs you"** list: drafts waiting for review, new recommendations, failed jobs. Today the same count appears twice under different names.
+- A first-run checklist replaces both the home business-type picker and `/onboarding`, which always redirects to Ads: add a site → connect Search Console → first sync → first recommendation.
+
+### 4.4 New content (`app/seo/create/page.tsx`)
+- Inline validation instead of silently doing nothing or throwing an error page.
+- A pending button. On submit, a toast with a link to the job in Activity.
+- Plain help text instead of "unless store autonomy turns it off".
+
+### 4.5 Ads pages in the console (`app/ads/*`)
+- Label every metric with its period and add the date range picker. Today spend reads "From the last check" but is really 30 days.
+- Add account and client pickers to Check, Sync, Creatives, and Funnel.
+- One vocabulary: Check / Sync / Recommendations / Approve / Dismiss / Snooze. Rename "Brainstorm" to "Ad ideas".
+- Remove the Sales and Workflows placeholder pages from the menu until they're built.
+- Findings link to the recommendations they produced.
+- Dismiss and Snooze get an undo toast.
+- The pause banner's severity is backwards today. It should warn when ads can be changed and look neutral when changes are paused.
+- The funnel pixel snippet uses an absolute URL, and Sync reports failures for individual accounts.
+- Port the per-client page from the old standalone app to `/ads/clients/[id]`.
+
+### 4.6 Old standalone ads app (`apps/ads/web`)
+- It's already hidden by default. Once 4.5 ships, redirect its routes into `/ads` and remove it.
+- Until then, only apply safety fixes: remove the pre-filled seed login and fix its links that 404.
+
+---
+
+## 5. Correctness bugs (fix first)
+
+| # | Bug | Location |
+|---|---|---|
+| 1 | Tailwind not wired, so pages render unstyled | see 1.1 |
+| 2 | Catalog sync silently saves 0 items | `src/lib/shopify/catalog.ts`, see 3.6 |
+| 3 | GSC rows duplicate on every sync, inflating totals | `db/migrations/0009_gsc.sql`, `src/lib/db/gsc.ts:12` |
+| 4 | GSC window off by one, includes unfinished days, capped at 5,000 rows | `src/lib/gsc/client.ts:105-122` |
+| 5 | Adding a WordPress site requires Shopify fields; sites saved before the token is verified | `app/stores/page.tsx:57,126-134` |
+| 6 | Invalid config JSON silently ignored on add and edit | `app/stores/page.tsx:55`, `stores/[id]/edit` |
+| 7 | Review shows decided drafts | `app/review/page.tsx:33` |
+| 8 | SEO jobs filter `\|\| true` | `app/seo/jobs/page.tsx:18` |
+| 9 | Approve redirects as success when the job send fails | `app/drafts/[id]/page.tsx:131-137` |
+| 10 | "Draft a fix" (today "Review") gives no feedback | `app/seo/findings/page.tsx` `startFromFinding` |
+| 11 | Catalog detail never shows its `?error=` | `app/seo/live/[id]/page.tsx:90` |
+| 12 | Ads pixel snippet uses a relative URL | `app/ads/funnel/page.tsx:81` |
+| 13 | Ads Sync reports partial failure as success; OAuth error text dropped | `api/ads/sync/route.ts:49-52`, `lib/ads-query.ts:15-16` |
+| 14 | Old ads app: pre-filled seed login, links that 404 | `apps/ads/web/src/app/sign-in/page.tsx:14-15`, ads nav hrefs |
+| 15 | `/sentry-example-page` is outside login and ships to production | `apps/brain/middleware.ts:39` |
+
+---
+
+## 6. Shared building blocks
+
+Build these once so every page rebuild uses the same parts.
+
+1. **Copy rules and glossary** (`docs/ui-copy.md`):
+   - Vocabulary: Site; Recommendations; Draft a fix; Approve / Dismiss / Snooze; Sync; Check; Activity.
+   - Rules: buttons are verbs that describe the result; say what a page does, never what it doesn't; no milestone codes, flag ids, env vars, vendor or model names, or people's names; state the period next to every metric.
+2. **Formatting** (`lib/format.ts`): numbers, money, percents, positions, dates, date ranges, relative time. **Labels** (`lib/labels.ts`): every content type, job status, platform, and connection state.
+3. **Components:**
+   - `DateRangePicker`
+   - `JobStatus`, which polls a background job and shows pending → done / failed + Retry
+   - toasts (sonner)
+   - `ConfirmDialog`
+   - `DataTable`: pagination, sort, search, "Showing X of Y", and card layout on mobile
+   - `IntegrationCard`
+   - `LoadError` with retry
+   - `SettingsLayout` with the left menu
+   - `StepForm` for the add-site flow
+4. **Page shell:** `PageHeader` everywhere, with one back link and an optional plain breadcrumb. Nested `loading.tsx` / `error.tsx` for SEO, Ads, and Settings. No inline `style={{}}`.
+
+---
+
+## 7. Decisions (defaults proposed so work can start)
 
 | Decision | Proposed default |
 |---|---|
-| Name for SEO action items | **Recommendations** everywhere (rename route `/seo/findings` → `/seo/recommendations` with a redirect). |
-| Name for Ads action items | **Recommendations** as well, so the product has one word. "Findings" stays only as the evidence list inside a Check. |
-| Decision verbs | **Approve / Dismiss / Snooze** everywhere (drop Deny, Later, authorized). |
-| Ads analysis verbs | **Check** (analyze) and **Sync** (pull latest data). Drop "Audit" from UI. |
-| Leads vs Brainstorm | **Ad ideas** (nav + page title), route kept as `/ads/leads` with alias. |
-| Who sees feature flags | Merchants see On/Off feature toggles in plain language. Raw ids, `recommend_only`, unfinished items, env-kill notes, and "Resync Inngest" move behind an **Operator** section only visible to admins. |
-| `apps/ads/web` | **Retire it.** It's already hidden by default (`shell.legacy_ads_web`), and every live feature exists in `/ads`. The one gap is per-client detail (`/app/clients/[id]`), which gets ported as `/ads/clients/[id]`. |
-| GSC default range | **Last 3 months**, matching Google's own Performance report default. |
+| Stores location | Settings → Sites; removed from the top bar |
+| Review location | SEO sub-menu with a count badge |
+| "Store" vs "Site" | "Site" in the UI |
+| Action items | "Recommendations" in both SEO and Ads |
+| Decision buttons | Approve / Dismiss / Snooze |
+| Feature flags | Plain on/off under Settings → Ads. Raw flags and dev tools go to an operators-only Admin section. |
+| Styling | Console `cx-*` classes only; remove unused Tailwind and shadcn after migration |
+| Default Search Console range | Last 3 months (Google's default) |
+| Old standalone ads app | Retire after the console Ads pages are finished |
 
 ---
 
-## 4. Shared foundations (build once, used by every later phase)
+## 8. Order of work
 
-Doing these first keeps the page work mechanical and consistent.
+Each step is its own PR (or a few). Steps 3-5 can run in parallel once step 2 lands.
 
-1. **Copy rules + glossary** — `docs/ui-copy.md`: the vocabulary from section 3, plus rules: say what an action does, never what a page doesn't do; no milestone codes, flag ids, env vars, vendor/model names ("Grok"), or people's names; state the period next to every metric; button labels are verbs.
-2. **Formatting helpers** — move `formatMoney`/`shortWhen` out of `lib/ads-copy.ts` into `lib/format.ts` and add `formatNumber`, `formatPercent`, `formatPosition`, `formatDate`, `formatDateRange`, `formatRelative`. Replace every bare `toLocaleString()`/`toLocaleDateString()`.
-3. **Enum label maps** — one `lib/labels.ts` for job types/statuses, draft types, resource types (`collection` → "Collection", `wp_post` → "WordPress post"), severities, ad statuses, connection states. Replace raw enum renders.
-4. **`DateRangePicker` component** — presets (Last 7 days, Last 28 days, Last 3 months, Last 6 months, Last 12 months, Last 16 months, Custom) with a custom start/end picker. Encodes to URL params (`?range=3m` or `?from=…&to=…`) so views are linkable. Used by GSC and every Ads metric surface.
-5. **Background job status** — a small `job_runs` record (or reuse `events`) written when a sync/check/generate starts and finishes, plus a `<JobStatus>` client component that polls it and shows "Syncing… / Synced 2 min ago / Sync failed: reason — Retry". Replaces "queued" flashes and ad-hoc `AutoRefresh`.
-6. **Toasts** — add a toast provider (shadcn `sonner`) for action results; keep `Flash` only for persistent page-level states.
-7. **Error surfaces** — replace `catch {}` with a `<LoadError>` panel (message + retry) and add nested `error.tsx`/`loading.tsx` under `seo`, `ads`, `settings`. `app/error.tsx` stops showing raw `error.message`.
-8. **`ConfirmDialog`** — built on the existing (unused) `components/ui/dialog.tsx`. Required for anything that publishes, spends, disconnects, or freezes; copy states the destination and consequence.
-9. **`DataTable`** — built on `components/ui/table.tsx`: server-side pagination, sortable columns, a search box, and "Showing 1-50 of 1,240". Replaces the hand-rolled tables and hidden limits.
-10. **One styling path** — `cx-*`/`btn-*` classes (or shadcn primitives styled to match) as the only option. Migrate raw Tailwind buttons in `workspace-*-settings.tsx`, and the `p-8` prototype chrome on `drafts/[id]`, `jobs/[id]`, `history`. Remove inline `style={{}}`.
-
----
-
-## 5. Phases
-
-Each phase is independently shippable. Phase 1 is deliberately the pilot: it exercises most foundations on one page and becomes the template for the rest.
-
-### Phase 0 — Correctness fixes
-Section 2 bugs 4-13 (bugs 1-3 land with Phase 1 because they change the GSC data model). Small, isolated edits; each gets a test where the repo already has one nearby (`apps/brain/tests`).
-
-### Phase 1 — Search Console rebuild (pilot page)
-
-**Data model** (fixes bugs 1-3)
-- New migration: add `search_type`, a `synced_range` key, and a unique index on `(store_id, date_start, date_end, query, page)`; de-duplicate existing rows.
-- New `gsc_daily_totals (store_id, date, clicks, impressions, ctr, position)` filled from a `date`-only query. This is small (≤ 490 rows per store for 16 months) and gives totals that match Google for **any** range without re-syncing.
-- `fetchSearchAnalytics(storeId, { startDate, endDate })` replaces `days`. Use Pacific dates, end at the latest finalized date (`dataState: final`), page with `rowLimit: 25000` + `startRow`, batch inserts instead of one INSERT per row.
-- A sync for a range replaces that range's query×page snapshot in a transaction instead of appending.
-
-**Sync behavior**
-- Button label: **Sync**. Clicking it refreshes the currently selected range and the daily totals.
-- First connect backfills 16 months of daily totals and the default range (3 months) of query×page data.
-- Add a daily scheduled Inngest sync so data is fresh without clicking anything; "Last synced" shows relative time.
-- `<JobStatus>` replaces the "queued" flash; the page updates itself when the sync finishes and shows the error if it fails.
-
-**Page**
-- Header: property name, connection status, `DateRangePicker` (default Last 3 months), **Sync** button.
-- Cards: Clicks, Impressions, Avg. CTR, Avg. position for the chosen range, with change vs the previous period. Small clicks/impressions trend chart from daily totals.
-- Queries and Pages tabs (`DataTable`, sortable, searchable, paginated) instead of a collapsed "raw sync rows" table. If the chosen range has no query-level snapshot, show "Sync this range to see queries" with a one-click sync.
-- Connect inline (OAuth start) when disconnected; property picker inline after connect. Settings keeps a link, not the only path.
-- Copy rewrite: remove "this page does not write the site", "Do not treat this table as the product", "Tables stay collapsed here", "does not flip it". One line of help: what Search Console data is used for and a link to Recommendations.
-- Recommendations generation documents its own window ("based on the last 28 days vs the 28 days before") in the Recommendations page, decoupled from the view range.
-- Update `gsc-copy.ts`, `gsc-property-field.tsx:80`, and the duplicate Sync button in Settings (`settings/page.tsx:665`) to match.
-
-### Phase 2 — Vocabulary and copy sweep (whole app)
-Apply the glossary and copy rules everywhere. Mostly string edits, plus route aliases.
-- Recommendations rename (route, nav rail "GSC" → "Search Console", dashboard card, SEO overview metric, empty states).
-- Approve/Dismiss/Snooze everywhere, including ads filter chips and ads-web status chips.
-- Remove all P2 strings. Largest concentrations: `packages/contracts/src/capabilities.ts` labels/help (M5.2, `FEATURE_*`, "Got Ductless", "Adam"), `components/workspace-capabilities-settings.tsx`, `components/ads/*` ("this slice", "(mock)", "Site apply later"), `lib/ads-copy.ts:331-334`, `wordpress-connect-settings.tsx:90-109`, `/drafts/[id]`, `/jobs/[id]`.
-- Rename ambiguous actions: "Review" (which actually queues a job) → "Draft a fix"; "Run catalog check" → "Check pages"; "Re-send to Inngest" → "Retry"; "Adapt / make another for Google?" → "Adapt for Google"; "Place cutoff/Save cutoff" → a labelled position threshold.
-- Rename `/api/ads/m51` → a descriptive route (keep the old path as an alias for one release).
-
-### Phase 3 — Settings restructure
-- Split into sub-routes with a left nav: **Integrations** (Shopify, Search Console, WordPress, Meta, Google Ads, CallRail, Clarity — each a card with status badge, connected account, last sync, Connect / Reconnect / Disconnect), **Publishing & approvals** (autonomy, allowed content types as checkboxes, block-writes toggle in plain words), **Features** (plain On/Off toggles), **Store** (name, brand voice, SEO rules), **Account** (password — without naming the env var), and an admin-only **Operator** section (raw capability ids, Resync Inngest, placement helper, config JSON).
-- Per-form save with inline validation, dirty-state indicator, and toasts instead of ~25 query-string flash variants.
-- Disabled controls carry their reason next to them (e.g. "Connect Search Console to sync").
-- Update every deep link (`/settings#connects`, `#capabilities`, `#gsc-recs`) to the new routes.
-
-### Phase 4 — SEO workflow pages
-- **Dashboard (`/`)**: one "What needs you" list (drafts awaiting approval, new recommendations, failed jobs) instead of duplicate counts; first-run checklist (connect store → connect Search Console → first sync → first recommendation) replaces both the home business-type chooser and the separate `/onboarding` redirect to `/ads`.
-- **Recommendations**: `DataTable`/card list with pagination and filters (type, page, impact); the page explains the window it's based on; catalog check shows progress via `<JobStatus>`.
-- **Create**: validation messages instead of silent return or thrown errors; pending button; toast + link to the new job.
-- **Jobs + History**: merge into one **Activity** page (filters: status, type, date; search by keyword), linked from nav. Job rows lead with keyword/title, not UUIDs.
-- **Job detail**: human status timeline instead of the internal pipeline string and raw event log; output shows links to the published page first, JSON under "Technical details"; back link returns to Activity.
-- **Review**: only awaiting-approval items, labelled types, pagination.
-- **Draft detail**: move onto `cx-page` chrome; structured fields instead of raw JSON textareas for metafields/schema/products; hide the brief/gate dump behind "How this was generated"; Approve opens `ConfirmDialog` naming the destination ("Publish to your Shopify store as a Collection"); edit fields only appear in edit mode.
-- **Live catalog**: filters by type + search, pending state on Sync, result toast, labelled types; Shopify items get the same "Propose an improvement" flow WordPress has, or an explicit view-only note.
-- **Stores**: "Add store" asks only for what's needed per platform (WordPress no longer shows Shopify token fields); config JSON moves to Operator; "Select" → "Use this store"; test result shows shop name, not a GID.
-
-### Phase 5 — Ads pages in the console
-- `DateRangePicker` on the cockpit, Creatives, and recommendation evidence; every metric labelled with its period (and fall-back windows labelled truthfully).
-- Account/client pickers on Check, Sync, Creatives, and Funnel (currently picks a default client silently).
-- Explain Check vs Sync in one line on the buttons' tooltip/help; Sync reports per-account results including failures.
-- Cockpit shows a section map matching the nav; Sales and Workflows placeholders are removed from nav until built.
-- Findings detail links to the recommendations it produced (currently a dead end).
-- Dismiss/Snooze get a light confirm or an Undo toast; Approve's confirm copy states the concrete change and spend impact without flag jargon; apply results shown as a status line, JSON under details.
-- Kill-switch banner severity fixed (ads live = caution, paused = neutral) with plain labels ("Ads changes paused" / "Ads changes can be applied").
-- Funnel: absolute pixel URL + copy button, GA4 property ID validation, Disconnect with confirm, success toast.
-- Port the one missing capability from ads-web: per-client detail at `/ads/clients/[id]`.
-
-### Phase 6 — Retire `apps/ads/web`
-- After Phase 5 ships, redirect every `/app/*` route to its `/ads/*` equivalent, then remove the web package and its Railway service (`cerevex-web`) in a coordinated change. Until then, apply only the safety fixes from section 2 (seed credentials, broken links).
-- Rename the `tharros_token` storage key if the app lives longer than one release.
-
-### Phase 7 — Shell, navigation, and visual consistency
-- Mobile navigation (collapsible menu; current header just shrinks/overflows).
-- Active-state styling for the current module and settings section (`aria-current` is styled but never set).
-- Consistent back links/breadcrumbs via `PageHeader` on every page (Ads pages don't use it today).
-- Store switcher: show which store you're acting on in page headers where it matters (Settings, Approve).
-- Remove `sentry-example-page`; add page-level skeletons in place of the global "Loading…" pulse.
-
----
-
-## 6. Definition of done for a polished page
-
-Use this checklist in every polish PR.
-
-- [ ] Every button label is a verb that describes the result; no hidden parameters in labels.
-- [ ] Any value the result depends on (date range, account, store, limit) is visible and, where reasonable, choosable.
-- [ ] Every metric states its period; numbers, money, percents, and dates use `lib/format.ts`.
-- [ ] No raw ids, enums, or JSON outside a "Technical details" disclosure.
-- [ ] Copy passes `docs/ui-copy.md` (no flags, milestones, env vars, people, or "this page does not…").
-- [ ] Background actions show pending → done/failed without a manual refresh.
-- [ ] Load failures show an error with retry, not an empty state.
-- [ ] Empty state says what to do first and offers the action inline.
-- [ ] Lists over ~25 items paginate and say "Showing X of Y"; tables sort.
-- [ ] Publishing, spending, disconnecting, or freezing requires confirmation naming the consequence.
-- [ ] Uses shared components/classes only; no inline styles.
-- [ ] Works at mobile width.
-
----
-
-## 7. Size and risk by phase
-
-| Phase | Touches | Risk |
+| Step | Scope | Risk |
 |---|---|---|
-| 0 Correctness | ~12 files, one-line to small edits | Low |
-| 1 Search Console | 1 migration + data backfill, GSC client, sync job, new scheduled job, page, 3 new shared components | Medium — data migration on production Neon (Brain `public` schema only; never touch `os`) |
-| Foundations | New `lib/format.ts`, `lib/labels.ts`, 6 shared components, toast provider | Low |
-| 2 Copy sweep | ~40 files, mostly strings; route aliases | Low, but wide — needs a visual pass |
-| 3 Settings | Split one 887-line page into ~6 routes; rewire deep links | Medium — many forms and redirects |
-| 4 SEO pages | ~12 pages; Approve confirm touches the publish path | Medium |
-| 5 Ads pages | ~12 pages + `components/ads/*`; new client detail route | Medium — must keep approve-gated, kill-switch-on behavior intact |
-| 6 Retire ads-web | Redirects, package + Railway service removal | Medium — coordinate with Railway config outside the repo |
-| 7 Shell | Layout, nav, CSS | Low |
+| 1. Bug fixes | Section 5, except the GSC data model (bugs 3-4, which go with step 4) | Low |
+| 2. Building blocks + nav | Section 6 and section 2 (Stores → Settings, Review → SEO sub-menu, Activity merge, mobile menu) | Low-medium |
+| 3. Settings + Sites | 3.1, 3.2 | Medium: many forms and redirects; the add-site flow touches site creation |
+| 4. SEO workflow | 3.3 Review, 3.4 Draft, 3.5 Activity, 3.6 Catalog, 4.1 Search Console, 4.2-4.4 | Medium: the Approve confirmation sits on the publish path; the GSC migration runs against production Neon (Brain `public` schema only, never `os`) |
+| 5. Ads | 4.5 | Medium: must keep approval gates and pause behavior intact |
+| 6. Retire old ads app | 4.6 | Medium: coordinate Railway service removal outside the repo |
+| 7. Cleanup | Remove Tailwind and shadcn, remaining copy sweep | Low |
 
-Suggested order: Phase 0 → Foundations → Phase 1 (pilot, validates the components) → Phase 2 → Phases 3/4/5 in parallel → Phase 6 → Phase 7.
+---
+
+## 9. Checklist for every page
+
+- [ ] Asks only for what's needed, in the order that decides what comes next.
+- [ ] Button labels are verbs describing the result; no hidden parameters.
+- [ ] Values the result depends on (date range, site, account, limit) are visible and choosable where reasonable.
+- [ ] Metrics state their period; numbers and dates use `lib/format.ts`.
+- [ ] No raw ids, codes, or JSON outside a collapsed "Technical details".
+- [ ] Copy follows `docs/ui-copy.md`.
+- [ ] Background actions show pending → done / failed without a refresh.
+- [ ] Load failures show an error with retry, never a fake empty state.
+- [ ] Empty state says what to do first and offers the action inline.
+- [ ] Lists over 25 items paginate and show "Showing X of Y".
+- [ ] Publishing, spending, disconnecting, or removing asks for confirmation naming the consequence.
+- [ ] One back link; reachable from its section's sub-menu.
+- [ ] Works at 375 px wide with no horizontal scrolling.
+- [ ] Uses shared components and `cx-*` classes only.
