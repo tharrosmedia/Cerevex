@@ -48,7 +48,7 @@ Tailwind is installed in `apps/brain/package.json` but never wired up: there's n
 - Settings panels: `components/workspace-{callrail,clarity,bundled-call-tracking,capabilities,modules,seasonality}-settings.tsx`, `components/SEORulesEditor.tsx`
 - All of `components/ui/*` (shadcn)
 
-This is why the draft page isn't responsive and why parts of Settings look unlike the rest. **Fix:** move these pages onto the console's own `cx-*` / `btn-*` classes as each page is rebuilt below, and delete the unused Tailwind and shadcn dependencies at the end. That leaves one styling system. Turning Tailwind on instead would restyle every existing page through Tailwind's CSS reset, so it isn't the shortcut it looks like.
+This is why the draft page isn't responsive and why parts of Settings look unlike the rest. **Fix (done):** load Tailwind's theme and utilities without its reset (preflight), so these pages render and nothing else changes. As pages are rebuilt they still move to `cx-*` classes; once nothing uses utilities, Tailwind and shadcn can be removed.
 
 ### 1.2 Errors are swallowed and look like "no data"
 There are 20 `catch {}` blocks in pages, plus silent `console.warn`s in sync code. A failed Shopify call, database call, or background-job send renders as an empty list or a fake success. The catalog sync bug (4.3) is the clearest example.
