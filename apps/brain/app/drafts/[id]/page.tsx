@@ -5,8 +5,6 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getActiveStoreId, getStore } from '@/src/lib/db/stores';
-import { createAdminClient } from '@/src/lib/shopify/client';
-import { fetchMetafieldDefinitions } from '@/src/lib/shopify/content';
 import { logEvent } from '@/src/lib/brain/events';
 import { isWordpressApplyWritable } from '@cerevex/contracts';
 import {
@@ -16,6 +14,8 @@ import {
 } from '@/src/lib/wordpress';
 import { gscApplyIsWritable, isGscSourcedJob } from '@/src/lib/seo/gsc-flags';
 import { GSC_APPLY_OFF_REVIEW_COPY } from '@/src/lib/seo/gsc-copy';
+import { PageHeader } from '@/components/page-header';
+import { jobStatusLabel, jobSubject, jobTypeLabel } from '@/lib/job-labels';
 
 async function decide(formData: FormData) {
   'use server';
@@ -114,6 +114,7 @@ async function decide(formData: FormData) {
     }
     await updateJobStatus(jobId, 'publishing');
     await logEvent(job.storeId, 'human', 'wordpress.approved', { notes, approvalId: draftId }, jobId);
+    let enqueued = true;
     try {
       await inngest.send({
         name: 'seo/wordpress.apply',
@@ -121,19 +122,20 @@ async function decide(formData: FormData) {
       });
     } catch (e: any) {
       console.error('Failed to enqueue WordPress apply', e);
-      await updateJobStatus(jobId, 'failed', { reason: e?.message || 'enqueue failed' });
+      enqueued = false;
+      await updateJobStatus(jobId, 'awaiting_approval');
     }
     const { revalidatePath } = await import('next/cache');
     revalidatePath('/review');
+    if (!enqueued) redirect(`/drafts/${draftId}?error=send_failed`);
     redirect('/review?success=decision-submitted');
   }
 
-  console.log('[INNGEST] sending approval/decided', { jobId, status });
   try {
     await inngest.send({ name: 'approval/decided', data: { status, notes, editedPayload, jobId, draftId } });
-    console.log('[INNGEST] approval send completed for', jobId);
   } catch (e: any) {
     console.error('Failed to send approval to Inngest', e);
+    redirect(`/drafts/${draftId}?error=send_failed`);
   }
 
   const finalStatus = status === 'approved' || status === 'edited' ? 'approved' : status === 'snoozed' ? 'snoozed' : 'rejected';
@@ -147,8 +149,15 @@ async function decide(formData: FormData) {
 
 export const dynamic = 'force-dynamic';
 
-export default async function DraftDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function DraftDetail({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ error?: string }>;
+}) {
   const { id } = await params;
+  const query = (await (searchParams ?? Promise.resolve({}))) as { error?: string };
   let draft: any = null;
   let loadError: string | null = null;
   try {
@@ -160,17 +169,16 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
 
   if (loadError) {
     return (
-      <div className="p-8 max-w-4xl mx-auto">
-        <Link href="/review" className="underline">← Back to Review</Link>
-        {' | '}
-        <Link href={`/jobs/${draft?.jobId || ''}`} className="underline">← Back to Job</Link>
-        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">Error: {loadError}</div>
+      <div className="cx-page">
+        <PageHeader title="Draft" backHref="/review" backLabel="← Review" />
+        <p className="cx-banner cx-banner-warn" role="status">Could not load this draft: {loadError}</p>
       </div>
     );
   }
   if (!draft) notFound();
 
   let brandVoice: any = null;
+  let jobInput: any = null;
   let jobType = 'collection';
   let jobStatus = '';
   let wordpressApplyOn = true;
@@ -178,6 +186,7 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
   let gscJob = false;
   try {
     const j = await getJob(draft.jobId);
+    jobInput = j?.input || null;
     brandVoice = j?.input?.brandVoice || null;
     jobType = j?.type || 'collection';
     jobStatus = j?.status || '';
@@ -191,92 +200,87 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
     }
   } catch {}
 
-  let availableMetafields: any[] = [];
   let placement: any = null;
   try {
     const sid = draft.storeId || await getActiveStoreId();
     if (sid) {
       const s = await getStore(sid);
-      if (s) {
-        const rawPlacement = s.config?.placement || null;
-        const typePlacement = rawPlacement ? (rawPlacement[jobType] || rawPlacement.default || rawPlacement) : null;
-        placement = typePlacement;
-        if (s.shopify_access_token) {
-          const client = createAdminClient(s.shopify_domain, s.shopify_access_token);
-          availableMetafields = await fetchMetafieldDefinitions(client);
-        }
-      }
+      const rawPlacement = s?.config?.placement || null;
+      placement = rawPlacement ? (rawPlacement[jobType] || rawPlacement.default || rawPlacement) : null;
     }
   } catch {}
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <Link href="/review" className="underline">← Back to Review</Link>
-      {' | '}
-      <Link href={`/jobs/${draft.jobId}`} className="underline">← Back to Job</Link>
-      <h1 className="text-2xl font-bold mt-4 mb-2">{draft.title}</h1>
-      {brandVoice && (
-        <div className="text-xs mb-2 text-muted-foreground">Brand Voice: {brandVoice.text || JSON.stringify(brandVoice)}</div>
-      )}
-      <p className="text-sm text-muted-foreground mb-4">Handle: {draft.handle} | Job: {draft.jobId}</p>
-      <p className="text-sm mb-4"><Link href={`/jobs/${draft.jobId}`} className="underline">View full job audit</Link></p>
+    <div className="cx-page cx-draft">
+      <PageHeader
+        kicker={jobTypeLabel(jobType)}
+        title={draft.title}
+        lede={[
+          jobSubject(jobInput) ? `Keyword: ${jobSubject(jobInput)}` : null,
+          draft.handle ? `URL: /${draft.handle}` : null,
+          jobStatus ? jobStatusLabel(jobStatus) : null,
+        ].filter(Boolean).join(' · ')}
+        backHref="/review"
+        backLabel="← Review"
+      />
 
-      <div className="border p-4 mb-6">
-        <h3 className="font-semibold mb-2">Preview</h3>
-        <div className="prose max-w-none border p-4 bg-white" dangerouslySetInnerHTML={{ __html: draft.bodyHtml }} />
-      </div>
+      {query.error === 'send_failed' ? (
+        <p className="cx-banner cx-banner-warn" role="status">
+          Your decision was not sent, so nothing changed. Try again in a moment.
+        </p>
+      ) : null}
 
-      <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-        <div>Meta Title: {draft.metaTitle}</div>
-        <div>Meta Desc: {draft.metaDescription}</div>
-      </div>
+      <section className="cx-panel">
+        <h2>Preview</h2>
+        <div className="cx-html-preview" dangerouslySetInnerHTML={{ __html: draft.bodyHtml }} />
+      </section>
+
+      <section className="cx-panel">
+        <h2>Search listing</h2>
+        <dl className="cx-draft-meta">
+          <div>
+            <dt>SEO title</dt>
+            <dd>{draft.metaTitle || '—'}</dd>
+          </div>
+          <div>
+            <dt>Meta description</dt>
+            <dd>{draft.metaDescription || '—'}</dd>
+          </div>
+        </dl>
+      </section>
 
       {draft.selectedProducts && draft.selectedProducts.length > 0 && (
-        <div className="mb-6">
-          <h4 className="font-medium mb-1 text-sm">Selected Products</h4>
+        <section className="cx-panel">
+          <h2>Products ({draft.selectedProducts.length})</h2>
           <ul className="text-sm list-disc pl-5">
             {draft.selectedProducts.map((p: any, i: number) => (
-              <li key={i}>{p.title || p.shopifyId} ({p.handle})</li>
+              <li key={i}>{p.title || p.handle || 'Untitled product'}</li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
-      {draft.metafields && (Array.isArray(draft.metafields) ? draft.metafields.length : Object.keys(draft.metafields).length) > 0 && (
-        <div className="mb-4 text-xs">
-          <h4 className="font-medium mb-1">Metafields</h4>
-          <pre className="bg-white p-2 border overflow-auto">{JSON.stringify(draft.metafields, null, 2)}</pre>
-        </div>
-      )}
-
-      {(draft.rawResearch || draft.evaluationScores || draft.brief) && (
-        <div className="mb-6 text-sm border p-3 bg-muted">
-          <h4 className="font-medium mb-1">Brief / Research / Gate (P2)</h4>
-          {draft.brief && <div className="mb-1 text-xs">Brief: {JSON.stringify(draft.brief).slice(0,400)}...</div>}
-          {draft.rawResearch?.summary && <div className="mb-1">Research: {draft.rawResearch.summary.slice(0,300)}...</div>}
-          {draft.evaluationScores?.topicGate && (
-            <div className="mt-1">
-              Topic Gate: {draft.evaluationScores.topicGate.onTopic ? 'ON-TOPIC' : 'OFF-TOPIC'} 
-              {draft.evaluationScores.topicGate.violations?.length ? ` | Violations: ${draft.evaluationScores.topicGate.violations.join('; ')}` : ''}
-            </div>
-          )}
-          {draft.evaluationScores && <div className="text-xs mt-1">Scores: {JSON.stringify(draft.evaluationScores).slice(0,200)}</div>}
-        </div>
-      )}
-
-      {availableMetafields.length > 0 && (
-        <div className="mb-6 text-xs">
-          <div className="font-medium mb-1">Available Metafields on store (filtered by type in editor):</div>
-          <div className="max-h-20 overflow-auto border p-1 bg-muted">
-            {availableMetafields.slice(0, 20).map((d: any, i: number) => (
-              <span key={i} className="mr-2">{d.namespace}.{d.key} </span>
-            ))}
-          </div>
-        </div>
+      {(draft.rawResearch || draft.evaluationScores || draft.brief || brandVoice) && (
+        <details className="cx-details cx-panel">
+          <summary>How this was made</summary>
+          {brandVoice ? <p className="cx-help">Brand voice: {brandVoice.text || 'Custom'}</p> : null}
+          {draft.rawResearch?.summary ? <p className="cx-help">Research: {draft.rawResearch.summary.slice(0, 400)}</p> : null}
+          {draft.evaluationScores?.topicGate ? (
+            <p className="cx-help">
+              Topic check: {draft.evaluationScores.topicGate.onTopic ? 'on topic' : 'off topic'}
+              {draft.evaluationScores.topicGate.violations?.length
+                ? ` — ${draft.evaluationScores.topicGate.violations.join('; ')}`
+                : ''}
+            </p>
+          ) : null}
+          <p className="cx-help">
+            <Link href={`/jobs/${draft.jobId}`}>View activity for this draft</Link>
+          </p>
+        </details>
       )}
 
       {jobStatus === 'awaiting_approval' && (
-      <form action={decide} className="space-y-4 border p-4 rounded">
+      <form action={decide} className="cx-panel space-y-4">
         <input type="hidden" name="draftId" value={draft.id} />
         <input type="hidden" name="jobId" value={draft.jobId} />
         {!wordpressApplyOn && jobType === 'seo.wordpress' ? (
@@ -286,9 +290,10 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
           <p className="text-sm">{GSC_APPLY_OFF_REVIEW_COPY}</p>
         ) : null}
 
+        <h2>Your decision</h2>
         <div>
-          <label className="block mb-1">Decision</label>
-          <select name="status" className="border p-2 w-full">
+          <label className="block mb-1" htmlFor="draft-decision">Decision</label>
+          <select id="draft-decision" name="status" className="w-full">
             {wordpressApplyOn || jobType !== 'seo.wordpress' ? (
               <>
                 <option value="approved">Approve</option>
@@ -301,21 +306,26 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
         </div>
 
         <div>
-          <label className="block mb-1">Notes</label>
-          <textarea name="notes" className="border p-2 w-full h-20" />
+          <label className="block mb-1" htmlFor="draft-notes">Notes (optional)</label>
+          <textarea id="draft-notes" name="notes" className="w-full h-20" />
         </div>
 
-        <div className="border p-3">
-          <h4 className="font-medium mb-2">Edit Fields (only for edited)</h4>
-          <input name="title" defaultValue={draft.title} placeholder="Title" className="border p-1 w-full mb-2" />
-          <input name="handle" defaultValue={draft.handle} placeholder="Handle" className="border p-1 w-full mb-2" />
-          <input name="metaTitle" defaultValue={draft.metaTitle} placeholder="Meta Title" className="border p-1 w-full mb-2" />
-          <input name="metaDescription" defaultValue={draft.metaDescription} placeholder="Meta Desc" className="border p-1 w-full mb-2" />
-           <textarea name="bodyHtml" defaultValue={draft.bodyHtml} className="border p-1 w-full h-40" />
-           {/* P1: per-slot metafield textareas from placement (server rendered) + additional JSON */}
+        <details className="cx-details">
+          <summary>Edit before approving</summary>
+          <p className="cx-help">Changes here are used when you choose Edit &amp; Approve.</p>
+          <label className="block mb-1 text-sm" htmlFor="draft-title">Title</label>
+          <input id="draft-title" name="title" defaultValue={draft.title} className="w-full mb-2" />
+          <label className="block mb-1 text-sm" htmlFor="draft-handle">URL handle</label>
+          <input id="draft-handle" name="handle" defaultValue={draft.handle} className="w-full mb-2" />
+          <label className="block mb-1 text-sm" htmlFor="draft-meta-title">SEO title</label>
+          <input id="draft-meta-title" name="metaTitle" defaultValue={draft.metaTitle} className="w-full mb-2" />
+          <label className="block mb-1 text-sm" htmlFor="draft-meta-desc">Meta description</label>
+          <input id="draft-meta-desc" name="metaDescription" defaultValue={draft.metaDescription} className="w-full mb-2" />
+          <label className="block mb-1 text-sm" htmlFor="draft-body">Page content (HTML)</label>
+          <textarea id="draft-body" name="bodyHtml" defaultValue={draft.bodyHtml} className="w-full h-40" />
            {placement && placement.metafields && Array.isArray(placement.metafields) && placement.metafields.length > 0 && (
              <div className="mt-2">
-               <div className="text-xs font-medium mb-1">Placement Metafield Slots (edit values)</div>
+               <div className="text-xs font-medium mb-1">Custom fields</div>
                {placement.metafields.map((rule: any, i: number) => {
                  const t = rule.target || {};
                  const cur = Array.isArray(draft.metafields) ? draft.metafields.find((m:any)=> m.namespace===t.namespace && m.key===t.key) : null;
@@ -332,12 +342,18 @@ export default async function DraftDetail({ params }: { params: Promise<{ id: st
                })}
              </div>
            )}
-           <textarea name="metafields" defaultValue={draft.metafields ? JSON.stringify(draft.metafields, null, 2) : ''} placeholder='Additional metafields JSON (array or record; will merge to typed array)' className="border p-1 w-full h-16 font-mono text-xs mt-2" />
-           <textarea name="schemaJsonLd" defaultValue={draft.schemaJsonLd ? JSON.stringify(draft.schemaJsonLd, null, 2) : ''} placeholder='Schema JSON-LD' className="border p-1 w-full h-20 font-mono text-xs mt-1" />
-           <textarea name="selectedProducts" defaultValue={draft.selectedProducts ? JSON.stringify(draft.selectedProducts, null, 2) : ''} placeholder='Selected Products JSON (array of {shopifyId, title, handle})' className="border p-1 w-full h-16 font-mono text-xs mt-2" />
-        </div>
+          <details className="cx-details mt-2">
+            <summary>Advanced</summary>
+            <label className="block mb-1 text-xs" htmlFor="draft-metafields">Metafields (JSON)</label>
+            <textarea id="draft-metafields" name="metafields" defaultValue={draft.metafields ? JSON.stringify(draft.metafields, null, 2) : ''} className="w-full h-16 font-mono text-xs" />
+            <label className="block mb-1 text-xs" htmlFor="draft-schema">Structured data (JSON-LD)</label>
+            <textarea id="draft-schema" name="schemaJsonLd" defaultValue={draft.schemaJsonLd ? JSON.stringify(draft.schemaJsonLd, null, 2) : ''} className="w-full h-20 font-mono text-xs" />
+            <label className="block mb-1 text-xs" htmlFor="draft-products">Products (JSON)</label>
+            <textarea id="draft-products" name="selectedProducts" defaultValue={draft.selectedProducts ? JSON.stringify(draft.selectedProducts, null, 2) : ''} className="w-full h-16 font-mono text-xs" />
+          </details>
+        </details>
 
-        <button type="submit" className="bg-black text-white px-6 py-2">Submit Decision</button>
+        <button type="submit" className="btn-cta">Submit decision</button>
       </form>
       )}
     </div>
