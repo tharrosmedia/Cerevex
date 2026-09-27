@@ -8,7 +8,8 @@ export const SEO_NAV: SeoNavItem[] = [
   { href: '/seo', label: 'Overview' },
   { href: '/seo/create', label: 'New content', rail: 'New' },
   { href: '/seo/live', label: 'Live catalog', rail: 'Catalog' },
-  { href: '/seo/search', label: 'Search Console', rail: 'GSC' },
+  { href: '/seo/search', label: 'Search Console', rail: 'Search Console' },
   { href: '/seo/findings', label: 'Recommendations' },
+  { href: '/review', label: 'Review', rail: 'Review' },
   { href: '/seo/jobs', label: 'SEO jobs' },
 ];

@@ -172,13 +172,6 @@ export default function SiteNav({
           <Link href="/ads">Ads</Link>
         )}
         <Link
-          href="/review"
-          className={pathname === '/review' ? 'site-nav-current' : undefined}
-          onClick={closeMenu}
-        >
-          Review
-        </Link>
-        <Link
           href="/stores"
           className={pathname?.startsWith('/stores') ? 'site-nav-current' : undefined}
           onClick={closeMenu}

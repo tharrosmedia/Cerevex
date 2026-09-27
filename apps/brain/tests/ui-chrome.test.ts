@@ -8,9 +8,9 @@ import { operatorLoadError } from '../lib/ui-copy';
 
 assert.deepEqual(
   SEO_NAV.map((item) => item.label),
-  ['Overview', 'New content', 'Live catalog', 'Search Console', 'Recommendations', 'SEO jobs'],
+  ['Overview', 'New content', 'Live catalog', 'Search Console', 'Recommendations', 'Review', 'SEO jobs'],
 );
-assert.ok(SEO_NAV.every((item) => item.href.startsWith('/seo')));
+assert.ok(SEO_NAV.every((item) => item.href.startsWith('/seo') || item.href === '/review'));
 assert.equal(new Set(SEO_NAV.map((item) => item.href)).size, SEO_NAV.length);
 
 assert.deepEqual(
