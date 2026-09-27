@@ -30,6 +30,7 @@ export function toPublicAccount(
     clientId: row.clientId,
     platform: row.platform,
     externalId: row.externalId,
+    displayName: row.displayName ?? null,
     connectionStatus: publicConnectionStatus(row),
     lastSyncAt: row.lastSyncAt ? row.lastSyncAt.toISOString() : null,
     lastError: row.lastError,
@@ -66,19 +67,25 @@ export async function upsertConnectedAccount(input: {
   clientId: string;
   platform: Platform;
   externalId: string;
+  displayName?: string | null;
   scopes: string[];
   tokens: Parameters<typeof storeTokens>[0]["tokens"];
   label: string;
 }) {
   const db = getDb();
   const matches = await db.select().from(adAccounts).where(eq(adAccounts.clientId, input.clientId));
-  const match = matches.find((row) => row.platform === input.platform);
+  const samePlatform = matches.filter((row) => row.platform === input.platform);
+  // A client can hold several accounts per platform. Legacy Google connects saved "pending" with no account chosen.
+  const match =
+    samePlatform.find((row) => row.externalId === input.externalId) ??
+    samePlatform.find((row) => row.externalId === "pending");
 
   const values = {
     workspaceId: input.workspaceId,
     clientId: input.clientId,
     platform: input.platform,
     externalId: input.externalId,
+    ...(input.displayName ? { displayName: input.displayName } : {}),
     connectionStatus: "connected" as const,
     lastError: null,
     scopesJson: input.scopes,

@@ -4,7 +4,7 @@ import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
 import { mockPull } from "../platforms";
-import type { StoredOAuthTokens } from "../types";
+import type { AccessibleAdAccount, StoredOAuthTokens } from "../types";
 import type {
   AdPlatformConnector,
   ConnectorApplyInput,
@@ -25,12 +25,117 @@ function notConfigured(): ConnectorConnectResult {
   };
 }
 
+function digitsOnly(id: string): string {
+  return id.replace(/^customers\//, "").replace(/-/g, "");
+}
+
+/** Accounts reached through a manager (MCC) need login-customer-id on every call. */
+export function googleAdsHeaders(
+  tokens: Pick<StoredOAuthTokens, "accessToken" | "loginCustomerId">,
+  developerToken: string,
+  loginCustomerId?: string | null,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${tokens.accessToken}`,
+    "developer-token": developerToken,
+    "content-type": "application/json",
+  };
+  const login = loginCustomerId ?? tokens.loginCustomerId ?? process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
+  if (login) headers["login-customer-id"] = digitsOnly(login);
+  return headers;
+}
+
+async function googleSearch<T>(
+  tokens: StoredOAuthTokens,
+  developerToken: string,
+  customerId: string,
+  query: string,
+  loginCustomerId?: string | null,
+): Promise<T[]> {
+  const res = await fetch(`${GOOGLE_ADS}/customers/${digitsOnly(customerId)}/googleAds:search`, {
+    method: "POST",
+    headers: googleAdsHeaders(tokens, developerToken, loginCustomerId ?? null),
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error(`Google Ads read failed (${res.status})`);
+  const body = (await res.json()) as { results?: T[] };
+  return body.results ?? [];
+}
+
+type GoogleCustomerRow = {
+  customer?: { id?: string; descriptiveName?: string; currencyCode?: string; manager?: boolean };
+};
+type GoogleCustomerClientRow = {
+  customerClient?: { id?: string; descriptiveName?: string; currencyCode?: string; manager?: boolean };
+};
+
+const MAX_GOOGLE_ROOTS = 50;
+
+export async function listGoogleAccessibleAccounts(tokens: StoredOAuthTokens): Promise<AccessibleAdAccount[]> {
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  if (!developerToken) {
+    throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is not configured — cannot list Google Ads accounts");
+  }
+  const res = await fetch(`${GOOGLE_ADS}/customers:listAccessibleCustomers`, {
+    headers: { authorization: `Bearer ${tokens.accessToken}`, "developer-token": developerToken },
+  });
+  if (!res.ok) throw new Error(`Google Ads account list failed (${res.status})`);
+  const { resourceNames = [] } = (await res.json()) as { resourceNames?: string[] };
+
+  const direct = new Map<string, AccessibleAdAccount>();
+  const managed = new Map<string, AccessibleAdAccount>();
+  let firstError: unknown = null;
+  for (const resourceName of resourceNames.slice(0, MAX_GOOGLE_ROOTS)) {
+    const id = digitsOnly(resourceName);
+    try {
+      const [row] = await googleSearch<GoogleCustomerRow>(
+        tokens,
+        developerToken,
+        id,
+        "SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer LIMIT 1",
+        null,
+      );
+      const name = row?.customer?.descriptiveName || id;
+      if (!row?.customer?.manager) {
+        direct.set(id, { externalId: id, name, currency: row?.customer?.currencyCode ?? null, detail: null, loginCustomerId: null });
+        continue;
+      }
+      const children = await googleSearch<GoogleCustomerClientRow>(
+        tokens,
+        developerToken,
+        id,
+        "SELECT customer_client.id, customer_client.descriptive_name, customer_client.currency_code, customer_client.manager FROM customer_client WHERE customer_client.level = 1",
+        id,
+      );
+      for (const child of children) {
+        const cc = child.customerClient;
+        if (!cc?.id || cc.manager) continue;
+        const childId = digitsOnly(cc.id);
+        if (!managed.has(childId)) {
+          managed.set(childId, {
+            externalId: childId,
+            name: cc.descriptiveName || childId,
+            currency: cc.currencyCode ?? null,
+            detail: `Managed by ${name}`,
+            loginCustomerId: id,
+          });
+        }
+      }
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  const all = [...direct.values(), ...[...managed.values()].filter((a) => !direct.has(a.externalId))];
+  if (all.length === 0 && firstError) throw firstError;
+  return all;
+}
+
 async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
   if (!developerToken) {
     throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is not configured — cannot live-read Google Ads");
   }
-  const customerId = externalId.replace(/-/g, "");
+  const customerId = digitsOnly(externalId);
   const query = `
     SELECT campaign.id, campaign.name, campaign.status
     FROM campaign
@@ -38,11 +143,7 @@ async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
   `;
   const res = await fetch(`${GOOGLE_ADS}/customers/${customerId}/googleAds:search`, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${tokens.accessToken}`,
-      "developer-token": developerToken,
-      "content-type": "application/json",
-    },
+    headers: googleAdsHeaders(tokens, developerToken),
     body: JSON.stringify({ query }),
   });
   if (!res.ok) {
@@ -175,6 +276,11 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     };
   }
 
+  async listAccessibleAccounts(tokens: StoredOAuthTokens): Promise<AccessibleAdAccount[]> {
+    if (tokens.mock) return [];
+    return listGoogleAccessibleAccounts(tokens);
+  }
+
   async readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
@@ -195,11 +301,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     if (!customer) return null;
     const res = await fetch(`${GOOGLE_ADS}/customers/${customer.replace(/-/g, "")}/googleAds:search`, {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${tokens.accessToken}`,
-        "developer-token": developerToken,
-        "content-type": "application/json",
-      },
+      headers: googleAdsHeaders(tokens, developerToken),
       body: JSON.stringify({ query }),
     });
     if (!res.ok) return null;
@@ -340,11 +442,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
 
     const res = await fetch(`${GOOGLE_ADS}/customers/${customerId}/googleAds:mutate`, {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${tokens.accessToken}`,
-        "developer-token": developerToken,
-        "content-type": "application/json",
-      },
+      headers: googleAdsHeaders(tokens, developerToken),
       body: JSON.stringify({ mutateOperations: operations }),
     });
     if (!res.ok) {

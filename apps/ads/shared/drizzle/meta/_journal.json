@@ -29,6 +29,13 @@
       "when": 1790500000000,
       "tag": "0003_m51",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790600000000,
+      "tag": "0004_site_clients",
+      "breakpoints": true
     }
   ]
 }

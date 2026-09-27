@@ -15,6 +15,8 @@ import { callRailConnector } from "./callrail";
 import { clarityAnalyticsConnector } from "./clarity";
 import { housecallProConnector } from "./crm";
 import { wordPressSiteConnector } from "./site";
+
+export { googleAdsHeaders, listGoogleAccessibleAccounts } from "./google";
 import type {
   AdPlatformConnector,
   AnalyticsConnector,

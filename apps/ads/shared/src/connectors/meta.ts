@@ -4,7 +4,7 @@ import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
 import { isMetaConfigured, metaAuthorizeUrl, metaRedirectUri } from "../oauth";
 import { mockPull } from "../platforms";
-import type { StoredOAuthTokens } from "../types";
+import type { AccessibleAdAccount, StoredOAuthTokens } from "../types";
 import type {
   AdPlatformConnector,
   ConnectorApplyInput,
@@ -220,6 +220,30 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       },
       externalId,
     };
+  }
+
+  async listAccessibleAccounts(tokens: StoredOAuthTokens): Promise<AccessibleAdAccount[]> {
+    if (tokens.mock) return [];
+    const accounts: AccessibleAdAccount[] = [];
+    let next: string | null = "me/adaccounts?fields=id,account_id,name,currency,business{name}&limit=100";
+    for (let page = 0; next && page < 10; page++) {
+      const json = (await graphGet(next, tokens.accessToken)) as {
+        data?: Array<{ id?: string; account_id?: string; name?: string; currency?: string; business?: { name?: string } }>;
+        paging?: { next?: string };
+      };
+      for (const row of json.data ?? []) {
+        const externalId = row.id ?? (row.account_id ? `act_${row.account_id}` : null);
+        if (!externalId) continue;
+        accounts.push({
+          externalId,
+          name: row.name || externalId,
+          currency: row.currency ?? null,
+          detail: row.business?.name ?? null,
+        });
+      }
+      next = json.paging?.next ?? null;
+    }
+    return accounts;
   }
 
   async readLiveEntityState(input: {

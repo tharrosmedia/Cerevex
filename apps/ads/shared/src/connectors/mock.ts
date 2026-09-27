@@ -2,7 +2,7 @@ import type { CapabilityFlags } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import { mockPull } from "../platforms";
-import type { Platform, StoredOAuthTokens } from "../types";
+import type { AccessibleAdAccount, Platform, StoredOAuthTokens } from "../types";
 import type {
   AdPlatformConnector,
   ConnectorApplyInput,
@@ -69,6 +69,10 @@ export class MockAdPlatformConnector implements AdPlatformConnector {
       },
       externalId: this.platform === "meta" ? "act_mock-pending" : "customers/mock-pending",
     };
+  }
+
+  async listAccessibleAccounts(_tokens: StoredOAuthTokens): Promise<AccessibleAdAccount[]> {
+    return [];
   }
 
   async readLiveEntityState(_input: {
