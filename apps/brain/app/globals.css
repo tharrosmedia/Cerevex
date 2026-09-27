@@ -1,3 +1,25 @@
+/*
+ * Tailwind utilities only — no preflight, so console element and cx-* styles stay as they are.
+ * Utilities are unlayered so a utility class (0,1,0) still beats the element selectors below.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+}
+
+@layer base {
+  *, ::before, ::after { border-color: var(--border); }
+}
+
 :root {
   /* Design Standards 1.2 — locked canvas + black --cta placeholder */
   --bg: #ffffff;
@@ -35,6 +57,7 @@ h1 { font-size: 1.5rem; }
 table { border-collapse: collapse; width: 100%; }
 th, td { padding: 8px; border: 1px solid var(--border); text-align: left; }
 input, textarea, select, button { padding: 8px; border: 1px solid var(--border); }
+input, textarea, select { box-sizing: border-box; max-width: 100%; font: inherit; }
 button {
   background: var(--cta);
   color: var(--cta-foreground);
@@ -525,6 +548,49 @@ a { color: var(--foreground); }
   padding-left: 1.1rem;
   color: var(--muted-foreground);
   font-size: 0.9rem;
+}
+
+.cx-html-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.cx-html-preview img,
+.cx-html-preview video,
+.cx-html-preview iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+.cx-html-preview table {
+  display: block;
+  overflow-x: auto;
+}
+
+.cx-draft-meta {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.cx-draft-meta dt {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.cx-draft-meta dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 720px) {
+  .cx-draft-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .cx-inline-nav {
