@@ -2,6 +2,18 @@ import { adsApi, type AdsAccount, type AdsAudit, type AdsClient, type AdsSuggest
 import { platformFromRecord } from './ads-copy';
 import type { AdsFilterState } from '@/components/ads/ads-filters';
 
+const OAUTH_ERROR_COPY: Record<string, string> = {
+  access_denied: 'Connecting was cancelled on the Meta or Google permission screen. Nothing was connected.',
+  missing_code: 'Meta or Google did not send the connection back. Try connecting again.',
+  exchange_failed: 'Meta or Google accepted the login, but Cerevex could not finish connecting. Try again.',
+  capability_off: 'Connecting ad accounts is turned off for this workspace. Turn it on in Settings, then try again.',
+};
+
+export function oauthErrorMessage(code: string | undefined): string {
+  if (!code) return 'Could not finish connecting that account.';
+  return OAUTH_ERROR_COPY[code] ?? `Could not finish connecting that account (${code.replace(/_/g, ' ')}).`;
+}
+
 export function parseAdsFilters(input: {
   client?: string;
   platform?: string;
@@ -13,7 +25,7 @@ export function parseAdsFilters(input: {
 }): AdsFilterState & { notice?: string } {
   const platform = input.platform === 'meta' || input.platform === 'google' ? input.platform : undefined;
   const notice = input.connect_error || input.oauth_error
-    ? input.connect_error || 'Could not finish connecting that account.'
+    ? input.connect_error || oauthErrorMessage(input.oauth_error)
     : input.connected
       ? `${input.connected === 'google' ? 'Google' : 'Meta'} is connected.`
       : undefined;

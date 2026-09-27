@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { FunnelConnectForm } from '@/components/ads/funnel-connect-form';
+import { publicOrigin } from '@/lib/public-url';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { adsApi, loadAdsCockpit } from '@/lib/ads-bff';
 import { adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
@@ -23,6 +25,7 @@ export default async function AdsFunnelPage() {
     );
   }
 
+  const pixelOrigin = publicOrigin({ headers: await headers() });
   const selected = pickDefaultClient(cockpit.clients, null);
   const result = await adsApi<{
     connections: Array<{
@@ -78,7 +81,7 @@ export default async function AdsFunnelPage() {
         <section className="cx-panel">
           <h2>Pixel snippet</h2>
           <p className="cx-help">Paste this on the landing page. It sends page views and optional leads only.</p>
-          <pre>{`<script src="/api/ads/pixel?token=${pixel.pixelToken}" async></script>`}</pre>
+          <pre className="whitespace-pre-wrap break-all">{`<script src="${pixelOrigin}/api/ads/pixel?token=${pixel.pixelToken}" async></script>`}</pre>
         </section>
       ) : null}
       <nav className="cx-inline-nav">
