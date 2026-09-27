@@ -4,7 +4,7 @@ import { inferBrandVoice } from '@/src/lib/agents/brand/voice';
 import { writeKnowledge } from '@/src/lib/brain/memory';
 import { createAdminClient } from '@/src/lib/shopify/client';
 import { fetchStoreSamples, fetchMetafieldDefinitions, fetchMetafieldValueSamples } from '@/src/lib/shopify/content';
-import { syncProductsForStore, syncCatalogForStore } from '@/src/lib/shopify/sync';
+import { syncProductsForStore, syncCatalogForStore, recordCatalogSync, catalogSyncSummary } from '@/src/lib/shopify/sync';
 import { getDefaultSEORules } from '@/src/lib/seo/rules';
 import { SEORulesEditor } from '@/components/SEORulesEditor';
 import { WorkspaceCapabilitiesSettings } from '@/components/workspace-capabilities-settings';
@@ -417,21 +417,10 @@ async function syncCatalogAction() {
   }
   try {
     const result = await syncCatalogForStore(store.id);
-    const currentConfig = store.config || {};
-    const newConfig = {
-      ...currentConfig,
-      catalogLastSynced: new Date().toISOString(),
-      catalogSyncedCount: result.synced,
-    };
-    await updateStore(store.id, {
-      name: store.name,
-      shopify_domain: store.shopify_domain,
-      shopify_access_token: '',
-      platform: store.platform || 'shopify',
-      config: newConfig,
-    });
+    await recordCatalogSync(store.id, result);
     revalidatePath('/settings');
-    redirect(`/settings?catalog=synced&count=${result.synced}`);
+    revalidatePath('/seo/live');
+    redirect('/settings?catalog=synced');
   } catch (e: any) {
     if (e?.digest?.startsWith('NEXT_REDIRECT')) {
       throw e;
@@ -587,7 +576,14 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
           Could not sync products: {params.message ? decodeURIComponent(params.message) : 'check that the Admin API token has read_products.'}
         </Flash>
       )}
-      {params.catalog === 'synced' && <Flash>Live catalog synced ({params.count || '0'} collections/pages/articles).</Flash>}
+      {params.catalog === 'synced' && (
+        <Flash tone={config.catalogSyncErrors?.length ? 'warn' : undefined}>
+          {catalogSyncSummary({
+            counts: config.catalogSyncCounts || { collection: 0, page: 0, article: 0 },
+            errors: config.catalogSyncErrors || [],
+          })}
+        </Flash>
+      )}
       {params.catalog === 'error' && (
         <Flash tone="warn">
           Could not sync catalog{params.message ? `: ${decodeURIComponent(params.message)}` : '.'}

@@ -68,7 +68,7 @@ export async function fetchStoreSamples(adminClient: any, limit = 5) {
       query {
         blog(id: "${blog.id}") {
           articles(first: 3) {
-            edges { node { title bodyHtml } }
+            edges { node { title body } }
           }
         }
       }
@@ -77,7 +77,7 @@ export async function fetchStoreSamples(adminClient: any, limit = 5) {
     const arts = artRes?.data?.blog?.articles?.edges || [];
     arts.forEach((e: any) => {
       const n = e.node;
-      if (n.title) samples.push({ title: n.title, body: (n.bodyHtml || '').slice(0, 500) });
+      if (n.title) samples.push({ title: n.title, body: (n.body || '').slice(0, 500) });
     });
   } catch (e) { console.warn('[shopify content] fetch failed:', e); }
 

@@ -1,9 +1,11 @@
-import { getStore } from '../db/stores';
+import { getStore, updateStore } from '../db/stores';
 import { createAdminClient } from './client';
 import { fetchProducts } from './products';
 import { upsertProduct } from '../db/products';
 import { writeKnowledge } from '../brain/memory';
-import { fetchCatalogResources } from './catalog';
+import { fetchCatalogResources, type CatalogFetchError, type CatalogResourceType } from './catalog';
+
+export { catalogSyncSummary } from './catalog';
 import { upsertCatalogResource } from '../db/catalog';
 
 export async function syncProductsForStore(storeId: string) {
@@ -42,18 +44,27 @@ export async function syncProductsForStore(storeId: string) {
   return { synced: count, totalFetched: prods.length };
 }
 
-export async function syncCatalogForStore(storeId: string) {
+export type CatalogSyncResult = {
+  synced: number;
+  totalFetched: number;
+  counts: Record<CatalogResourceType, number>;
+  errors: CatalogFetchError[];
+  skipped?: 'wordpress';
+};
+
+export async function syncCatalogForStore(storeId: string): Promise<CatalogSyncResult> {
   const store = await getStore(storeId);
+  const emptyCounts = { collection: 0, page: 0, article: 0 };
   if ((store?.connector_type || store?.platform) === 'wordpress') {
-    return { synced: 0, totalFetched: 0, skipped: 'wordpress' as const };
+    return { synced: 0, totalFetched: 0, counts: emptyCounts, errors: [], skipped: 'wordpress' };
   }
   if (!store || !store.shopify_access_token) {
     throw new Error('No Shopify credentials for store');
   }
   const client = createAdminClient(store.shopify_domain, store.shopify_access_token);
-  const items = await fetchCatalogResources(client);
+  const { resources, counts, errors } = await fetchCatalogResources(client);
   let count = 0;
-  for (const r of items) {
+  for (const r of resources) {
     try {
       await upsertCatalogResource(storeId, r);
       count++;
@@ -61,7 +72,26 @@ export async function syncCatalogForStore(storeId: string) {
       console.warn('Failed to upsert catalog', r.handle, e);
     }
   }
-  // optional knowledge
   try { await writeKnowledge(storeId, `Catalog snapshot: ${count} resources synced`, { type: 'catalog_sync', count }); } catch {}
-  return { synced: count, totalFetched: items.length };
+  return { synced: count, totalFetched: resources.length, counts, errors };
+}
+
+/** Saves the outcome of a catalog sync on the store so every page reports the same result. */
+export async function recordCatalogSync(storeId: string, result: Pick<CatalogSyncResult, 'synced' | 'counts' | 'errors'>) {
+  const store = await getStore(storeId);
+  if (!store) return;
+  await updateStore(storeId, {
+    name: store.name,
+    shopify_domain: store.shopify_domain,
+    shopify_access_token: '',
+    platform: store.platform || 'shopify',
+    connector_type: store.connector_type || store.platform || 'shopify',
+    config: {
+      ...(store.config || {}),
+      catalogLastSynced: new Date().toISOString(),
+      catalogSyncedCount: result.synced,
+      catalogSyncCounts: result.counts,
+      catalogSyncErrors: result.errors,
+    },
+  });
 }
