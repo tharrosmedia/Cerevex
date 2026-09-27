@@ -52,7 +52,7 @@ assert.ok(!homeItems.some((item) => item.label === 'Clients'));
 assert.ok(!homeItems.some((item) => item.label === 'Sales'));
 
 const agencyItems = adsSub('', defaultModulesFor('agency'));
-assert.ok(agencyItems.some((item) => item.label === 'Clients'));
+assert.ok(!agencyItems.some((item) => item.label === 'Clients'), 'each store is its own client; no separate Clients page');
 assert.ok(!agencyItems.some((item) => item.label === 'Sales'));
 
 const ecomItems = adsSub('', defaultModulesFor('ecommerce'));

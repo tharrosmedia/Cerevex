@@ -15,7 +15,6 @@ import {
   loadAccounts,
   openSuggestionCount,
   parseAdsFilters,
-  pickDefaultClient,
 } from '@/lib/ads-query';
 import { adsCapabilityOn, adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
@@ -26,56 +25,45 @@ import { SeasonalityCalendar, type SeasonalityView } from '@/components/ads/seas
 import { OwnerWeeklyNarrative, type WeeklyNarrativeView } from '@/components/ads/owner-weekly-narrative';
 import { adsApi } from '@/lib/ads-bff';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
-import { getActiveStoreId, listStores } from '@/src/lib/db/stores';
+import { resolveSiteAds } from '@/lib/ads-site';
+import { ConnectButtons } from '@/components/ads/connect-buttons';
 
 export const dynamic = 'force-dynamic';
+
+type CockpitParams = {
+  platform?: string;
+  status?: string;
+  connect_error?: string;
+  connected?: string;
+  count?: string;
+  oauth_error?: string;
+};
 
 export default async function AdsCockpitPage({
   searchParams,
 }: {
-  searchParams?: Promise<{
-    client?: string;
-    platform?: string;
-    status?: string;
-    connect_error?: string;
-    connected?: string;
-    oauth_error?: string;
-  }>;
+  searchParams?: Promise<CockpitParams>;
 }) {
   const settings = await getWorkspaceModuleSettings();
   if (!settings.onboardingComplete) {
     redirect('/onboarding');
   }
 
-  const params = (await (searchParams ?? Promise.resolve({}))) as {
-    client?: string;
-    platform?: string;
-    status?: string;
-    connect_error?: string;
-    connected?: string;
-    oauth_error?: string;
-  };
+  const params = (await (searchParams ?? Promise.resolve({}))) as CockpitParams;
   const filters = parseAdsFilters(params);
-  const cockpit = await loadAdsCockpit();
-
-  let storeName: string | null = null;
-  try {
-    const storeId = await getActiveStoreId();
-    const stores = (await listStores()) as Array<{ id?: string; name?: string }>;
-    storeName = stores.find((store) => store.id === storeId)?.name ?? null;
-  } catch {}
-
-  const selectedClient = pickDefaultClient(cockpit.clients, storeName, filters.client);
-  const accounts = await loadAccounts(cockpit.clients.map((client) => client.id));
-  const audits = filterAudits(cockpit.audits, { ...filters, client: selectedClient?.id ?? filters.client }, accounts);
+  const [cockpit, siteAds] = await Promise.all([loadAdsCockpit(), resolveSiteAds()]);
+  const storeName = siteAds.siteName;
+  const selectedClient = siteAds.client ?? undefined;
+  const accounts = selectedClient ? await loadAccounts([selectedClient.id]) : [];
+  const siteFilter = { ...filters, client: selectedClient?.id ?? '__no_site__' };
+  const audits = filterAudits(cockpit.audits, siteFilter, accounts);
   const suggestions = rankSuggestions(
-    filterSuggestions(cockpit.suggestions, { ...filters, client: selectedClient?.id ?? filters.client, status: filters.status }, accounts),
+    filterSuggestions(cockpit.suggestions, { ...siteFilter, status: filters.status }, accounts),
   );
   const lastAudit = lastCompletedAudit(audits);
   const openCount = openSuggestionCount(suggestions);
   const connected = accounts.filter((account) => account.connectionStatus === 'connected' || account.hasCredentials);
   const spend = lastAudit ? formatMoney(typeof lastAudit.summary.spend30dUsd === 'string' ? lastAudit.summary.spend30dUsd : null) : null;
-  const hasClients = cockpit.clients.length > 0;
   const canCheck = Boolean(selectedClient) && connected.length > 0;
   const cockpitOn = adsCapabilityOn(cockpit.workspace, 'cockpit');
   const cockpitVisible = adsCapabilityVisible(cockpit.workspace, 'cockpit');
@@ -144,35 +132,48 @@ export default async function AdsCockpitPage({
       )}
 
       {!cockpit.ok ? (
-        <ConnectEmpty
-          title="Connect Meta to run your first check."
-          body={cockpit.message || 'Ads checks are not connected yet. No sample data is shown.'}
-          clientId={selectedClient?.id}
-          showCheckHint
-          allowMeta={connectMeta}
-          allowGoogle={connectGoogle}
-        />
-      ) : !hasClients ? (
-        <ConnectEmpty
-          title="No clients yet."
-          body="Add a client before you can connect Meta or Google and run a check."
-        />
+        <p className="cx-banner cx-banner-warn" role="status">
+          {cockpit.message || 'The ads service is not reachable right now.'}
+        </p>
+      ) : !selectedClient ? (
+        <section className="cx-panel">
+          <h2>Connect ad accounts</h2>
+          <p className="cx-help">{siteAds.error || 'Could not load ad accounts for this site.'}</p>
+          {!siteAds.siteId ? (
+            <div className="cx-actions">
+              <Link href="/stores" className="btn-cta">Add a store or site</Link>
+            </div>
+          ) : null}
+        </section>
       ) : connected.length === 0 ? (
         <ConnectEmpty
-          title="Connect Meta to run your first check."
-          body="No ad accounts are connected. Cerevex will not invent spend or suggestions."
-          clientId={selectedClient?.id}
+          title={`Connect ${storeName ? `${storeName}'s` : 'your'} ad accounts`}
+          body="Connect Meta or Google Ads. You'll choose which ad accounts belong to this site."
+          clientId={selectedClient.id}
           showCheckHint
           allowMeta={connectMeta}
           allowGoogle={connectGoogle}
         />
-      ) : null}
+      ) : (
+        <section className="cx-panel">
+          <h2>Ad accounts for {storeName || 'this site'}</h2>
+          <ul className="cx-status-list">
+            {connected.map((account) => (
+              <li key={account.id}>
+                <span>{account.platform === 'google' ? 'Google Ads' : 'Meta'} · {account.displayName || account.externalId}</span>
+                <span>{account.lastSyncAt ? `Synced ${shortWhen(account.lastSyncAt)}` : 'Not synced yet'}</span>
+              </li>
+            ))}
+          </ul>
+          <ConnectButtons clientId={selectedClient.id} allowMeta={connectMeta} allowGoogle={connectGoogle} addMore />
+        </section>
+      )}
 
-      {hasClients ? (
+      {selectedClient ? (
         <AdsFilters
           action="/ads"
-          clients={cockpit.clients}
-          value={{ ...filters, client: selectedClient?.id }}
+          clients={[]}
+          value={filters}
           statusOptions={[]}
         />
       ) : null}
@@ -193,13 +194,6 @@ export default async function AdsCockpitPage({
             <div className="cx-card-kicker">Spend</div>
             <p className="cx-stat">{spend}</p>
             <p className="cx-help">From the last check</p>
-          </article>
-        ) : null}
-        {selectedClient ? (
-          <article className="cx-card">
-            <div className="cx-card-kicker">Client</div>
-            <p className="cx-stat cx-stat-text">{selectedClient.name}</p>
-            <p className="cx-help">{storeName ? `Store: ${storeName}` : 'Use filters to switch clients.'}</p>
           </article>
         ) : null}
       </section>
@@ -223,7 +217,7 @@ export default async function AdsCockpitPage({
             !auditsOn
               ? 'Audits are off for this workspace.'
               : !selectedClient
-                ? 'Choose a client to run a check.'
+                ? 'Add a store or site first.'
                 : connected.length === 0
                   ? 'Connect Meta or Google first.'
                   : undefined
@@ -233,7 +227,7 @@ export default async function AdsCockpitPage({
           accountIds={connected.map((account) => account.id)}
           disabledReason={
             !selectedClient
-              ? 'Choose a client to sync.'
+              ? 'Add a store or site first.'
               : connected.length === 0
                 ? 'Connect Meta or Google first.'
                 : undefined

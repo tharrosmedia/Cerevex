@@ -95,8 +95,8 @@ assert.ok(!items.some((item) => item.label === 'Leads'));
 const catalog = resolveAdsNav({ shell: 'inShell', modules: defaultModulesFor('agency') });
 assert.deepEqual(
   catalog.filter((item) => item.rail).map((item) => item.rail),
-  ['Audits', 'Suggestions', 'Clients'],
-  'Workflows is a placeholder and stays out of the menu',
+  ['Audits', 'Suggestions'],
+  'Clients are managed as stores; Workflows is a placeholder',
 );
 
 const leadsLive = resolveAdsNav({

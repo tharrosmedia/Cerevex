@@ -13,6 +13,7 @@ import { WorkspaceBundledCallTrackingSettings } from '@/components/workspace-bun
 import { WorkspaceClaritySettings } from '@/components/workspace-clarity-settings';
 import { WorkspaceSeasonalitySettings } from '@/components/workspace-seasonality-settings';
 import { WorkspaceModulesSettings } from '@/components/workspace-modules-settings';
+import { AdsSiteLinks } from '@/components/ads-site-links';
 import { Flash, SettingsNav } from '@/components/settings-nav';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
@@ -489,8 +490,8 @@ async function signOutAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string };
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string };
   let store = null;
   try {
     store = await getActiveStore();
@@ -718,13 +719,7 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
           </div>
         </div>
 
-        <div className="cx-panel">
-          <h2>Ads accounts</h2>
-          <p className="cx-help">Connect Meta or Google from Ads. This page does not start a new ads login.</p>
-          <div className="cx-actions">
-            <Link href="/ads" className="btn-secondary">Open Ads</Link>
-          </div>
-        </div>
+        <AdsSiteLinks status={params.adslink} message={params.message ? decodeURIComponent(params.message) : undefined} />
 
         <WorkspaceCallRailSettings />
         <WorkspaceBundledCallTrackingSettings />

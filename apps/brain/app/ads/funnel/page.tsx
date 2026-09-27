@@ -6,7 +6,7 @@ import { publicOrigin } from '@/lib/public-url';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { adsApi, loadAdsCockpit } from '@/lib/ads-bff';
 import { adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
-import { pickDefaultClient } from '@/lib/ads-query';
+import { resolveSiteAds } from '@/lib/ads-site';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +26,7 @@ export default async function AdsFunnelPage() {
   }
 
   const pixelOrigin = publicOrigin({ headers: await headers() });
-  const selected = pickDefaultClient(cockpit.clients, null);
+  const selected = (await resolveSiteAds()).client ?? undefined;
   const result = await adsApi<{
     connections: Array<{
       id: string;

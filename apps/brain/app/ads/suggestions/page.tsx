@@ -4,13 +4,8 @@ import { ConnectEmpty } from '@/components/ads/connect-empty';
 import { RecommendationCard } from '@/components/ads/recommendation-card';
 import { loadAdsCockpit } from '@/lib/ads-bff';
 import { REC_INBOX_KINDS, rankSuggestions } from '@/lib/ads-copy';
-import {
-  clientName,
-  filterSuggestions,
-  loadAccounts,
-  parseAdsFilters,
-  pickDefaultClient,
-} from '@/lib/ads-query';
+import { clientName, filterSuggestions, loadAccounts, parseAdsFilters } from '@/lib/ads-query';
+import { resolveSiteAds } from '@/lib/ads-site';
 import { adsCapabilityVisible } from '@/lib/ads-capabilities';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
@@ -32,10 +27,12 @@ export default async function AdsSuggestionsPage({
     kind?: string;
   };
   const filters = parseAdsFilters(params);
-  const cockpit = await loadAdsCockpit();
-  const selected = pickDefaultClient(cockpit.clients, null, filters.client);
-  const accounts = await loadAccounts(cockpit.clients.map((client) => client.id));
-  const suggestions = rankSuggestions(filterSuggestions(cockpit.suggestions, filters, accounts));
+  const [cockpit, siteAds] = await Promise.all([loadAdsCockpit(), resolveSiteAds()]);
+  const selected = siteAds.client ?? undefined;
+  const accounts = selected ? await loadAccounts([selected.id]) : [];
+  const suggestions = rankSuggestions(
+    filterSuggestions(cockpit.suggestions, { ...filters, client: selected?.id ?? '__no_site__' }, accounts),
+  );
 
   if (!adsCapabilityVisible(cockpit.workspace, 'cockpit')) {
     return (
@@ -55,11 +52,13 @@ export default async function AdsSuggestionsPage({
       </p>
 
       {!cockpit.ok ? (
-        <ConnectEmpty title="No suggestions yet — run an audit." body={cockpit.message} clientId={selected?.id} />
+        <p className="cx-banner cx-banner-warn" role="status">{cockpit.message}</p>
+      ) : !selected ? (
+        <ConnectEmpty title="Connect ad accounts" body={siteAds.error || 'Add a store or site first.'} />
       ) : (
         <AdsFilters
           action="/ads/suggestions"
-          clients={cockpit.clients}
+          clients={[]}
           value={filters}
           statusOptions={[
             { value: 'proposed', label: 'Open' },
@@ -73,7 +72,7 @@ export default async function AdsSuggestionsPage({
 
       {cockpit.ok && suggestions.length === 0 ? (
         <section className="cx-panel">
-          <p className="cx-help">No suggestions yet — run an audit.</p>
+          <p className="cx-help">No suggestions yet. Run a check from the Ads overview to get some.</p>
         </section>
       ) : null}
 

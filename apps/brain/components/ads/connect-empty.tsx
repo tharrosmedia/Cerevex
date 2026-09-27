@@ -22,16 +22,15 @@ export function ConnectEmpty({
       <p className="cx-help">{body}</p>
       <ConnectButtons clientId={clientId} allowMeta={allowMeta} allowGoogle={allowGoogle} />
       {!clientId ? (
-        <p className="cx-help">Choose a client first, or add one in Ads settings when that is ready.</p>
+        <p className="cx-help">
+          <Link href="/stores">Add a store or site</Link> first. Each site connects its own ad accounts.
+        </p>
       ) : null}
       {showCheckHint ? (
         <p className="cx-help">
           After an account is connected, come back here and choose <strong>Check ads</strong>.
         </p>
       ) : null}
-      <p className="cx-help">
-        Need modules instead? <Link href="/settings#modules">Settings → Modules</Link>
-      </p>
     </section>
   );
 }

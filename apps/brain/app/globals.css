@@ -554,6 +554,36 @@ a { color: var(--foreground); }
   max-width: 40rem;
 }
 
+.cx-account-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cx-account-list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.cx-account-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  cursor: pointer;
+}
+
+.cx-account-option input {
+  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+
+.cx-account-option strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 .cx-tabs {
   display: flex;
   gap: 0.25rem;

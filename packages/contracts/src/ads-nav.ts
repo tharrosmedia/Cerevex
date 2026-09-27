@@ -110,6 +110,9 @@ export function isAdsModuleBuilt(id: AdsModuleId): boolean {
   return !(ADS_NAV_NOT_BUILT as readonly string[]).includes(id);
 }
 
+/** Each console site owns its ads client, so the Stores page replaces a separate Clients list. */
+export const ADS_NAV_REPLACED_BY_SITES: readonly AdsNavItemId[] = ["clients"];
+
 export function adsNavHrefsFor(shell: AdsNavShell): Record<AdsNavItemId, string> {
   return shell === "legacyWeb" ? ADS_NAV_HREFS_LEGACY_WEB : ADS_NAV_HREFS_IN_SHELL;
 }
@@ -126,6 +129,6 @@ export function resolveAdsNav(input: {
   const byModule = filterItemsByModules(ADS_NAV_CATALOG, modules);
   const byCapability = filterItemsByCapabilities(byModule, capabilities);
   return byCapability
-    .filter((item) => !ADS_NAV_NOT_BUILT.includes(item.id))
+    .filter((item) => !ADS_NAV_NOT_BUILT.includes(item.id) && !ADS_NAV_REPLACED_BY_SITES.includes(item.id))
     .map((item) => ({ ...item, href: hrefs[item.id] }));
 }
