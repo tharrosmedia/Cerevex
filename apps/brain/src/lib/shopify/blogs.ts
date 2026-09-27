@@ -1,6 +1,12 @@
+import { seoMetafields } from './seo-metafields';
 
+type ArticleInput = { title?: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string; authorName?: string };
 
-import { getOnlineStorePublicationId, publishResource } from './publications';
+function throwUserErrors(errors: any[] | undefined) {
+  if (errors && errors.length) {
+    throw new Error(errors.map((e: any) => e.message).join('; '));
+  }
+}
 
 export async function getFirstBlog(adminClient: any): Promise<{ id: string; handle: string }> {
   const query = `
@@ -28,71 +34,52 @@ export async function getFirstBlogId(adminClient: any): Promise<string> {
   return blog.id;
 }
 
-export async function createAndPublishArticle(adminClient: any, input: { title: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string }) {
+export async function createAndPublishArticle(adminClient: any, input: ArticleInput & { title: string }) {
   const blogId = await getFirstBlogId(adminClient);
   const mutation = `
-    mutation createArticle($article: ArticleInput!, $blog: ArticleBlogInput!) {
-      articleCreate(article: $article, blog: $blog) {
+    mutation createArticle($article: ArticleCreateInput!) {
+      articleCreate(article: $article) {
         article { id handle }
         userErrors { field message }
       }
     }
   `;
-  const variables: any = {
-    article: {
-      title: input.title,
-      handle: input.handle,
-      bodyHtml: input.bodyHtml || '',
-    },
-    blog: {
-      id: blogId,
-    },
+  const article: Record<string, unknown> = {
+    blogId,
+    title: input.title,
+    handle: input.handle,
+    body: input.bodyHtml || '',
+    isPublished: true,
+    author: { name: input.authorName?.trim() || 'Staff' },
   };
-  if (input.seoTitle || input.seoDescription) {
-    variables.article.seo = {
-      title: input.seoTitle || undefined,
-      description: input.seoDescription || undefined,
-    };
-  }
-  const response = await adminClient.request(mutation, { variables });
-  const errors = response?.data?.articleCreate?.userErrors || [];
-  if (errors.length) {
-    throw new Error(errors.map((e: any) => e.message).join('; '));
-  }
-  const article = response?.data?.articleCreate?.article;
-  if (!article?.id) {
+  const metafields = seoMetafields(input.seoTitle, input.seoDescription);
+  if (metafields.length) article.metafields = metafields;
+  const response = await adminClient.request(mutation, { variables: { article } });
+  throwUserErrors(response?.data?.articleCreate?.userErrors);
+  if (!response?.data?.articleCreate?.article?.id) {
     throw new Error('Failed to create article');
   }
-  const pubId = await getOnlineStorePublicationId(adminClient);
-  await publishResource(adminClient, article.id, pubId);
   return response;
 }
 
-export async function updateArticle(adminClient: any, id: string, input: { title?: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string }) {
+export async function updateArticle(adminClient: any, id: string, input: ArticleInput) {
   const mutation = `
-    mutation updateArticle($id: ID!, $article: ArticleInput!) {
+    mutation updateArticle($id: ID!, $article: ArticleUpdateInput!) {
       articleUpdate(id: $id, article: $article) {
         article { id handle }
         userErrors { field message }
       }
     }
   `;
-  const variables: any = {
-    id,
-    article: {
-      title: input.title,
-      handle: input.handle,
-      bodyHtml: input.bodyHtml || '',
-    },
-  };
-  if (input.seoTitle || input.seoDescription) {
-    variables.article.seo = { title: input.seoTitle || undefined, description: input.seoDescription || undefined };
-  }
-  const response = await adminClient.request(mutation, { variables });
-  const errors = response?.data?.articleUpdate?.userErrors || [];
-  if (errors.length) {
-    throw new Error(errors.map((e: any) => e.message).join('; '));
-  }
+  const article: Record<string, unknown> = {};
+  if (input.title) article.title = input.title;
+  if (input.handle) article.handle = input.handle;
+  // An empty body here means the content was placed in metafields; don't wipe the live article.
+  if (input.bodyHtml) article.body = input.bodyHtml;
+  const metafields = seoMetafields(input.seoTitle, input.seoDescription);
+  if (metafields.length) article.metafields = metafields;
+  const response = await adminClient.request(mutation, { variables: { id, article } });
+  throwUserErrors(response?.data?.articleUpdate?.userErrors);
   return response;
 }
 
