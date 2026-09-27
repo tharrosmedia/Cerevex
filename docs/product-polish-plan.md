@@ -39,11 +39,13 @@ Examples: "Sync 28 days", "Config (JSON, optional)", "Brief / Research / Gate (P
 ## 2. Navigation changes
 
 **Top bar today:** SEO · Ads · Review · Stores · Settings, plus a store switcher.
-**Top bar proposed:** SEO · Ads · Settings, plus the site switcher.
+**Top bar proposed:** SEO · Ads · Workflows · Settings, plus the site switcher. The site you pick applies to every page, Ads included.
 
 | Item | Change | Why |
 |---|---|---|
 | **Stores** | Moves into **Settings → Sites**. `/stores` redirects. | You add or edit a site rarely, and switching sites is already in the header switcher. It doesn't need top-level space. |
+| **Ads → Clients** | Removed. Each site *is* the ads client (see 3.7). | Two lists of businesses that have to match by name is why Connect doesn't work. |
+| **Workflows** | Leaves the Ads menu and becomes its own top-level item once v1 exists (see 3.8). Hidden until then. | Workflows will cover both SEO and Ads, and today the page is an empty placeholder shown by default. |
 | **Review** | Moves into the **SEO sub-menu** with a count badge ("Review 3"). `/review` stays as a route. | Every review item today is SEO content, and people reach it from Recommendations. Ads approvals already live in Ads. |
 | **SEO sub-menu** | Order follows the workflow: **Overview · Search Console · Catalog · Recommendations · Review · Activity · New content**. | Today "New content" comes second and Review is missing. The sub-menu should match the order you actually use the pages. |
 | **"GSC" rail label** | Becomes "Search Console". | Not everyone knows the acronym. |
@@ -210,6 +212,86 @@ Today the job is queued with no redirect and no message (`startFromFinding`, `ap
 - Columns that make the page useful for SEO: title, URL, **SEO title**, **meta description** (with flags for missing or too long), published or hidden, and last updated on the site.
 - Row action **Improve** drafts an update and sends it to Review, the same path as Recommendations. Row action **View** opens the live page.
 - Catalog detail (`/seo/live/[id]`): Shopify items get the same "Propose an improvement" flow WordPress has. Errors passed back in the URL get displayed (today `?error=` is written but never read, L90).
+- The Sync button uses the existing `seo-catalog-sync` background function (`jobs/seo/src/functions/catalog-sync.ts`) instead of running inside the button click.
+
+### 3.7 Connecting Meta and Google Ads
+
+**Why Connect asks you to choose a client (confirmed in code)**
+- The Ads module keeps its own list of businesses, called clients (`os.clients`), in a separate database schema from sites. The table has no column that links a client to a site.
+- The Ads page guesses the client in `pickDefaultClient` (`apps/brain/lib/ads-query.ts:29-35`). It uses the client in the URL; otherwise a client whose name *exactly* matches the site name; otherwise the only client if there's exactly one. If none of those apply, no client is selected, and `ConnectButtons` refuses to start with "Choose a client first, then connect." (`components/ads/connect-buttons.tsx:24-27`, `api/ads/connect/route.ts:23-26`).
+- The only clients that exist are the seeded pilots "Got Ductless", "KC Prestige", and "Elmar HVAC" (`apps/ads/shared/src/seed.ts:8`). A site with any other name never matches.
+- There's no way to create a client. The Ads API has `GET /clients` but no create endpoint. The empty state still says "Add a client…" and "add one in Ads settings when that is ready" (`components/ads/connect-empty.tsx:25`).
+
+**Problems further down the same flow**
+- **Meta attaches the wrong account.** After you authorize, the app attaches whichever ad account Facebook lists first (`apps/ads/shared/src/connectors/meta.ts:208`). With an agency login that can see several businesses, that's likely the wrong one, and you're never asked.
+- **Google never gets an account.** The Google Ads customer ID is saved as `"pending"` and there's no screen to choose it, so Google syncs can't run. Accounts under a manager (MCC) account also aren't handled.
+- **One account per platform per business.** `upsertConnectedAccount` (`apps/ads/api/src/connect.ts`) matches on platform only, so a second Meta account would overwrite the first.
+
+**New model: the site owns its ad accounts**
+- Add a `site_id` column to `os.clients`, unique per workspace. This is an additive migration inside the `os` schema: no cross-schema foreign key, no changes to Brain tables, and the schema name stays `os`.
+- Add an Ads API endpoint that returns the site's client, creating it the first time it's asked (safe to call repeatedly). Every Ads page gets its client from the active site through this endpoint, so there's no guessing by name and no client picker.
+- **Existing clients:** a one-time step under Settings → Admin shows each existing ads client with a site dropdown, pre-filled wherever the names match. Linked clients keep their ad accounts, checks, and history.
+- The Ads **Clients** page and the client filter are removed. For agencies, each client business is a site, and the header site switcher is the client switcher.
+
+**New connect flow** (from Settings → Connections, or the Ads empty state)
+1. Click **Connect Meta** or **Connect Google Ads**. It works right away for the current site.
+2. Authorize with Meta or Google.
+3. **Choose accounts for *My Store*.** A list of every ad account the login can access: name, account ID, currency, and business or manager account. Pick one or more. For Google this includes accounts under a manager account, and the manager ID is stored for API calls.
+4. Back on the site's Connections page, the card shows each linked account with its status and **Syncing…**, then the last sync time. Actions: **Change accounts**, **Reconnect**, **Disconnect** (with confirmation).
+- A site can have more than one account per platform. Accounts are matched on (site, platform, account ID), not platform alone.
+
+### 3.8 Workflows (`app/ads/workflows/page.tsx`)
+
+**What exists today:** a placeholder page that says "Workflow builder is out of scope for this Ads check slice." It's switched **on by default** for every business type (`packages/contracts/src/modules.ts:72,78`), so everyone sees a menu item with nothing behind it. The database already has `os.workflows` and `os.workflow_runs` tables (`apps/ads/shared/src/schema.ts:333-364`, run status defaults to `"stub"`), but there's no API, no engine, and no screens. There are also no scheduled background jobs anywhere in the app yet; everything runs only when someone clicks a button.
+
+**Right away:** default Workflows to off and remove it from the menu until v1 ships.
+
+**Workflows v1: automate the routine work, with approvals still required**
+
+Each workflow belongs to one site and follows **When → If → Then**.
+
+- **When** (triggers):
+  - on a schedule (daily or weekly, at a set time);
+  - Search Console sync finished;
+  - new recommendation created;
+  - ads check finished;
+  - a finding at or above a chosen severity;
+  - a draft approved or published;
+  - ad spend crosses an amount;
+  - new lead (when call tracking is connected).
+- **If** (optional conditions): simple comparisons, like "spend over $500 this week", "clicks dropped more than 20%", "severity is high", or "content type is Collection".
+- **Then** (actions, from a safe list):
+  - sync Search Console, catalog, or ads;
+  - run an ads check;
+  - generate SEO recommendations;
+  - draft a fix or new content (it goes to Review);
+  - create an ads recommendation (it goes to Approve);
+  - notify me (email or in-app first, Slack later).
+- **Safety rule:** no action publishes content or changes live ads by itself. Anything that writes to a site or ad account lands in Review or Approve, which keeps the existing rules: nothing spends without approval, and the pause switch stays on by default. Auto-approval for low-risk content types can come later, controlled by Settings → Publishing.
+
+**Builder**
+- Start from a **template gallery**, or from blank.
+- A step-by-step form: a When card, If conditions, and a list of Then actions with **Add step**. This is a form, not a drag-and-drop canvas, in v1.
+- A plain-English summary stays at the top as you build, for example: "Every Monday at 8:00, sync ads for *My Store*, run a check, and email me the summary."
+- **Test run** shows what would happen without doing it.
+
+**Managing workflows**
+- A list with an on/off switch, last run, and next run for each workflow.
+- **Run now**.
+- Run history with the result of each step, a failure reason, and **Retry**.
+
+**Starter templates**
+1. Weekly ads health check: sync, check, email a summary.
+2. Daily Search Console sync, then refresh recommendations.
+3. When a page loses clicks, draft a fix and send it to Review.
+4. Alert me on a spend spike or a week with zero conversions.
+5. Monthly: draft blog posts for my target keywords and send them to Review.
+
+**Engine**
+- A generic background function (`workflow-run`) that executes a workflow's steps from its saved definition.
+- A scheduled function every 15 minutes that starts any workflows that are due.
+- Event triggers fan out from events the app already sends.
+- Reuse `os.workflows` and `os.workflow_runs`, adding `enabled`, a trigger definition, `next_run_at`, the site, and per-step results.
 
 ---
 
@@ -247,14 +329,14 @@ Today the job is queued with no redirect and no message (`startFromFinding`, `ap
 
 ### 4.5 Ads pages in the console (`app/ads/*`)
 - Label every metric with its period and add the date range picker. Today spend reads "From the last check" but is really 30 days.
-- Add account and client pickers to Check, Sync, Creatives, and Funnel.
+- No client pickers: every Ads page uses the active site (3.7). Where a site has several ad accounts, Check, Sync, and Creatives get an account filter that defaults to "All accounts".
 - One vocabulary: Check / Sync / Recommendations / Approve / Dismiss / Snooze. Rename "Brainstorm" to "Ad ideas".
-- Remove the Sales and Workflows placeholder pages from the menu until they're built.
+- Remove the Sales placeholder from the menu until it's built. Workflows is covered in 3.8.
 - Findings link to the recommendations they produced.
 - Dismiss and Snooze get an undo toast.
 - The pause banner's severity is backwards today. It should warn when ads can be changed and look neutral when changes are paused.
 - The funnel pixel snippet uses an absolute URL, and Sync reports failures for individual accounts.
-- Port the per-client page from the old standalone app to `/ads/clients/[id]`.
+- The per-client page from the old standalone app isn't ported. Its account and connection parts move to Settings → Connections, and its checks and recommendations are already covered by the Ads overview for the active site.
 
 ### 4.6 Old standalone ads app (`apps/ads/web`)
 - It's already hidden by default. Once 4.5 ships, redirect its routes into `/ads` and remove it.
@@ -281,6 +363,10 @@ Today the job is queued with no redirect and no message (`startFromFinding`, `ap
 | 13 | Ads Sync reports partial failure as success; OAuth error text dropped | `api/ads/sync/route.ts:49-52`, `lib/ads-query.ts:15-16` |
 | 14 | Old ads app: pre-filled seed login, links that 404 | `apps/ads/web/src/app/sign-in/page.tsx:14-15`, ads nav hrefs |
 | 15 | `/sentry-example-page` is outside login and ships to production | `apps/brain/middleware.ts:39` |
+| 16 | Meta/Google Connect blocked unless an ads client exactly matches the site name; no way to create a client | `apps/brain/lib/ads-query.ts:29-35`, `components/ads/connect-buttons.tsx:24-27`, see 3.7 |
+| 17 | Meta attaches the first ad account the login can see, without asking | `apps/ads/shared/src/connectors/meta.ts:208` |
+| 18 | Google Ads account saved as `"pending"` with no way to choose it, so sync can't run | `apps/ads/shared/src/connectors/google.ts`, see 3.7 |
+| 19 | Workflows placeholder shown in the menu by default | `packages/contracts/src/modules.ts:72,78` |
 
 ---
 
@@ -311,6 +397,8 @@ Build these once so every page rebuild uses the same parts.
 | Decision | Proposed default |
 |---|---|
 | Stores location | Settings → Sites; removed from the top bar |
+| Ads clients | One per site, created automatically; the Clients page is removed; existing pilot clients are linked to sites once by an admin |
+| Workflows | Hidden now. v1 becomes a top-level item covering SEO and Ads, per site, where every write goes through Review or Approve |
 | Review location | SEO sub-menu with a count badge |
 | "Store" vs "Site" | "Site" in the UI |
 | Action items | "Recommendations" in both SEO and Ads |
@@ -324,17 +412,19 @@ Build these once so every page rebuild uses the same parts.
 
 ## 8. Order of work
 
-Each step is its own PR (or a few). Steps 3-5 can run in parallel once step 2 lands.
+Each step is its own PR (or a few). Steps 4-6 can run in parallel once step 3 lands.
 
 | Step | Scope | Risk |
 |---|---|---|
-| 1. Bug fixes | Section 5, except the GSC data model (bugs 3-4, which go with step 4) | Low |
-| 2. Building blocks + nav | Section 6 and section 2 (Stores → Settings, Review → SEO sub-menu, Activity merge, mobile menu) | Low-medium |
-| 3. Settings + Sites | 3.1, 3.2 | Medium: many forms and redirects; the add-site flow touches site creation |
-| 4. SEO workflow | 3.3 Review, 3.4 Draft, 3.5 Activity, 3.6 Catalog, 4.1 Search Console, 4.2-4.4 | Medium: the Approve confirmation sits on the publish path; the GSC migration runs against production Neon (Brain `public` schema only, never `os`) |
-| 5. Ads | 4.5 | Medium: must keep approval gates and pause behavior intact |
-| 6. Retire old ads app | 4.6 | Medium: coordinate Railway service removal outside the repo |
-| 7. Cleanup | Remove Tailwind and shadcn, remaining copy sweep | Low |
+| 1. Bug fixes | Section 5, except the GSC data model (bugs 3-4, which go with step 5) and the Ads connection bugs (16-18, which are step 2). Includes hiding Workflows (19). | Low |
+| 2. Ads connection | 3.7: link each site to its ads client, the account chooser after Meta/Google authorization, several accounts per site, the one-time admin linking step. Ads is unusable until this lands. | Medium: additive migration in `os`; touches the OAuth callback, so it needs a real Meta and Google test account before release |
+| 3. Building blocks + nav | Section 6 and section 2 (Stores → Settings, Review → SEO sub-menu, Activity merge, Clients removed, mobile menu) | Low-medium |
+| 4. Settings + Sites | 3.1, 3.2 (the Connections cards include the 3.7 account display) | Medium: many forms and redirects; the add-site flow touches site creation |
+| 5. SEO workflow | 3.3 Review, 3.4 Draft, 3.5 Activity, 3.6 Catalog, 4.1 Search Console, 4.2-4.4 | Medium: the Approve confirmation sits on the publish path; the GSC migration runs against production Neon (Brain `public` schema only, never `os`) |
+| 6. Ads pages | 4.5 | Medium: must keep approval gates and pause behavior intact |
+| 7. Workflows v1 | 3.8: engine, the app's first scheduled job, builder, templates, run history | Medium-high: a new subsystem. Kept safe by allowing only non-writing actions plus hand-offs to Review and Approve. |
+| 8. Retire old ads app | 4.6 | Medium: coordinate Railway service removal outside the repo |
+| 9. Cleanup | Remove Tailwind and shadcn, remaining copy sweep | Low |
 
 ---
 
