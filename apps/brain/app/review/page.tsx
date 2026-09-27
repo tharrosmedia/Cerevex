@@ -61,7 +61,7 @@ export default async function Review({ searchParams }: { searchParams: Promise<{
 
       <nav className="cx-tabs" aria-label="Review status">
         <Link href="/review" aria-current={tab === 'waiting' ? 'page' : undefined}>
-          Waiting{tab === 'waiting' ? ` (${total})` : ''}
+          Waiting{tab === 'waiting' && !loadError ? ` (${total})` : ''}
         </Link>
         <Link href="/review?tab=decided" aria-current={tab === 'decided' ? 'page' : undefined}>
           Decided

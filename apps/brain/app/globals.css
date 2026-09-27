@@ -74,6 +74,9 @@ a { color: var(--foreground); }
   padding: 0.6rem 1rem;
   border-radius: 8px;
   cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.2;
   font-weight: 600;
   text-decoration: none;
   box-sizing: border-box;
@@ -541,6 +544,22 @@ a { color: var(--foreground); }
   min-height: 40px;
   display: inline-flex;
   align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+}
+
+.cx-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.cx-details summary::before {
+  content: "▸";
+  font-size: 0.8em;
+  transition: transform 0.15s;
+}
+
+.cx-details[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .cx-details ul {
@@ -730,8 +749,13 @@ a { color: var(--foreground); }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   line-height: 1.55;
+}
+
+.cx-html-preview th,
+.cx-html-preview td {
+  white-space: nowrap;
 }
 
 .cx-html-preview img,
@@ -1065,6 +1089,7 @@ a { color: var(--foreground); }
   .data-table td {
     display: block;
     width: 100%;
+    box-sizing: border-box;
   }
 
   .data-table tr {
@@ -1075,14 +1100,24 @@ a { color: var(--foreground); }
   .data-table td {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 1rem;
     border-bottom: 0;
     padding: 0.35rem 0.8rem;
+    text-align: right;
+    overflow-wrap: anywhere;
   }
 
   .data-table td::before {
     content: attr(data-label);
+    flex: none;
     font-weight: 650;
     color: var(--muted-foreground);
+    text-align: left;
+  }
+
+  .data-table td[data-label="Open"]::before,
+  .data-table td[data-label="Actions"]::before {
+    content: none;
   }
 }
