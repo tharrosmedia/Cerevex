@@ -4,6 +4,7 @@ import {
   BUSINESS_TYPES,
   LEADS_NOT_LIVE_COPY,
   MODULE_COPY,
+  isAdsModuleBuilt,
   isBusinessType,
   isLeadsProductUnfinished,
   type BusinessType,
@@ -71,6 +72,22 @@ export async function WorkspaceModulesSettings() {
 
       <form action={saveModulesAction} className="space-y-4">
         {ADS_MODULE_IDS.map((id) => {
+          if (!isAdsModuleBuilt(id) || id === 'clients') {
+            return (
+              <div key={id} className="flex items-start justify-between gap-4 border-t pt-3">
+                <span>
+                  <span className="block font-medium">{MODULE_COPY[id].label}</span>
+                  <span className="block text-sm" style={{ color: 'var(--muted-foreground)' }}>
+                    {id === 'clients' ? 'Each store or site is its own client, with its own ad accounts.' : MODULE_COPY[id].help}
+                  </span>
+                </span>
+                <span className="text-sm">
+                  {settings.modules[id] ? <input type="hidden" name={id} value="on" /> : null}
+                  {id === 'clients' ? <a href="/stores">Manage stores</a> : 'Coming soon'}
+                </span>
+              </div>
+            );
+          }
           const leadsLocked = id === 'leads' && isLeadsProductUnfinished();
           return (
             <label key={id} className="flex items-start justify-between gap-4 border-t pt-3">

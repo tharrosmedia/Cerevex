@@ -2,6 +2,21 @@ import { adsApi, type AdsAccount, type AdsAudit, type AdsClient, type AdsSuggest
 import { platformFromRecord } from './ads-copy';
 import type { AdsFilterState } from '@/components/ads/ads-filters';
 
+const OAUTH_ERROR_COPY: Record<string, string> = {
+  access_denied: 'Connecting was cancelled on the Meta or Google permission screen. Nothing was connected.',
+  missing_code: 'Meta or Google did not send the connection back. Try connecting again.',
+  exchange_failed: 'Meta or Google accepted the login, but Cerevex could not finish connecting. Try again.',
+  capability_off: 'Connecting ad accounts is turned off for this workspace. Turn it on in Settings, then try again.',
+  list_failed: 'Signed in, but Cerevex could not load the ad accounts on that login. Try again in a minute.',
+  no_accounts: 'That login has no ad accounts. Sign in with the login that manages this site’s ads.',
+  choose_in_console: 'That login has several ad accounts. Connect from the Cerevex console to choose which ones belong to this site.',
+};
+
+export function oauthErrorMessage(code: string | undefined): string {
+  if (!code) return 'Could not finish connecting that account.';
+  return OAUTH_ERROR_COPY[code] ?? `Could not finish connecting that account (${code.replace(/_/g, ' ')}).`;
+}
+
 export function parseAdsFilters(input: {
   client?: string;
   platform?: string;
@@ -9,13 +24,18 @@ export function parseAdsFilters(input: {
     kind?: string;
     connect_error?: string;
   connected?: string;
+  count?: string;
   oauth_error?: string;
 }): AdsFilterState & { notice?: string } {
   const platform = input.platform === 'meta' || input.platform === 'google' ? input.platform : undefined;
+  const count = Number(input.count);
+  const connectedName = input.connected === 'google' ? 'Google Ads' : 'Meta';
   const notice = input.connect_error || input.oauth_error
-    ? input.connect_error || 'Could not finish connecting that account.'
+    ? input.connect_error || oauthErrorMessage(input.oauth_error)
     : input.connected
-      ? `${input.connected === 'google' ? 'Google' : 'Meta'} is connected.`
+      ? count > 1
+        ? `Connected ${count} ${connectedName} accounts. Their first sync is running.`
+        : `${connectedName} is connected. The first sync is running.`
       : undefined;
   return {
     client: input.client || undefined,
@@ -24,16 +44,6 @@ export function parseAdsFilters(input: {
     kind: input.kind || undefined,
     notice,
   };
-}
-
-export function pickDefaultClient(clients: AdsClient[], storeName?: string | null, preferred?: string): AdsClient | undefined {
-  if (preferred) return clients.find((client) => client.id === preferred);
-  if (storeName) {
-    const match = clients.find((client) => client.name.toLowerCase() === storeName.toLowerCase());
-    if (match) return match;
-  }
-  if (clients.length === 1) return clients[0];
-  return undefined;
 }
 
 export async function loadAccounts(clientIds: string[]): Promise<AdsAccount[]> {

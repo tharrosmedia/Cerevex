@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
-import { jobInputDetails, jobInputLabel, jobStatusLabel, jobStatusTone, jobTypeLabel } from '../lib/job-labels';
+import { jobInputDetails, jobInputLabel, jobStatusLabel, jobStatusTone, jobSubject, jobTypeLabel } from '../lib/job-labels';
 
 assert.equal(jobTypeLabel('seo.generate'), 'SEO create');
 assert.equal(jobTypeLabel('seo.wordpress'), 'WordPress change');
+assert.equal(jobTypeLabel('blog'), 'Blog post');
+assert.equal(jobTypeLabel('collection'), 'Collection');
+
+assert.equal(jobSubject({ keyword: 'hvac filters', platform: 'shopify' }), 'hvac filters');
+assert.equal(jobSubject({ title: 'About us', shopifyId: 'gid://shopify/Page/1' }), 'About us');
+assert.equal(jobSubject({ gscQueries: ['', 'mini split sizing'] }), 'mini split sizing');
+assert.equal(jobSubject({ platform: 'shopify' }), null);
+assert.equal(jobSubject(null), null);
 assert.equal(jobStatusLabel('snoozed'), 'Snoozed');
 assert.equal(jobStatusTone('snoozed'), 'info');
 assert.equal(jobStatusLabel('awaiting_approval'), 'Needs review');

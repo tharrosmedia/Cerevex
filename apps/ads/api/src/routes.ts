@@ -30,6 +30,8 @@ import {
 import { childLogger } from "./logger";
 import { exchangeCode } from "./oauth-exchange";
 import { signOAuthState, verifyOAuthState } from "./oauth-state";
+import { connectChosenAccounts, createPendingConnection } from "./pending-connect";
+import type { AccessibleAdAccount } from "@tharros/ads-shared";
 import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
@@ -105,31 +107,55 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       }
       await requireWritableCapability(visible.workspaceId, connector.connectCapability);
       const exchanged = await exchangeCode(platform, code);
-      await upsertConnectedAccount({
+
+      let accounts: AccessibleAdAccount[];
+      try {
+        accounts = await connector.listAccessibleAccounts(exchanged.tokens);
+      } catch (listError) {
+        childLogger(c.get("requestId") ?? "oauth").error({
+          msg: "oauth.list_accounts_failed",
+          platform,
+          error: listError instanceof Error ? listError.message : "unknown",
+        });
+        dest.searchParams.set("oauth_error", "list_failed");
+        return c.redirect(dest.toString());
+      }
+      if (accounts.length === 0) {
+        dest.searchParams.set("oauth_error", "no_accounts");
+        return c.redirect(dest.toString());
+      }
+
+      if (accounts.length === 1) {
+        await connectChosenAccounts({
+          workspaceId: visible.workspaceId,
+          clientId: visible.id,
+          platform,
+          requestedBy: parsed.userId,
+          tokens: exchanged.tokens,
+          accounts,
+        });
+        dest.searchParams.set("client", visible.id);
+        dest.searchParams.set("connected", platform);
+        if (!consoleOrigin()) dest.pathname = `/app/clients/${visible.id}`;
+        return c.redirect(dest.toString());
+      }
+
+      // More than one account: the owner picks which ones belong to this site.
+      if (!consoleOrigin()) {
+        dest.searchParams.set("oauth_error", "choose_in_console");
+        return c.redirect(dest.toString());
+      }
+      const pendingId = await createPendingConnection({
         workspaceId: visible.workspaceId,
         clientId: visible.id,
         platform,
-        externalId: exchanged.externalId,
-        scopes: platform === "meta" ? META_SCOPES : GOOGLE_SCOPES,
+        userId: parsed.userId,
         tokens: exchanged.tokens,
-        label: "live",
+        accounts,
       });
-      dest.searchParams.set("client", visible.id);
-      dest.searchParams.set("connected", platform);
-      if (!consoleOrigin()) dest.pathname = `/app/clients/${visible.id}`;
-      const connected = await getDb().query.adAccounts.findFirst({
-        where: and(eq(adAccounts.clientId, visible.id), eq(adAccounts.platform, platform)),
-      });
-      if (connected) {
-        await sendAdAccountSync({
-          requestedBy: parsed.userId,
-          workspaceId: visible.workspaceId,
-          clientId: visible.id,
-          adAccountId: connected.id,
-          platform,
-        }).catch(() => undefined);
-      }
-      return c.redirect(dest.toString());
+      const choose = new URL("/ads/connect/choose", consoleOrigin());
+      choose.searchParams.set("pending", pendingId);
+      return c.redirect(choose.toString());
     } catch (err) {
       if (err instanceof HTTPException && err.status === 409) {
         dest.searchParams.set("oauth_error", "capability_off");

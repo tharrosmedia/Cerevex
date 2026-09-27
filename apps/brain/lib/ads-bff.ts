@@ -10,6 +10,7 @@ export type AdsClient = {
   name: string;
   pilotFlag?: boolean;
   status?: string;
+  siteId?: string | null;
   createdAt?: string;
   connectedPlatforms?: Array<"meta" | "google">;
   lastSyncAt?: string | null;
@@ -21,6 +22,7 @@ export type AdsAccount = {
   clientId: string;
   platform: "meta" | "google";
   externalId: string;
+  displayName?: string | null;
   connectionStatus: string;
   lastSyncAt: string | null;
   lastError: string | null;
@@ -180,6 +182,14 @@ export async function loadAdsCockpit() {
     audits: audits.ok ? audits.data.audits : [],
     suggestions: suggestions.ok ? suggestions.data.recommendations : [],
   };
+}
+
+/** The ads client that owns this site's ad accounts; the ads API creates it on first use. */
+export function ensureSiteClient(siteId: string, name: string) {
+  return adsApi<{ client: AdsClient; created: boolean; adopted: boolean }>(
+    `/sites/${encodeURIComponent(siteId)}/client`,
+    { method: "PUT", body: JSON.stringify({ name }) },
+  );
 }
 
 export function connectedPlatforms(clients: AdsClient[]): Array<"meta" | "google"> {

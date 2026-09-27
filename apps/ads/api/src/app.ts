@@ -17,6 +17,8 @@ import { registerLpIntelligenceRoutes } from "./lp-intelligence";
 import { registerOfflineRoutes } from "./offline";
 import { registerPlanningRoutes } from "./planning";
 import { registerConnectRoutes } from "./routes";
+import { registerPendingConnectRoutes } from "./pending-connect";
+import { registerSiteRoutes } from "./sites";
 import type { AppEnv } from "./types";
 import {
   authenticate,
@@ -212,6 +214,7 @@ export function createApp() {
         name: row.name,
         pilotFlag: row.pilotFlag,
         status: row.status,
+        siteId: row.siteId ?? null,
         createdAt: row.createdAt.toISOString(),
         connectedPlatforms: summary.connectedPlatforms,
         lastSyncAt: summary.lastSyncAt,
@@ -241,6 +244,8 @@ export function createApp() {
   });
 
   registerConnectRoutes(app, requireAuth);
+  registerPendingConnectRoutes(app, requireAuth);
+  registerSiteRoutes(app, requireAuth);
   registerAuditRoutes(app, requireAuth);
   registerM51Routes(app, requireAuth);
   registerOfflineRoutes(app, requireAuth);

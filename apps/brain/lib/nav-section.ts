@@ -3,6 +3,7 @@ export type NavSection = 'seo' | 'ads';
 export function navSectionFromPath(pathname: string | null | undefined): NavSection | null {
   if (!pathname) return null;
   if (pathname === '/seo' || pathname.startsWith('/seo/')) return 'seo';
+  if (pathname === '/review' || pathname.startsWith('/drafts/') || pathname.startsWith('/jobs/')) return 'seo';
   if (pathname === '/ads' || pathname.startsWith('/ads/')) return 'ads';
   return null;
 }

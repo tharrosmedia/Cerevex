@@ -25,8 +25,8 @@ export const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
 };
 
 export const BUSINESS_TYPE_HELP: Record<BusinessType, string> = {
-  home_service: "You run one home-service business. Leads stay on. Clients and Sales stay off unless you turn them on later.",
-  agency: "You manage ads for more than one business. Clients stay on so you can switch between them.",
+  home_service: "You run one home-service business.",
+  agency: "You manage ads for more than one business. Add each one as a store or site and switch between them from the header.",
   ecommerce: "You run an online store. Sales stays on so you can track orders.",
 };
 

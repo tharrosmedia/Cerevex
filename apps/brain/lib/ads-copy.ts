@@ -322,12 +322,19 @@ export const REC_INBOX_KINDS = [
 ] as const;
 
 export const ADS_CONNECT_PENDING = 'Connecting…';
-export const ADS_CONNECT_NO_CLIENT = 'Choose a client first, then connect.';
+export const ADS_CONNECT_NO_CLIENT = 'Add a store or site first, then connect its ad accounts.';
 export const ADS_SYNC_PENDING = 'Syncing…';
 export const ADS_SYNC_QUEUED = 'Sync queued. Campaigns update when the job finishes.';
+
+export function syncResultMessage(queued: number, errors: string[]): string {
+  if (errors.length === 0) return ADS_SYNC_QUEUED;
+  const total = queued + errors.length;
+  const reason = errors[0] ? ` ${errors[0].replace(/\.?$/, '.')}` : '';
+  return `Syncing ${queued} of ${total} accounts. ${errors.length} could not start:${reason}`;
+}
 export const ADS_SYNC_NO_ACCOUNT = 'Connect Meta or Google first.';
 export const ADS_CHECK_PENDING = 'Checking…';
-export const ADS_CHECK_NO_CLIENT = 'Choose a client to run a check.';
+export const ADS_CHECK_NO_CLIENT = 'Add a store or site first, then run a check.';
 export const ADS_APPROVE_SOFT_LAUNCH =
   'Approve is limited to Adam during soft-launch. Deny and Snooze never write platforms.';
 export const ADS_APPROVE_PAUSED = 'Ads are paused. Approve cannot apply until the pause is off.';

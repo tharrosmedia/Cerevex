@@ -4,7 +4,7 @@ import { inferBrandVoice } from '@/src/lib/agents/brand/voice';
 import { writeKnowledge } from '@/src/lib/brain/memory';
 import { createAdminClient } from '@/src/lib/shopify/client';
 import { fetchStoreSamples, fetchMetafieldDefinitions, fetchMetafieldValueSamples } from '@/src/lib/shopify/content';
-import { syncProductsForStore, syncCatalogForStore } from '@/src/lib/shopify/sync';
+import { syncProductsForStore, syncCatalogForStore, recordCatalogSync, catalogSyncSummary } from '@/src/lib/shopify/sync';
 import { getDefaultSEORules } from '@/src/lib/seo/rules';
 import { SEORulesEditor } from '@/components/SEORulesEditor';
 import { WorkspaceCapabilitiesSettings } from '@/components/workspace-capabilities-settings';
@@ -13,6 +13,7 @@ import { WorkspaceBundledCallTrackingSettings } from '@/components/workspace-bun
 import { WorkspaceClaritySettings } from '@/components/workspace-clarity-settings';
 import { WorkspaceSeasonalitySettings } from '@/components/workspace-seasonality-settings';
 import { WorkspaceModulesSettings } from '@/components/workspace-modules-settings';
+import { AdsSiteLinks } from '@/components/ads-site-links';
 import { Flash, SettingsNav } from '@/components/settings-nav';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
@@ -417,21 +418,10 @@ async function syncCatalogAction() {
   }
   try {
     const result = await syncCatalogForStore(store.id);
-    const currentConfig = store.config || {};
-    const newConfig = {
-      ...currentConfig,
-      catalogLastSynced: new Date().toISOString(),
-      catalogSyncedCount: result.synced,
-    };
-    await updateStore(store.id, {
-      name: store.name,
-      shopify_domain: store.shopify_domain,
-      shopify_access_token: '',
-      platform: store.platform || 'shopify',
-      config: newConfig,
-    });
+    await recordCatalogSync(store.id, result);
     revalidatePath('/settings');
-    redirect(`/settings?catalog=synced&count=${result.synced}`);
+    revalidatePath('/seo/live');
+    redirect('/settings?catalog=synced');
   } catch (e: any) {
     if (e?.digest?.startsWith('NEXT_REDIRECT')) {
       throw e;
@@ -500,8 +490,8 @@ async function signOutAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string };
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string };
   let store = null;
   try {
     store = await getActiveStore();
@@ -587,7 +577,14 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
           Could not sync products: {params.message ? decodeURIComponent(params.message) : 'check that the Admin API token has read_products.'}
         </Flash>
       )}
-      {params.catalog === 'synced' && <Flash>Live catalog synced ({params.count || '0'} collections/pages/articles).</Flash>}
+      {params.catalog === 'synced' && (
+        <Flash tone={config.catalogSyncErrors?.length ? 'warn' : undefined}>
+          {catalogSyncSummary({
+            counts: config.catalogSyncCounts || { collection: 0, page: 0, article: 0 },
+            errors: config.catalogSyncErrors || [],
+          })}
+        </Flash>
+      )}
       {params.catalog === 'error' && (
         <Flash tone="warn">
           Could not sync catalog{params.message ? `: ${decodeURIComponent(params.message)}` : '.'}
@@ -722,13 +719,7 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
           </div>
         </div>
 
-        <div className="cx-panel">
-          <h2>Ads accounts</h2>
-          <p className="cx-help">Connect Meta or Google from Ads. This page does not start a new ads login.</p>
-          <div className="cx-actions">
-            <Link href="/ads" className="btn-secondary">Open Ads</Link>
-          </div>
-        </div>
+        <AdsSiteLinks status={params.adslink} message={params.message ? decodeURIComponent(params.message) : undefined} />
 
         <WorkspaceCallRailSettings />
         <WorkspaceBundledCallTrackingSettings />

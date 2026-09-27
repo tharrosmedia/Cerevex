@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getActiveStoreId, getStore, updateStore } from '@/src/lib/db/stores';
 import { listOpenFindings, setFindingStatus } from '@/src/lib/db/findings';
-import { createJob } from '@/src/lib/db/jobs';
+import { createJob, updateJobStatus } from '@/src/lib/db/jobs';
 import { inngest } from '@/src/inngest/client';
 import { revalidatePath } from 'next/cache';
 import { EmptyState } from '@/components/empty-state';
@@ -40,7 +40,7 @@ async function dismissFinding(formData: FormData) {
 async function startFromFinding(formData: FormData) {
   'use server';
   const storeId = await getActiveStoreId();
-  if (!storeId) return;
+  if (!storeId) redirect('/seo/findings?recs=no_store');
   const id = formData.get('id') as string;
   const shopifyId = formData.get('shopifyId') as string || undefined;
   const handle = formData.get('handle') as string;
@@ -81,27 +81,34 @@ async function startFromFinding(formData: FormData) {
     },
     status: 'queued',
   });
-  await inngest.send({
-    name: 'seo/job.requested',
-    data: {
-      storeId,
-      keyword: topQuery || title,
-      type,
-      jobId: job.id,
-      mode,
-      shopifyId,
-      handle,
-      liveSnapshot,
-      gscQueries: queries,
-      source: recType ? 'gsc' : undefined,
-      gscRecType: recType || undefined,
-    },
-  });
+  try {
+    await inngest.send({
+      name: 'seo/job.requested',
+      data: {
+        storeId,
+        keyword: topQuery || title,
+        type,
+        jobId: job.id,
+        mode,
+        shopifyId,
+        handle,
+        liveSnapshot,
+        gscQueries: queries,
+        source: recType ? 'gsc' : undefined,
+        gscRecType: recType || undefined,
+      },
+    });
+  } catch (e: any) {
+    console.error('[findings] draft enqueue failed', e);
+    await updateJobStatus(job.id, 'failed', { reason: e?.message || 'enqueue failed' });
+    redirect('/seo/findings?draft=error');
+  }
   await setFindingStatus(id, 'queued');
   await logEvent(storeId, 'human', 'gsc.draft.queued', { findingId: id, jobId: job.id, recType, writes: false });
   revalidatePath('/seo/findings');
   revalidatePath('/review');
   revalidatePath('/');
+  redirect(`/seo/findings?draft=queued&title=${encodeURIComponent(title || topQuery || 'this page')}`);
 }
 
 async function runRecommendations() {
@@ -123,10 +130,15 @@ async function runRecommendations() {
 async function runAudit() {
   'use server';
   const storeId = await getActiveStoreId();
-  if (storeId) {
+  if (!storeId) redirect('/seo/findings?recs=no_store');
+  try {
     await inngest.send({ name: 'seo/audit.requested', data: { storeId } });
-    revalidatePath('/seo/findings');
+  } catch (e) {
+    console.error('[findings] catalog check enqueue failed', e);
+    redirect('/seo/findings?audit=error');
   }
+  revalidatePath('/seo/findings');
+  redirect('/seo/findings?audit=queued');
 }
 
 async function saveThreshold(formData: FormData) {
@@ -153,8 +165,10 @@ async function saveThreshold(formData: FormData) {
 
 export const dynamic = 'force-dynamic';
 
-export default async function SeoFindings({ searchParams }: { searchParams?: Promise<{ type?: string; recs?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { type?: string; recs?: string };
+type FindingsParams = { type?: string; recs?: string; draft?: string; title?: string; audit?: string };
+
+export default async function SeoFindings({ searchParams }: { searchParams?: Promise<FindingsParams> }) {
+  const params = await (searchParams || Promise.resolve({})) as FindingsParams;
   let findings: any[] = [];
   let store: any = null;
   let recsOn = false;
@@ -179,7 +193,7 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
       <PageHeader
         kicker="SEO"
         title="Recommendations"
-        lede="Conversion-first Search recommendations. Rank without a better offer does not stick."
+        lede="Pages worth improving, based on your Search Console data and a check of your pages."
         backHref="/seo"
         actions={
           <div className="cx-actions" style={{ marginTop: 0 }}>
@@ -189,12 +203,32 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
               </form>
             ) : null}
             <form action={runAudit}>
-              <button type="submit" className="btn-secondary">Run catalog check</button>
+              <SubmitButton className="btn-secondary" pendingLabel="Starting…">Check pages</SubmitButton>
             </form>
           </div>
         }
       />
       <SeoSubnav />
+
+      {params.draft === 'queued' ? (
+        <Flash>
+          <p style={{ margin: 0 }}>
+            Drafting a fix for “{params.title || 'this page'}”. It will appear in Review when it&apos;s ready, usually within a few minutes.
+          </p>
+          <div className="cx-actions" style={{ marginTop: '0.75rem' }}>
+            <Link href="/review" className="btn-cta">Open Review</Link>
+          </div>
+        </Flash>
+      ) : null}
+      {params.draft === 'error' ? (
+        <Flash tone="warn">Could not start the draft. Nothing changed. Try again in a moment.</Flash>
+      ) : null}
+      {params.audit === 'queued' ? (
+        <Flash>Checking your pages. New recommendations will appear here when the check finishes.</Flash>
+      ) : null}
+      {params.audit === 'error' ? (
+        <Flash tone="warn">Could not start the page check. Try again in a moment.</Flash>
+      ) : null}
 
       {params.recs === 'queued' && <Flash>{GSC_RECS_QUEUED_COPY}</Flash>}
       {params.recs === 'no_store' && <Flash tone="warn">{GSC_RECS_NO_STORE_COPY}</Flash>}
@@ -242,10 +276,9 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
         </section>
       ) : (
         <p className="cx-help">
-          Search recommendations are off for this workspace. Connect and Sync still work on{' '}
-          <Link href="/seo/search">Search Console</Link>. Turn the flag on in{' '}
-          <Link href="/settings#capabilities">Settings → Capability flags</Link>
-          {' '}to generate cards — this page does not flip it.
+          Search recommendations are turned off. You can still connect and sync{' '}
+          <Link href="/seo/search">Search Console</Link>. To get recommendations, turn them on in{' '}
+          <Link href="/settings#capabilities">Settings</Link>.
         </p>
       )}
 
@@ -281,19 +314,19 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
                     <input type="hidden" name="title" value={f.title || ''} />
                     <input type="hidden" name="recType" value={f.kind || ''} />
                     <input type="hidden" name="detail" value={JSON.stringify(f.detail || {})} />
-                    <button type="submit" className="btn-cta">
-                      {f.kind === 'gsc_n' ? 'Create' : 'Review'}
-                    </button>
+                    <SubmitButton className="btn-cta" pendingLabel="Starting…">
+                      {f.kind === 'gsc_n' ? 'Draft a new page' : 'Draft a fix'}
+                    </SubmitButton>
                   </form>
                   <form action={dismissFinding}>
                     <input type="hidden" name="id" value={f.id} />
                     <input type="hidden" name="status" value="snoozed" />
-                    <button type="submit" className="btn-secondary">Snooze</button>
+                    <SubmitButton className="btn-secondary" pendingLabel="Snoozing…">Snooze</SubmitButton>
                   </form>
                   <form action={dismissFinding}>
                     <input type="hidden" name="id" value={f.id} />
                     <input type="hidden" name="status" value="denied" />
-                    <button type="submit" className="btn-secondary">Deny</button>
+                    <SubmitButton className="btn-secondary" pendingLabel="Dismissing…">Dismiss</SubmitButton>
                   </form>
                 </>
               }
@@ -304,10 +337,10 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
 
       {otherFindings.length === 0 && (!recsOn || visibleGsc.length === 0) && !recsOn ? (
         <EmptyState
-          message="No open findings. Run a catalog check after catalog and Search Console sync."
+          message="No recommendations yet. Sync your live catalog and Search Console, then check your pages."
           action={
             <form action={runAudit}>
-              <button type="submit" className="btn-cta">Run catalog check</button>
+              <SubmitButton className="btn-cta" pendingLabel="Starting…">Check pages</SubmitButton>
             </form>
           }
         />
@@ -331,12 +364,12 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
                       <input type="hidden" name="query" value={f.detail?.query || ''} />
                       <input type="hidden" name="title" value={f.title || ''} />
                       <input type="hidden" name="detail" value={JSON.stringify(f.detail || {})} />
-                      <button type="submit" className="btn-secondary">Review</button>
+                      <SubmitButton className="btn-secondary" pendingLabel="Starting…">Draft a fix</SubmitButton>
                     </form>
                     <form action={dismissFinding}>
                       <input type="hidden" name="id" value={f.id} />
                       <input type="hidden" name="status" value="denied" />
-                      <button type="submit" className="btn-secondary">Dismiss</button>
+                      <SubmitButton className="btn-secondary" pendingLabel="Dismissing…">Dismiss</SubmitButton>
                     </form>
                   </>
                 }

@@ -35,8 +35,9 @@ const homeItems = adsSub('https://app.cerevex.store', defaultModulesFor('home_se
 assert.ok(homeItems.every((item) => item.href.startsWith('/')));
 assert.deepEqual(
   homeItems.filter((item) => item.rail).map((item) => item.rail),
-  ['Audits', 'Suggestions', 'Workflows'],
+  ['Audits', 'Suggestions'],
 );
+assert.ok(!homeItems.some((item) => item.label === 'Workflows'), 'Workflows is not built yet');
 assert.ok(!homeItems.some((item) => item.label === 'Leads'));
 
 const homeLeadsOn = adsSub(
@@ -51,11 +52,11 @@ assert.ok(!homeItems.some((item) => item.label === 'Clients'));
 assert.ok(!homeItems.some((item) => item.label === 'Sales'));
 
 const agencyItems = adsSub('', defaultModulesFor('agency'));
-assert.ok(agencyItems.some((item) => item.label === 'Clients'));
+assert.ok(!agencyItems.some((item) => item.label === 'Clients'), 'each store is its own client; no separate Clients page');
 assert.ok(!agencyItems.some((item) => item.label === 'Sales'));
 
 const ecomItems = adsSub('', defaultModulesFor('ecommerce'));
-assert.ok(ecomItems.some((item) => item.label === 'Sales'));
+assert.ok(!ecomItems.some((item) => item.label === 'Sales'), 'Sales is not built yet, even with the module on');
 assert.ok(!ecomItems.some((item) => item.label === 'Clients'));
 
 const filtered = filterItemsByModules(

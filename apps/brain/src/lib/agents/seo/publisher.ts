@@ -152,7 +152,7 @@ export async function publishContent({ storeId, draft, type = 'collection', plat
       const { updateArticle } = (await import('../../shopify/blogs')) as any;
       response = await updateArticle(client, useId, mainInput);
     } else {
-      response = await createAndPublishArticle(client, mainInput);
+      response = await createAndPublishArticle(client, { ...mainInput, authorName: store?.name });
     }
   } else {
     if (isImprove && useId) {

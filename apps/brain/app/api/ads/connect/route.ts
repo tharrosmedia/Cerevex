@@ -2,15 +2,14 @@ import { NextResponse } from 'next/server';
 import { adsApi } from '@/lib/ads-bff';
 import { consoleAuthorized } from '@/lib/console-auth';
 import { publicRedirect } from '@/lib/public-url';
+import { resolveSiteAds } from '@/lib/ads-site';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const platform = url.searchParams.get('platform');
-  const clientId = url.searchParams.get('clientId');
   const back = publicRedirect('/ads', request);
-  if (clientId) back.searchParams.set('client', clientId);
 
   if (!(await consoleAuthorized())) {
     return NextResponse.redirect(publicRedirect('/login', request));
@@ -19,9 +18,14 @@ export async function GET(request: Request) {
     back.searchParams.set('connect_error', 'Choose Meta or Google.');
     return NextResponse.redirect(back);
   }
+  let clientId = url.searchParams.get('clientId');
   if (!clientId) {
-    back.searchParams.set('connect_error', 'Choose a client first.');
-    return NextResponse.redirect(back);
+    const site = await resolveSiteAds();
+    clientId = site.client?.id ?? null;
+    if (!clientId) {
+      back.searchParams.set('connect_error', site.error || 'Add a store or site first.');
+      return NextResponse.redirect(back);
+    }
   }
 
   const started = await adsApi<{ url: string }>(

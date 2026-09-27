@@ -7,7 +7,8 @@ import { SyncAdsButton } from '@/components/ads/sync-ads-button';
 import { adsApi, loadAdsCockpit } from '@/lib/ads-bff';
 import { adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
 import { formatMoney, platformLabel } from '@/lib/ads-copy';
-import { loadAccounts, parseAdsFilters, pickDefaultClient } from '@/lib/ads-query';
+import { loadAccounts } from '@/lib/ads-query';
+import { resolveSiteAds } from '@/lib/ads-site';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 
 export const dynamic = 'force-dynamic';
@@ -29,18 +30,12 @@ type CreativeRow = {
   metrics: { window: string; spendUsd: string; impressions: number; clicks: number; conversions: string }[];
 };
 
-export default async function AdsCreativesPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ client?: string }>;
-}) {
+export default async function AdsCreativesPage() {
   const settings = await getWorkspaceModuleSettings();
   if (!settings.onboardingComplete) redirect('/onboarding');
 
-  const params = (await (searchParams ?? Promise.resolve({}))) as { client?: string };
-  const filters = parseAdsFilters(params);
-  const cockpit = await loadAdsCockpit();
-  const selected = pickDefaultClient(cockpit.clients, null, filters.client);
+  const [cockpit, siteAds] = await Promise.all([loadAdsCockpit(), resolveSiteAds()]);
+  const selected = siteAds.client ?? undefined;
   const grokVisible = adsCapabilityVisible(cockpit.workspace, 'm51.grok_creatives');
   const lpVisible = adsCapabilityVisible(cockpit.workspace, 'm51.lp_congruence');
   if (!grokVisible && !lpVisible) {
@@ -69,20 +64,19 @@ export default async function AdsCreativesPage({
         See what is running on Meta and Google. Compare ads in a group, then adapt a winner for the other platform.
       </p>
       {!selected ? (
-        <ConnectEmpty title="Choose a client to see ads." body="Creatives load from synced Meta and Google accounts." />
+        <ConnectEmpty title="Connect ad accounts" body={siteAds.error || 'Add a store or site first.'} />
+      ) : connected.length === 0 ? (
+        <ConnectEmpty
+          title={`Connect ${siteAds.siteName ? `${siteAds.siteName}'s` : 'your'} ad accounts`}
+          body="Creatives load from this site's synced Meta and Google Ads accounts."
+          clientId={selected.id}
+          allowMeta={adsCapabilityWritable(cockpit.workspace, 'connect.meta')}
+          allowGoogle={adsCapabilityWritable(cockpit.workspace, 'connect.google')}
+        />
       ) : creatives.length === 0 ? (
         <section className="cx-panel">
-          <p className="cx-help">No ads synced yet. Connect Meta or Google, sync, then come back.</p>
-          <SyncAdsButton
-            accountIds={connected.map((account) => account.id)}
-            disabledReason={
-              !selected
-                ? 'Choose a client to sync.'
-                : connected.length === 0
-                  ? 'Connect Meta or Google first.'
-                  : undefined
-            }
-          />
+          <p className="cx-help">No ads synced yet. Sync your accounts, then come back.</p>
+          <SyncAdsButton accountIds={connected.map((account) => account.id)} />
         </section>
       ) : (
         <>

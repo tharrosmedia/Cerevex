@@ -20,7 +20,7 @@ import type { CrmLead } from "../lead-lifecycle";
 import type { AggregatedSessionSignal } from "../lp-intelligence";
 import type { LiveEntityState, MutationOutcome } from "../mutate-types";
 import type { PullResult } from "../platforms";
-import type { Platform, StoredOAuthTokens } from "../types";
+import type { AccessibleAdAccount, Platform, StoredOAuthTokens } from "../types";
 
 export type ConnectorConnectInput = {
   workspaceId: string;
@@ -177,6 +177,8 @@ export interface AdPlatformConnector extends Connector {
   pull(input: ConnectorPullInput): Promise<PullResult>;
   refreshTokens(tokens: StoredOAuthTokens): Promise<StoredOAuthTokens>;
   exchangeCode(code: string): Promise<ConnectorExchangeResult>;
+  /** Every ad account the authorized login can reach, so the owner can pick which belong to a site. */
+  listAccessibleAccounts(tokens: StoredOAuthTokens): Promise<AccessibleAdAccount[]>;
   readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;

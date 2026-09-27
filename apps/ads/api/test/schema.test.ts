@@ -25,6 +25,7 @@ const REQUIRED_TABLES = [
   "workflows",
   "workflow_runs",
   "oauth_credentials",
+  "oauth_pending_connections",
   "ad_entities",
   "ad_metrics",
   "analytics_connections",

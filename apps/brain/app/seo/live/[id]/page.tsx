@@ -8,6 +8,8 @@ import {
   siteCmsPlainError,
 } from '@cerevex/contracts';
 import { PageHeader } from '@/components/page-header';
+import { SubmitButton } from '@/components/submit-button';
+import { resourceTypeLabel } from '@/lib/labels';
 import { getCatalogResource } from '@/src/lib/db/catalog';
 import { createJob } from '@/src/lib/db/jobs';
 import { saveDraft } from '@/src/lib/db/drafts';
@@ -17,8 +19,15 @@ import { isWordpressStore, wordpressFlagsFromStore } from '@/src/lib/wordpress';
 
 export const dynamic = 'force-dynamic';
 
-export default async function SeoLiveResource({ params }: { params: Promise<{ id: string }> }) {
+export default async function SeoLiveResource({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ error?: string }>;
+}) {
   const { id } = await params;
+  const query = (await (searchParams ?? Promise.resolve({}))) as { error?: string };
   const resource = await getCatalogResource(id).catch(() => null);
   if (!resource) notFound();
 
@@ -34,16 +43,18 @@ export default async function SeoLiveResource({ params }: { params: Promise<{ id
       <PageHeader
         kicker="SEO"
         title={resource.title || 'Page'}
-        lede="Propose a title, body, or meta change. Approve in Review writes the site."
+        lede={[
+          resourceTypeLabel(resource.resourceType),
+          `/${resource.handle || ''}`,
+          resource.seoTitle ? `SEO title: ${resource.seoTitle}` : 'No SEO title',
+        ].join(' · ')}
         backHref="/seo/live"
+        backLabel="← Live catalog"
       />
-      <p className="cx-help">
-        {resource.resourceType} · /{resource.handle || ''}
-        {resource.seoTitle ? ` · ${resource.seoTitle}` : ''}
-      </p>
+      {query.error ? <p className="cx-banner cx-banner-warn" role="status">{query.error}</p> : null}
       <div className="cx-panel">
-        <h2>Current</h2>
-        <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: resource.bodyHtml || '' }} />
+        <h2>Current content</h2>
+        <div className="cx-html-preview" dangerouslySetInnerHTML={{ __html: resource.bodyHtml || '' }} />
       </div>
       {canPropose ? (
         <form action={proposeWordpressChange} className="cx-panel cx-form">
@@ -65,13 +76,20 @@ export default async function SeoLiveResource({ params }: { params: Promise<{ id
             <label htmlFor="wp-body">Body</label>
             <textarea id="wp-body" name="bodyHtml" defaultValue={resource.bodyHtml || ''} />
           </div>
-          {!canApply ? <p className="cx-help">This stays a draft. Approve will not write the site while WordPress apply is off.</p> : null}
-          <button type="submit" className="btn-cta">Send to Review</button>
+          {!canApply ? (
+            <p className="cx-help">Publishing to WordPress is turned off, so approving this will not change your site yet.</p>
+          ) : null}
+          <SubmitButton className="btn-cta" pendingLabel="Sending…">Send to Review</SubmitButton>
         </form>
+      ) : wpType ? (
+        <p className="cx-help">
+          To propose changes here, connect WordPress and turn on WordPress changes in <Link href="/settings#connects">Settings</Link>.
+        </p>
       ) : (
-        <p className="cx-help">WordPress proposals show here after the site is connected and the apply flag is visible.</p>
+        <p className="cx-help">
+          Editing this page from here isn&apos;t available yet. Use <Link href="/seo/findings">Recommendations</Link> to draft improvements.
+        </p>
       )}
-      <p><Link href="/seo/live" className="btn-secondary">Back to live catalog</Link></p>
     </div>
   );
 }
@@ -100,7 +118,7 @@ async function proposeWordpressChange(formData: FormData) {
   const metaDescription = String(formData.get('metaDescription') || resource.seoDescription || '');
   const job = await createJob({
     storeId,
-    domain: store.shopify_domain,
+    domain: 'seo',
     type: 'seo.wordpress',
     input: {
       resourceType: parsed.resourceType,
@@ -135,5 +153,5 @@ async function proposeWordpressChange(formData: FormData) {
     externalId: parsed.externalId,
     resourceType: parsed.resourceType,
   }, job.id);
-  redirect('/review');
+  redirect('/review?success=proposed');
 }

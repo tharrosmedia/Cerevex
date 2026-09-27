@@ -37,6 +37,39 @@ export async function listDrafts(storeId: string, status?: string, limit: number
   return sql`SELECT d.id, d.job_id as "jobId", d.store_id as "storeId", d.title, d.handle, d.body_html as "bodyHtml", d.meta_title as "metaTitle", d.meta_description as "metaDescription", d.metafields, d.schema_jsonld as "schemaJsonLd", d.evaluation_scores as "evaluationScores", d.selected_products as "selectedProducts", d.collection_rules as "collectionRules", d.brief, d.created_at as "createdAt", j.status as "jobStatus", j.type as "type" FROM drafts d LEFT JOIN jobs j ON d.job_id = j.id WHERE d.store_id = ${storeId} ORDER BY d.created_at DESC LIMIT ${limit}`;
 }
 
+export type ReviewDraftRow = {
+  id: string;
+  jobId: string;
+  storeId: string;
+  title: string | null;
+  handle: string | null;
+  createdAt: string;
+  jobStatus: string;
+  type: string;
+  jobInput: any;
+};
+
+/** Latest draft per job, for the Review queue. `waiting` = needs a decision; `decided` = everything after. */
+export async function listReviewDrafts(storeId: string, mode: 'waiting' | 'decided', limit: number = 100): Promise<ReviewDraftRow[]> {
+  const sql = neon(process.env.DATABASE_URL!);
+  const waiting = mode === 'waiting';
+  const rows = await sql`
+    SELECT * FROM (
+      SELECT DISTINCT ON (d.job_id)
+        d.id, d.job_id as "jobId", d.store_id as "storeId", d.title, d.handle, d.created_at as "createdAt",
+        j.status as "jobStatus", j.type as "type", j.input as "jobInput"
+      FROM drafts d
+      JOIN jobs j ON d.job_id = j.id
+      WHERE d.store_id = ${storeId}
+        AND ((${waiting} AND j.status = 'awaiting_approval') OR (NOT ${waiting} AND j.status <> 'awaiting_approval'))
+      ORDER BY d.job_id, d.created_at DESC
+    ) latest
+    ORDER BY latest."createdAt" DESC
+    LIMIT ${limit}
+  `;
+  return rows as ReviewDraftRow[];
+}
+
 export async function updateDraft(draftId: string, updates: Partial<{ title: string; handle: string; bodyHtml: string; metaTitle: string; metaDescription: string; metafields: any; schemaJsonLd: any; selectedProducts?: any; collectionRules?: any; brief?: any }>) {
   const sql = neon(process.env.DATABASE_URL!);
   const sets: string[] = [];

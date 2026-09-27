@@ -6,14 +6,8 @@ import { AdsFilters } from '@/components/ads/ads-filters';
 import { ConnectEmpty } from '@/components/ads/connect-empty';
 import { loadAdsCockpit } from '@/lib/ads-bff';
 import { auditStatusLabel, platformLabel, shortWhen } from '@/lib/ads-copy';
-import {
-  auditPlatform,
-  clientName,
-  filterAudits,
-  loadAccounts,
-  parseAdsFilters,
-  pickDefaultClient,
-} from '@/lib/ads-query';
+import { auditPlatform, filterAudits, loadAccounts, parseAdsFilters } from '@/lib/ads-query';
+import { resolveSiteAds } from '@/lib/ads-site';
 import { adsCapabilityVisible, adsCapabilityWritable } from '@/lib/ads-capabilities';
 import { AdsCapabilityOff } from '@/components/ads/capability-off';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
@@ -34,10 +28,11 @@ export default async function AdsAuditsPage({
     status?: string;
   };
   const filters = parseAdsFilters(params);
-  const cockpit = await loadAdsCockpit();
-  const selected = pickDefaultClient(cockpit.clients, null, filters.client);
-  const accounts = await loadAccounts(cockpit.clients.map((client) => client.id));
-  const audits = filterAudits(cockpit.audits, filters, accounts);
+  const [cockpit, siteAds] = await Promise.all([loadAdsCockpit(), resolveSiteAds()]);
+  const selected = siteAds.client ?? undefined;
+  const accounts = selected ? await loadAccounts([selected.id]) : [];
+  const connected = accounts.filter((account) => account.connectionStatus === 'connected' || account.hasCredentials);
+  const audits = filterAudits(cockpit.audits, { ...filters, client: selected?.id ?? '__no_site__' }, accounts);
 
   if (!adsCapabilityVisible(cockpit.workspace, 'audits')) {
     return (
@@ -55,10 +50,12 @@ export default async function AdsAuditsPage({
       <p className="cx-lede">Every check and how it finished. Open one to see findings.</p>
 
       {!cockpit.ok ? (
+        <p className="cx-banner cx-banner-warn" role="status">{cockpit.message}</p>
+      ) : selected && connected.length === 0 ? (
         <ConnectEmpty
-          title="Connect Meta to run your first check."
-          body={cockpit.message}
-          clientId={selected?.id}
+          title={`Connect ${siteAds.siteName ? `${siteAds.siteName}'s` : 'your'} ad accounts`}
+          body="Checks need at least one connected Meta or Google Ads account."
+          clientId={selected.id}
           allowMeta={adsCapabilityWritable(cockpit.workspace, 'connect.meta')}
           allowGoogle={adsCapabilityWritable(cockpit.workspace, 'connect.google')}
         />
@@ -66,7 +63,7 @@ export default async function AdsAuditsPage({
         <>
           <AdsFilters
             action="/ads/audits"
-            clients={cockpit.clients}
+            clients={[]}
             value={filters}
             statusOptions={[
               { value: 'queued', label: 'Queued' },
@@ -77,23 +74,21 @@ export default async function AdsAuditsPage({
           />
           <section className="cx-panel">
             <CheckAdsButton
-              clientId={selected?.id ?? (filters.client || undefined)}
+              clientId={selected?.id}
               disabledReason={
                 !adsCapabilityWritable(cockpit.workspace, 'audits')
                   ? 'Audits are off for this workspace.'
-                  : !selected && !filters.client
-                    ? 'Choose a client to run a check.'
+                  : !selected
+                    ? siteAds.error || 'Add a store or site first.'
                     : undefined
               }
             />
             <SyncAdsButton
-              accountIds={accounts
-                .filter((account) => account.clientId === (selected?.id ?? filters.client) && (account.connectionStatus === 'connected' || account.hasCredentials))
-                .map((account) => account.id)}
+              accountIds={connected.map((account) => account.id)}
               disabledReason={
-                !selected && !filters.client
-                  ? 'Choose a client to sync.'
-                  : accounts.filter((account) => account.connectionStatus === 'connected' || account.hasCredentials).length === 0
+                !selected
+                  ? siteAds.error || 'Add a store or site first.'
+                  : connected.length === 0
                     ? 'Connect Meta or Google first.'
                     : undefined
               }
@@ -114,7 +109,6 @@ export default async function AdsAuditsPage({
             <thead>
               <tr>
                 <th>When</th>
-                <th>Client</th>
                 <th>Platform</th>
                 <th>Status</th>
                 <th>Findings</th>
@@ -127,7 +121,6 @@ export default async function AdsAuditsPage({
                 return (
                   <tr key={audit.id}>
                     <td data-label="When">{shortWhen(audit.createdAt)}</td>
-                    <td data-label="Client">{clientName(cockpit.clients, audit.clientId)}</td>
                     <td data-label="Platform">{platformLabel(auditPlatform(audit, accounts)) || '—'}</td>
                     <td data-label="Status">{auditStatusLabel(audit.status)}</td>
                     <td data-label="Findings">{findings ?? '—'}</td>

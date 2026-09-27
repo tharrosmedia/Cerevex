@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ADS_SYNC_NO_ACCOUNT, ADS_SYNC_PENDING, ADS_SYNC_QUEUED } from '@/lib/ads-copy';
+import { ADS_SYNC_NO_ACCOUNT, ADS_SYNC_PENDING, syncResultMessage } from '@/lib/ads-copy';
 
 export function SyncAdsButton({
   accountIds,
@@ -36,12 +36,12 @@ export function SyncAdsButton({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ accountIds }),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; queued?: number };
+      const body = (await res.json().catch(() => ({}))) as { error?: string; queued?: number; errors?: string[] };
       if (!res.ok) {
         setMessage(body.error ?? 'Could not queue sync.');
         return;
       }
-      setMessage(ADS_SYNC_QUEUED);
+      setMessage(syncResultMessage(body.queued ?? 0, body.errors ?? []));
       router.refresh();
     } catch {
       setMessage('Could not queue sync.');

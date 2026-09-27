@@ -50,6 +50,7 @@ export type AdAccountPublic = {
   clientId: string;
   platform: Platform;
   externalId: string;
+  displayName: string | null;
   connectionStatus: string;
   lastSyncAt: string | null;
   lastError: string | null;
@@ -92,6 +93,18 @@ export type StoredOAuthTokens = {
   tokenType?: string;
   scopes?: string[];
   mock?: boolean;
+  /** Google Ads manager (MCC) id to send as login-customer-id when the account is reached through a manager. */
+  loginCustomerId?: string;
+};
+
+/** An ad account the authorizing login can reach, offered in the "choose accounts" step. */
+export type AccessibleAdAccount = {
+  externalId: string;
+  name: string;
+  currency?: string | null;
+  /** Business (Meta) or manager account (Google) it belongs to. */
+  detail?: string | null;
+  loginCustomerId?: string | null;
 };
 
 export type WorkspaceSummary = {

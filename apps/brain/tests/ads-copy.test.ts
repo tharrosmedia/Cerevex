@@ -15,8 +15,23 @@ import {
   suggestionLabel,
   suggestionWhy,
   auditStatusLabel,
+  syncResultMessage,
 } from '../lib/ads-copy';
 import { isAllowedAdsProxyRequest } from '../lib/ads-proxy-allowlist';
+import { oauthErrorMessage, parseAdsFilters } from '../lib/ads-query';
+
+assert.equal(syncResultMessage(2, []), ADS_SYNC_QUEUED);
+assert.equal(
+  syncResultMessage(1, ['Account is frozen', 'Token expired']),
+  'Syncing 1 of 3 accounts. 2 could not start: Account is frozen.',
+);
+assert.ok(oauthErrorMessage('access_denied').includes('cancelled'));
+assert.ok(oauthErrorMessage('weird_code').includes('weird code'));
+assert.equal(parseAdsFilters({ oauth_error: 'capability_off' }).notice, oauthErrorMessage('capability_off'));
+assert.equal(parseAdsFilters({ connected: 'google', count: '3' }).notice, 'Connected 3 Google Ads accounts. Their first sync is running.');
+assert.equal(parseAdsFilters({ connected: 'meta' }).notice, 'Meta is connected. The first sync is running.');
+assert.ok(oauthErrorMessage('no_accounts').includes('no ad accounts'));
+assert.equal(parseAdsFilters({ connect_error: 'Choose Meta or Google.', oauth_error: 'x' }).notice, 'Choose Meta or Google.');
 
 assert.equal(findingLabel('low_ctr'), 'Ads not getting clicks');
 assert.equal(findingLabel('zero_conversion_spend'), 'Spend with no leads');
@@ -81,11 +96,11 @@ assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/planning`), true
 assert.equal(isAllowedAdsProxyRequest('POST', `/clients/${recId}/planning/calendar`), true);
 
 assert.equal(ADS_CONNECT_PENDING, 'Connecting…');
-assert.ok(ADS_CONNECT_NO_CLIENT.includes('Choose a client'));
+assert.ok(!ADS_CONNECT_NO_CLIENT.includes('client'), 'each site owns its ad accounts; no client picker');
 assert.equal(ADS_SYNC_PENDING, 'Syncing…');
 assert.ok(ADS_SYNC_QUEUED.includes('queued'));
 assert.ok(ADS_SYNC_NO_ACCOUNT.includes('Connect Meta'));
-assert.ok(ADS_CHECK_NO_CLIENT.includes('Choose a client'));
+assert.ok(!ADS_CHECK_NO_CLIENT.includes('client'));
 assert.ok(ADS_APPROVE_SOFT_LAUNCH.includes('Adam'));
 assert.ok(ADS_APPROVE_PAUSED.includes('paused'));
 assert.ok(ADS_APPROVE_FROZEN.includes('frozen'));

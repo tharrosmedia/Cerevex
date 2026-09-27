@@ -75,11 +75,14 @@ export const clients = osSchema.table(
     name: text("name").notNull(),
     pilotFlag: boolean("pilot_flag").notNull().default(false),
     status: text("status").notNull().default("active"),
+    /** Console site (Brain stores.id) that owns this client's ad accounts. No FK: different schema. */
+    siteId: text("site_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("clients_workspace_idx").on(table.workspaceId),
     uniqueIndex("clients_workspace_name_idx").on(table.workspaceId, table.name),
+    uniqueIndex("clients_workspace_site_idx").on(table.workspaceId, table.siteId),
   ],
 );
 
@@ -112,6 +115,7 @@ export const adAccounts = osSchema.table(
       .references(() => clients.id, { onDelete: "cascade" }),
     platform: platformEnum("platform").notNull(),
     externalId: text("external_id").notNull(),
+    displayName: text("display_name"),
     connectionStatus: text("connection_status").notNull().default("disconnected"),
     lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
     lastError: text("last_error"),
@@ -382,6 +386,26 @@ export const oauthCredentials = osSchema.table(
     index("oauth_credentials_workspace_idx").on(table.workspaceId),
     index("oauth_credentials_ad_account_idx").on(table.adAccountId),
   ],
+);
+
+/** Tokens + account list held between OAuth callback and the owner choosing accounts. */
+export const oauthPendingConnections = osSchema.table(
+  "oauth_pending_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    platform: platformEnum("platform").notNull(),
+    userId: uuid("user_id").notNull(),
+    encryptedPayload: text("encrypted_payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("oauth_pending_client_idx").on(table.clientId)],
 );
 
 export const adEntities = osSchema.table(

@@ -1,71 +1,58 @@
-import { getOnlineStorePublicationId, publishResource } from './publications';
+import { seoMetafields } from './seo-metafields';
 
-export async function createAndPublishPage(adminClient: any, input: { title: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string }) {
+type PageInput = { title?: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string };
+
+function throwUserErrors(errors: any[] | undefined) {
+  if (errors && errors.length) {
+    throw new Error(errors.map((e: any) => e.message).join('; '));
+  }
+}
+
+export async function createAndPublishPage(adminClient: any, input: PageInput & { title: string }) {
   const mutation = `
-    mutation createPage($input: PageInput!) {
-      pageCreate(input: $input) {
+    mutation createPage($page: PageCreateInput!) {
+      pageCreate(page: $page) {
         page { id handle }
         userErrors { field message }
       }
     }
   `;
-  const variables: any = {
-    input: {
-      title: input.title,
-      handle: input.handle,
-      body: input.bodyHtml || '',
-    },
+  const page: Record<string, unknown> = {
+    title: input.title,
+    handle: input.handle,
+    body: input.bodyHtml || '',
+    isPublished: true,
   };
-  if (input.seoTitle || input.seoDescription) {
-    variables.input.seo = {
-      title: input.seoTitle || undefined,
-      description: input.seoDescription || undefined,
-    };
-  }
-  const response = await adminClient.request(mutation, { variables });
-  const errors = response?.data?.pageCreate?.userErrors || [];
-  if (errors.length) {
-    throw new Error(errors.map((e: any) => e.message).join('; '));
-  }
-  const page = response?.data?.pageCreate?.page;
-  if (!page?.id) {
+  const metafields = seoMetafields(input.seoTitle, input.seoDescription);
+  if (metafields.length) page.metafields = metafields;
+  const response = await adminClient.request(mutation, { variables: { page } });
+  throwUserErrors(response?.data?.pageCreate?.userErrors);
+  if (!response?.data?.pageCreate?.page?.id) {
     throw new Error('Failed to create page');
   }
-  const pubId = await getOnlineStorePublicationId(adminClient);
-  await publishResource(adminClient, page.id, pubId);
   return response;
 }
 
 // Back-compat alias
 export const createDraftPage = createAndPublishPage;
 
-export async function updatePage(adminClient: any, id: string, input: { title?: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string }) {
+export async function updatePage(adminClient: any, id: string, input: PageInput) {
   const mutation = `
-    mutation updatePage($id: ID!, $input: PageInput!) {
-      pageUpdate(id: $id, input: $input) {
+    mutation updatePage($id: ID!, $page: PageUpdateInput!) {
+      pageUpdate(id: $id, page: $page) {
         page { id handle }
         userErrors { field message }
       }
     }
   `;
-  const variables: any = {
-    id,
-    input: {
-      title: input.title,
-      handle: input.handle,
-      body: input.bodyHtml || '',
-    },
-  };
-  if (input.seoTitle || input.seoDescription) {
-    variables.input.seo = {
-      title: input.seoTitle || undefined,
-      description: input.seoDescription || undefined,
-    };
-  }
-  const response = await adminClient.request(mutation, { variables });
-  const errors = response?.data?.pageUpdate?.userErrors || [];
-  if (errors.length) {
-    throw new Error(errors.map((e: any) => e.message).join('; '));
-  }
+  const page: Record<string, unknown> = {};
+  if (input.title) page.title = input.title;
+  if (input.handle) page.handle = input.handle;
+  // An empty body here means the content was placed in metafields; don't wipe the live page.
+  if (input.bodyHtml) page.body = input.bodyHtml;
+  const metafields = seoMetafields(input.seoTitle, input.seoDescription);
+  if (metafields.length) page.metafields = metafields;
+  const response = await adminClient.request(mutation, { variables: { id, page } });
+  throwUserErrors(response?.data?.pageUpdate?.userErrors);
   return response;
 }

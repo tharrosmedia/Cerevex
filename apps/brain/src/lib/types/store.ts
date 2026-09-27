@@ -49,6 +49,8 @@ export interface StoreConfig {
   productsSyncedCount?: number;
   catalogLastSynced?: string;
   catalogSyncedCount?: number;
+  catalogSyncCounts?: { collection: number; page: number; article: number };
+  catalogSyncErrors?: Array<{ resourceType: 'collection' | 'page' | 'article'; message: string }>;
   seoRules?: SEORule[];
   gsc?: {
     propertyUrl?: string;

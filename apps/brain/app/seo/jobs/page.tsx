@@ -5,62 +5,77 @@ import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { SeoSubnav } from '@/components/seo-subnav';
 import { StatusBadge } from '@/components/status-badge';
-import { jobTypeLabel } from '@/lib/job-labels';
+import { jobSubject, jobTypeLabel } from '@/lib/job-labels';
+import { formatWhen } from '@/lib/labels';
+import { operatorLoadError } from '@/lib/ui-copy';
 
 export const dynamic = 'force-dynamic';
 
+const LIMIT = 50;
+
 export default async function SeoJobs() {
   let jobs: any[] = [];
+  let loadError: string | null = null;
   try {
     const storeId = await getActiveStoreId();
-    if (storeId) jobs = await listJobs(storeId, 50);
-  } catch {}
-  const seoJobs = jobs.filter((j: any) => j.domain === 'seo' || true);
+    if (storeId) jobs = await listJobs(storeId, LIMIT);
+  } catch (e: any) {
+    loadError = operatorLoadError(e?.message) || 'Could not load jobs.';
+  }
 
   return (
     <div className="cx-page">
       <PageHeader
         kicker="SEO"
         title="SEO jobs"
-        lede="Queued, running, and finished SEO work for this store."
+        lede="Content Cerevex is researching, writing, or publishing for this store."
         backHref="/seo"
       />
       <SeoSubnav />
 
-      {seoJobs.length === 0 ? (
+      {loadError ? <p className="cx-banner cx-banner-warn" role="status">Could not load jobs: {loadError}</p> : null}
+
+      {!loadError && jobs.length === 0 ? (
         <EmptyState
-          message="No SEO jobs yet. Create a page or run an audit to start one."
+          message="No SEO jobs yet. Create content or draft a fix from Recommendations to start one."
           actionHref="/seo/create"
-          actionLabel="Create"
+          actionLabel="Create content"
         />
-      ) : (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {seoJobs.map((j: any) => (
-                <tr key={j.id}>
-                  <td data-label="ID">{j.id.slice(0, 8)}</td>
-                  <td data-label="Type">{jobTypeLabel(j.type)}</td>
-                  <td data-label="Status"><StatusBadge status={j.status} /></td>
-                  <td data-label="Created">{new Date(j.createdAt).toLocaleString()}</td>
-                  <td data-label="Open">
-                    <Link href={`/jobs/${j.id}`} className="btn-secondary">View</Link>
-                  </td>
+      ) : null}
+
+      {jobs.length > 0 ? (
+        <>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Working on</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Started</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {jobs.map((j: any) => (
+                  <tr key={j.id}>
+                    <td data-label="Working on">
+                      <Link href={`/jobs/${j.id}`}>{jobSubject(j.input) || 'Untitled job'}</Link>
+                    </td>
+                    <td data-label="Type">{jobTypeLabel(j.type)}</td>
+                    <td data-label="Status"><StatusBadge status={j.status} /></td>
+                    <td data-label="Started">{formatWhen(j.createdAt)}</td>
+                    <td data-label="Open">
+                      <Link href={`/jobs/${j.id}`} className="btn-secondary">View</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {jobs.length >= LIMIT ? <p className="cx-help">Showing the newest {LIMIT} jobs.</p> : null}
+        </>
+      ) : null}
     </div>
   );
 }

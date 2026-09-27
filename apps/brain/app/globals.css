@@ -1,3 +1,25 @@
+/*
+ * Tailwind utilities only — no preflight, so console element and cx-* styles stay as they are.
+ * Utilities are unlayered so a utility class (0,1,0) still beats the element selectors below.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+}
+
+@layer base {
+  *, ::before, ::after { border-color: var(--border); }
+}
+
 :root {
   /* Design Standards 1.2 — locked canvas + black --cta placeholder */
   --bg: #ffffff;
@@ -35,6 +57,7 @@ h1 { font-size: 1.5rem; }
 table { border-collapse: collapse; width: 100%; }
 th, td { padding: 8px; border: 1px solid var(--border); text-align: left; }
 input, textarea, select, button { padding: 8px; border: 1px solid var(--border); }
+input, textarea, select { box-sizing: border-box; max-width: 100%; font: inherit; }
 button {
   background: var(--cta);
   color: var(--cta-foreground);
@@ -51,6 +74,9 @@ a { color: var(--foreground); }
   padding: 0.6rem 1rem;
   border-radius: 8px;
   cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.2;
   font-weight: 600;
   text-decoration: none;
   box-sizing: border-box;
@@ -518,6 +544,22 @@ a { color: var(--foreground); }
   min-height: 40px;
   display: inline-flex;
   align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+}
+
+.cx-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.cx-details summary::before {
+  content: "▸";
+  font-size: 0.8em;
+  transition: transform 0.15s;
+}
+
+.cx-details[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .cx-details ul {
@@ -525,6 +567,230 @@ a { color: var(--foreground); }
   padding-left: 1.1rem;
   color: var(--muted-foreground);
   font-size: 0.9rem;
+}
+
+.cx-narrow {
+  max-width: 40rem;
+}
+
+.cx-account-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cx-account-list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.cx-account-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  cursor: pointer;
+}
+
+.cx-account-option input {
+  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+
+.cx-account-option strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cx-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin: 0 0 1.25rem;
+}
+
+.cx-tabs a {
+  padding: 0.6rem 0.9rem;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted-foreground);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.cx-tabs a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+.cx-review-site {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+
+.cx-review-site-meta {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.cx-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cx-review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.cx-review-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cx-review-main .cx-card-kicker {
+  align-items: center;
+  margin: 0 0 0.2rem;
+}
+
+.cx-review-title {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .cx-review-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.cx-site-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.cx-site-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cx-site-card .cx-card-title {
+  margin: 0;
+}
+
+.cx-site-domain {
+  overflow-wrap: anywhere;
+}
+
+.cx-choice-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.cx-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+
+.cx-choice span {
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+}
+
+.cx-choice:hover {
+  background: var(--bg-muted);
+}
+
+.cx-choice-current {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+
+.cx-steps {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.cx-steps li + li {
+  margin-top: 0.3rem;
+}
+
+@media (min-width: 720px) {
+  .cx-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cx-html-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  overflow-wrap: break-word;
+  line-height: 1.55;
+}
+
+.cx-html-preview th,
+.cx-html-preview td {
+  white-space: nowrap;
+}
+
+.cx-html-preview img,
+.cx-html-preview video,
+.cx-html-preview iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+.cx-html-preview table {
+  display: block;
+  overflow-x: auto;
+}
+
+.cx-draft-meta {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.cx-draft-meta dt {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.cx-draft-meta dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 720px) {
+  .cx-draft-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .cx-inline-nav {
@@ -823,6 +1089,7 @@ a { color: var(--foreground); }
   .data-table td {
     display: block;
     width: 100%;
+    box-sizing: border-box;
   }
 
   .data-table tr {
@@ -833,14 +1100,24 @@ a { color: var(--foreground); }
   .data-table td {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 1rem;
     border-bottom: 0;
     padding: 0.35rem 0.8rem;
+    text-align: right;
+    overflow-wrap: anywhere;
   }
 
   .data-table td::before {
     content: attr(data-label);
+    flex: none;
     font-weight: 650;
     color: var(--muted-foreground);
+    text-align: left;
+  }
+
+  .data-table td[data-label="Open"]::before,
+  .data-table td[data-label="Actions"]::before {
+    content: none;
   }
 }

@@ -8,6 +8,10 @@ const TYPE_LABELS: Record<string, string> = {
   "seo.publish": "Publish SEO page",
   "seo.research": "SEO research",
   "seo.wordpress": "WordPress change",
+  collection: "Collection",
+  page: "Page",
+  blog: "Blog post",
+  article: "Blog post",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -71,6 +75,20 @@ export function jobStatusTone(status: string | null | undefined): StatusTone {
     return "warn";
   }
   return "info";
+}
+
+/** What the job worked on (keyword, page title, or query), for list rows. */
+export function jobSubject(input: unknown): string | null {
+  const record = asRecord(input);
+  if (!record) return null;
+  const direct = firstString(record, ["keyword", "title", "query", "topic", "handle", "url"]);
+  if (direct) return direct;
+  const queries = record.gscQueries;
+  if (Array.isArray(queries)) {
+    const first = queries.find((q) => typeof q === "string" && q.trim()) as string | undefined;
+    if (first) return first.trim();
+  }
+  return null;
 }
 
 export function jobInputLabel(input: unknown, type?: string | null): string {
