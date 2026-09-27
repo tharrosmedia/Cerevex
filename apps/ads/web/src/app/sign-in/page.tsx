@@ -11,8 +11,8 @@ import { consoleHref } from "@/lib/console-origin";
 
 export default function SignInPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("adam@tharrosmedia.com");
-  const [password, setPassword] = useState("local-dev-only");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -24,7 +24,7 @@ export default function SignInPage() {
       await login(email, password);
       router.replace("/app");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not sign in. Is the API running?");
+      setError(err instanceof ApiError ? err.message : "Could not reach Cerevex. Check your connection and try again.");
     } finally {
       setPending(false);
     }
@@ -79,12 +79,11 @@ export default function SignInPage() {
                 <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {error}
                 </p>
-              ) : (
+              ) : process.env.NODE_ENV === "development" ? (
                 <p className="text-xs text-muted-foreground">
-                  Local seed owner: <span className="font-mono">adam@tharrosmedia.com</span> /{" "}
-                  <span className="font-mono">local-dev-only</span>
+                  Local development: sign in with the seeded owner from <span className="font-mono">SEED_OWNER_EMAIL</span>.
                 </p>
-              )}
+              ) : null}
               <Button type="submit" className="w-full" disabled={pending} size="lg">
                 {pending ? "Signing in…" : "Sign in"}
               </Button>

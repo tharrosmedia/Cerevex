@@ -29,11 +29,7 @@ export function adsNavFor(
     capabilities: capabilities ?? null,
   }).map((item) => {
     const href =
-      item.id === "audits" || item.id === "suggestions" || item.id === "overview"
-        ? item.id === "overview"
-          ? "/app"
-          : consoleHref(item.href)
-        : item.href;
+      item.id === "overview" ? "/app" : item.href.startsWith("/ads/") ? consoleHref(item.href) : item.href;
     return {
       href,
       label: item.label,

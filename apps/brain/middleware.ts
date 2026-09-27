@@ -35,6 +35,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Exclude Sentry tunnel route + example test pages from auth middleware
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|sentry-tunnel|sentry-example-page|api/sentry-example-api).*)'],
+  // Exclude the Sentry tunnel route from auth middleware
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|sentry-tunnel).*)'],
 };
