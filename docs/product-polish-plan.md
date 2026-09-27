@@ -8,6 +8,34 @@ File and line references are as of `c7f984d`.
 
 ---
 
+## Progress
+
+**Step 1 (bug fixes) and step 2 (Ads connection) are done** on `cursor/product-polish-plan-7c3e`.
+
+| Area | What shipped |
+|---|---|
+| Styling (1.1) | Tailwind utilities load **without** its CSS reset, so utility-styled pages render and existing `cx-*` pages are unchanged. Mobile tables fit the screen (cells were 100% width plus padding with no border-box sizing). |
+| Publishing | Page and blog-post publish used mutations and fields that don't exist in the Admin API (`PageInput`, `ArticleInput`, `bodyHtml`, `seo`, no `author`), so approving a Page or Blog post failed. Fixed; SEO title/description go through `global.*_tag` metafields. |
+| Live catalog | Pages and articles queries requested fields that don't exist (`seo`, `bodyHtml`); collections needed `read_product_listings`. All failures were swallowed. Fixed queries, all blogs, per-type results and plain-language errors. |
+| Stores | Site type first; WordPress can be added; the token is verified before saving; missing permissions named; cards on mobile. The edit page no longer wipes config when the JSON box is invalid or cleared. |
+| Review | A real queue (waiting / decided), grouped by site and platform, in the SEO sub-menu. |
+| Draft page | One back link, responsive layout, no debug dump; a failed send no longer reports success. |
+| SEO jobs | Rows show the keyword or page, not an ID. |
+| Recommendations | "Draft a fix" gives feedback and an Open Review link; Check pages has feedback; Deny → Dismiss. |
+| Ads connection (3.7) | Each site owns its ads client (existing pilots adopted by name; a one-time link step in Settings for the rest). After Meta/Google sign-in you choose which accounts belong to the site; Google manager (MCC) accounts supported; several accounts per platform. Clients page replaced by Stores. |
+| Ads misc | Absolute pixel URL; readable OAuth errors; partial sync failures reported; Sales and Workflows placeholders out of the menu. |
+| Safety | Old ads app no longer pre-fills seed credentials; its dead links fixed; `/sentry-example-page` removed. |
+
+**Before deploying:**
+- Apply ads migration `0004_site_clients` to production Neon (schema `os` only, additive) with `npm run ads:db:migrate` or `scripts/os-neon-smoke-migrate.ts`. The embedded `artifacts/os-migrate-bundle.json` only covers 0000–0002.
+- The ads API must have `CONSOLE_ORIGIN` set. Without it, a login with several ad accounts can't reach the chooser and gets a "connect from the console" error.
+- Google account listing needs `GOOGLE_ADS_DEVELOPER_TOKEN` (already required for sync).
+- Shopify tokens need `read_products, write_products, read_content, write_content, read_publications, write_publications`. Existing tokens missing `read_content` will now show that on Live catalog and Stores → Check connection instead of silently syncing nothing.
+
+**Next:** step 3 (shared building blocks + remaining navigation), then Settings/Sites, the rest of the SEO pages, and Workflows v1.
+
+---
+
 ## 1. Root causes that affect many pages
 
 Fixing these first makes several pages better at once.
