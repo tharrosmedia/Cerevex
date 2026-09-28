@@ -1,0 +1,25 @@
+{
+  "name": "@cerevex/jobs-ads-shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-platform ads Inngest functions (stubs, apply, audit, canonical ads/account.sync). App id cerevex-ads. Events ads/* and one-release os/*.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cerevex/contracts": "*",
+    "@cerevex/jobs-ads-google": "*",
+    "@cerevex/jobs-ads-meta": "*",
+    "@tharros/ads-shared": "*",
+    "drizzle-orm": "^0.44.7",
+    "inngest": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
+}

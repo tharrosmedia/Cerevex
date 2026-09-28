@@ -26,3 +26,7 @@ import { functions, inngest } from '@cerevex/jobs-seo';
 Functions call Brain agents/db via the `@brain/*` path alias (`apps/brain/src/*`). That is intentional for the smallest safe move — SEO agents stay in Brain.
 
 Helper IDs `update-job-status` and `log-event` moved with this package because `seo-job` invokes them. IDs unchanged.
+
+## Future (not this slice)
+
+SEO stays this package. A later split into LLMs vs search engines is out of scope until Product briefs it. Do not start that split from the ads job packages.
