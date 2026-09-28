@@ -6,7 +6,7 @@ import { AdsFilters } from '@/components/ads/ads-filters';
 import { ConnectEmpty } from '@/components/ads/connect-empty';
 import { RecommendationCard } from '@/components/ads/recommendation-card';
 import { loadAdsCockpit } from '@/lib/ads-bff';
-import { auditStatusLabel, formatMoney, rankSuggestions, shortWhen } from '@/lib/ads-copy';
+import { adsCheckDisabledReason, adsSyncDisabledReason, auditStatusLabel, formatMoney, rankSuggestions, shortWhen } from '@/lib/ads-copy';
 import {
   clientName,
   filterAudits,
@@ -135,15 +135,28 @@ export default async function AdsCockpitPage({
         <p className="cx-banner cx-banner-warn" role="status">
           {cockpit.message || 'The ads service is not reachable right now.'}
         </p>
-      ) : !selectedClient ? (
+      ) : null}
+
+      {!selectedClient ? (
         <section className="cx-panel">
           <h2>Connect ad accounts</h2>
           <p className="cx-help">{siteAds.error || 'Could not load ad accounts for this site.'}</p>
-          {!siteAds.siteId ? (
+          {siteAds.siteId ? (
+            <>
+              <ConnectButtons
+                allowMeta={connectMeta}
+                allowGoogle={connectGoogle}
+                siteReady
+              />
+              <p className="cx-help">
+                Connect uses {storeName || 'this site'}. Signing in does not change live ads.
+              </p>
+            </>
+          ) : (
             <div className="cx-actions">
               <Link href="/stores" className="btn-cta">Add a store or site</Link>
             </div>
-          ) : null}
+          )}
         </section>
       ) : connected.length === 0 ? (
         <ConnectEmpty
@@ -213,25 +226,22 @@ export default async function AdsCockpitPage({
         <p className="cx-help">Starts a check and keeps this page usable while it runs.</p>
         <CheckAdsButton
           clientId={selectedClient?.id}
-          disabledReason={
-            !auditsOn
-              ? 'Audits are off for this workspace.'
-              : !selectedClient
-                ? 'Add a store or site first.'
-                : connected.length === 0
-                  ? 'Connect Meta or Google first.'
-                  : undefined
-          }
+          disabledReason={adsCheckDisabledReason({
+            auditsOn,
+            siteId: siteAds.siteId,
+            clientId: selectedClient?.id,
+            connectedCount: connected.length,
+            siteError: siteAds.error,
+          })}
         />
         <SyncAdsButton
           accountIds={connected.map((account) => account.id)}
-          disabledReason={
-            !selectedClient
-              ? 'Add a store or site first.'
-              : connected.length === 0
-                ? 'Connect Meta or Google first.'
-                : undefined
-          }
+          disabledReason={adsSyncDisabledReason({
+            siteId: siteAds.siteId,
+            clientId: selectedClient?.id,
+            connectedCount: connected.length,
+            siteError: siteAds.error,
+          })}
         />
         {!canCheck ? null : (
           <p className="cx-help">

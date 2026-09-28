@@ -4,11 +4,15 @@ import {
   ADS_APPROVE_PAUSED,
   ADS_APPROVE_SOFT_LAUNCH,
   ADS_CHECK_NO_CLIENT,
+  ADS_CHECK_NO_SITE,
   ADS_CONNECT_NO_CLIENT,
   ADS_CONNECT_PENDING,
+  ADS_SITE_CLIENT_UNAVAILABLE,
   ADS_SYNC_NO_ACCOUNT,
   ADS_SYNC_PENDING,
   ADS_SYNC_QUEUED,
+  adsCheckDisabledReason,
+  adsSyncDisabledReason,
   findingLabel,
   rankSuggestions,
   riskLabel,
@@ -19,6 +23,40 @@ import {
 } from '../lib/ads-copy';
 import { isAllowedAdsProxyRequest } from '../lib/ads-proxy-allowlist';
 import { oauthErrorMessage, parseAdsFilters } from '../lib/ads-query';
+
+assert.equal(
+  adsCheckDisabledReason({ auditsOn: true, siteId: null, clientId: null, connectedCount: 0, siteError: ADS_CONNECT_NO_CLIENT }),
+  ADS_CHECK_NO_SITE,
+);
+assert.equal(
+  adsSyncDisabledReason({
+    siteId: 'store-1',
+    clientId: null,
+    connectedCount: 0,
+    siteError: 'Ads checks are not connected yet.',
+  }),
+  'Ads checks are not connected yet.',
+);
+assert.equal(
+  adsCheckDisabledReason({ auditsOn: true, siteId: 'store-1', clientId: null, connectedCount: 0, siteError: null }),
+  ADS_SITE_CLIENT_UNAVAILABLE,
+);
+assert.equal(
+  adsSyncDisabledReason({ siteId: 'store-1', clientId: 'client-1', connectedCount: 0 }),
+  'Connect Meta or Google first.',
+);
+assert.equal(
+  adsCheckDisabledReason({ auditsOn: false, siteId: 'store-1', clientId: 'client-1', connectedCount: 1 }),
+  'Audits are off for this workspace.',
+);
+assert.equal(
+  adsSyncDisabledReason({ siteId: 'store-1', clientId: 'client-1', connectedCount: 1 }),
+  undefined,
+);
+assert.equal(
+  adsCheckDisabledReason({ auditsOn: true, siteId: null, clientId: null, connectedCount: 0, siteError: 'Could not load your sites.' }),
+  'Could not load your sites.',
+);
 
 assert.equal(syncResultMessage(2, []), ADS_SYNC_QUEUED);
 assert.equal(

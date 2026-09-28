@@ -1,3 +1,4 @@
+import { ADS_CONNECT_NO_CLIENT } from './ads-copy';
 import { ensureSiteClient, type AdsClient } from './ads-bff';
 import { getActiveStoreId, getStore } from '@/src/lib/db/stores';
 
@@ -19,7 +20,7 @@ export async function resolveSiteAds(): Promise<SiteAds> {
     return { siteId: null, siteName: null, client: null, error: 'Could not load your sites.' };
   }
   if (!siteId) {
-    return { siteId: null, siteName: null, client: null, error: 'Add a store or site first, then connect its ad accounts.' };
+    return { siteId: null, siteName: null, client: null, error: ADS_CONNECT_NO_CLIENT };
   }
   const result = await ensureSiteClient(siteId, siteName || 'My site');
   if (!result.ok) return { siteId, siteName, client: null, error: result.message };

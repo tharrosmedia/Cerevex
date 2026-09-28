@@ -323,6 +323,36 @@ export const REC_INBOX_KINDS = [
 
 export const ADS_CONNECT_PENDING = 'Connecting…';
 export const ADS_CONNECT_NO_CLIENT = 'Add a store or site first, then connect its ad accounts.';
+export const ADS_CHECK_NO_SITE = 'Add a store or site first.';
+export const ADS_SITE_CLIENT_UNAVAILABLE = 'Could not load ad accounts for this site.';
+
+/** Check/Sync copy. "Add a store" only when there is no Brain store/site. */
+export function adsCheckDisabledReason(input: {
+  auditsOn: boolean;
+  siteId: string | null;
+  clientId?: string | null;
+  connectedCount: number;
+  siteError?: string | null;
+}): string | undefined {
+  if (!input.auditsOn) return 'Audits are off for this workspace.';
+  return adsSyncDisabledReason(input);
+}
+
+export function adsSyncDisabledReason(input: {
+  siteId: string | null;
+  clientId?: string | null;
+  connectedCount: number;
+  siteError?: string | null;
+}): string | undefined {
+  if (!input.siteId) {
+    if (!input.siteError || input.siteError === ADS_CONNECT_NO_CLIENT) return ADS_CHECK_NO_SITE;
+    return input.siteError;
+  }
+  if (!input.clientId) return input.siteError || ADS_SITE_CLIENT_UNAVAILABLE;
+  if (input.connectedCount === 0) return 'Connect Meta or Google first.';
+  return undefined;
+}
+
 export const ADS_SYNC_PENDING = 'Syncing…';
 export const ADS_SYNC_QUEUED = 'Sync queued. Campaigns update when the job finishes.';
 

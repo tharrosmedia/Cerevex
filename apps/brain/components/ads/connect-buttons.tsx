@@ -8,12 +8,15 @@ export function ConnectButtons({
   allowMeta = true,
   allowGoogle = true,
   addMore = false,
+  siteReady = false,
 }: {
   clientId?: string;
   allowMeta?: boolean;
   allowGoogle?: boolean;
   /** Accounts are already connected; offer adding more instead of a first connect. */
   addMore?: boolean;
+  /** Active Brain store/site exists. The connect route resolves its ads client. */
+  siteReady?: boolean;
 }) {
   const [busy, setBusy] = useState<'meta' | 'google' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -23,7 +26,7 @@ export function ConnectButtons({
       setNotice(ADS_CONNECT_PENDING);
       return;
     }
-    if (!clientId) {
+    if (!clientId && !siteReady) {
       setNotice(ADS_CONNECT_NO_CLIENT);
       return;
     }
@@ -33,7 +36,9 @@ export function ConnectButtons({
     }
     setBusy(platform);
     setNotice(`Opening ${platform === 'meta' ? 'Meta' : 'Google'} to sign in…`);
-    window.location.href = `/api/ads/connect?platform=${platform}&clientId=${encodeURIComponent(clientId)}`;
+    const params = new URLSearchParams({ platform });
+    if (clientId) params.set('clientId', clientId);
+    window.location.href = `/api/ads/connect?${params.toString()}`;
   }
 
   const metaLabel = addMore ? 'Add Meta accounts' : 'Connect Meta';
