@@ -21,6 +21,7 @@ export type CapabilityState = (typeof CAPABILITY_STATES)[number];
 
 export const CAPABILITY_IDS = [
   "cockpit",
+  "in_market",
   "apply",
   "connect.meta",
   "connect.google",
@@ -74,6 +75,14 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     label: "Ads cockpit",
     help: "In-shell Ads home, suggestions, and read path.",
     defaultState: "on",
+    unfinished: false,
+    group: "product",
+  },
+  in_market: {
+    id: "in_market",
+    label: "In market",
+    help: "Read-only live inventory for connected Meta and Google accounts. Hidden removes the Ads menu item. Does not change cockpit or Approve.",
+    defaultState: "hidden",
     unfinished: false,
     group: "product",
   },

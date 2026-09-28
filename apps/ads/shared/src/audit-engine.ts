@@ -1,3 +1,4 @@
+import { cockpitClickRate, cockpitCostPerResultUsd } from "@cerevex/contracts";
 import {
   parseFindingDraft,
   parseRecommendationDraft,
@@ -109,15 +110,11 @@ function metricFor(metrics: AuditMetric[], externalId: string, window: string): 
 }
 
 function cpaUsd(row: AuditMetric): number | null {
-  const conversions = num(row.conversions);
-  const spend = num(row.spendUsd);
-  if (conversions <= 0) return spend > 0 ? Infinity : null;
-  return spend / conversions;
+  return cockpitCostPerResultUsd(row.spendUsd, row.conversions);
 }
 
 function ctr(row: AuditMetric): number {
-  if (row.impressions <= 0) return 0;
-  return row.clicks / row.impressions;
+  return cockpitClickRate(row.clicks, row.impressions);
 }
 
 function mutation(
