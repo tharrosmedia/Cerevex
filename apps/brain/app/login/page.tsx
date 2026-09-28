@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { LegalLinks } from '@/components/legal-links';
 
 export default function Login() {
   const [password, setPassword] = useState('');
@@ -45,6 +46,7 @@ export default function Login() {
           </button>
         </form>
       </div>
+      <LegalLinks className="login-legal" />
     </div>
   );
 }

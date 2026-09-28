@@ -4,9 +4,11 @@ import { cookies, headers } from 'next/headers';
 import { listStores } from '@/src/lib/db/stores';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { LegalLinks } from '@/components/legal-links';
 import SiteNav from '@/components/site-nav';
 import StoreSwitcher from '@/components/store-switcher';
 import { adsModuleOrigin } from '@/lib/module-origins';
+import { isPublicLegalPath } from '@/lib/public-paths';
 import { getWorkspaceProductSettings } from '@/src/lib/db/workspace-modules';
 
 export const metadata: Metadata = {
@@ -36,13 +38,15 @@ export default async function RootLayout({
   const headerList = await headers();
   const pathname = headerList.get('x-pathname') || '';
   const isLogin = pathname === '/login';
+  const isLegal = isPublicLegalPath(pathname);
+  const isBare = isLogin || isLegal;
 
   const cookieStore = await cookies();
   let activeStoreId = cookieStore.get('activeStoreId')?.value;
   let stores: any[] = [];
   let modules = null;
   let capabilities = null;
-  if (!isLogin) {
+  if (!isBare) {
     try {
       stores = await listStores();
     } catch {}
@@ -59,7 +63,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body>
-        {isLogin ? (
+        {isBare ? (
           children
         ) : (
           <>
@@ -89,6 +93,9 @@ export default async function RootLayout({
               </div>
             </header>
             <main>{children}</main>
+            <footer className="site-footer">
+              <LegalLinks className="site-footer-links" />
+            </footer>
           </>
         )}
       </body>
