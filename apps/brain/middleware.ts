@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { AUTH_COOKIE_NAME, setAuthCookie } from './lib/auth-cookie';
+import { publicLegalDecision } from './lib/public-paths';
 
 const PASSWORD = process.env.APP_PASSWORD;
 
@@ -14,6 +15,13 @@ export function middleware(request: NextRequest) {
   requestHeaders.set('x-pathname', request.nextUrl.pathname);
   const next = NextResponse.next({ request: { headers: requestHeaders } });
 
+  const legal = publicLegalDecision(request.nextUrl.pathname);
+  if (legal.kind === 'redirect') {
+    const url = request.nextUrl.clone();
+    url.pathname = legal.pathname;
+    return NextResponse.redirect(url, 301);
+  }
+
   if (!PASSWORD) {
     return withPathname(request, next);
   }
@@ -26,7 +34,7 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  if (request.nextUrl.pathname === '/login') {
+  if (request.nextUrl.pathname === '/login' || legal.kind === 'public') {
     return withPathname(request, next);
   }
 
