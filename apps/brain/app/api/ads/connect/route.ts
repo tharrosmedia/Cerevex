@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ADS_CHECK_NO_SITE, ADS_SITE_CLIENT_UNAVAILABLE } from '@/lib/ads-copy';
 import { adsApi } from '@/lib/ads-bff';
 import { consoleAuthorized } from '@/lib/console-auth';
 import { publicRedirect } from '@/lib/public-url';
@@ -23,7 +24,8 @@ export async function GET(request: Request) {
     const site = await resolveSiteAds();
     clientId = site.client?.id ?? null;
     if (!clientId) {
-      back.searchParams.set('connect_error', site.error || 'Add a store or site first.');
+      const fallback = site.siteId ? ADS_SITE_CLIENT_UNAVAILABLE : ADS_CHECK_NO_SITE;
+      back.searchParams.set('connect_error', site.error || fallback);
       return NextResponse.redirect(back);
     }
   }
