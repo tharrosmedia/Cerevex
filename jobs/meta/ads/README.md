@@ -1,11 +1,13 @@
 # `jobs/meta/ads`
 
-Origin M2 Meta account sync. R5 / G7 canonical event is **`ads/account.sync`** with `platform: "meta"` in the payload (registered on the ads worker as `ads-account-sync`).
+Legacy-thin re-export of `@cerevex/jobs-ads-meta` (`jobs/ads/meta`). Do not add product logic here.
 
-This package keeps the **legacy** listener for one release so in-flight jobs finish:
+The listener stays registered for one release so in-flight jobs finish:
 
 | Legacy event | Legacy function id |
 |---|---|
 | `meta/ads/account.sync` | `meta-ads-account-sync` |
 
-Do not emit the legacy name from new producers. Folder path stays.
+Canonical event is **`ads/account.sync`** with `platform: "meta"` (`ads-account-sync` in `@cerevex/jobs-ads-shared`). Do not emit the legacy name from new producers.
+
+The ads worker serves `@cerevex/jobs-ads-meta` directly. Do not also serve this package — the function id would be registered twice. Remove this package when the dual-compat window closes.

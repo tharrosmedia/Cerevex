@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Google ads Inngest functions. Canonical ads/account.sync (platform=google). Legacy google/ads/* listener for one release.",
+  "description": "Legacy-thin re-export of @cerevex/jobs-ads-google. Do not add product logic. Remove when dual-compat ends.",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -11,10 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cerevex/contracts": "*",
-    "@tharros/ads-shared": "*",
-    "drizzle-orm": "^0.44.7",
-    "inngest": "^4.20.0"
+    "@cerevex/jobs-ads-google": "*"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

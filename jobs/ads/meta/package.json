@@ -1,0 +1,24 @@
+{
+  "name": "@cerevex/jobs-ads-meta",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Meta ads Inngest package. Pull entry for canonical ads/account.sync plus the one-release meta/ads/* listener.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pull": "./src/pull.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cerevex/contracts": "*",
+    "@tharros/ads-shared": "*",
+    "drizzle-orm": "^0.44.7",
+    "inngest": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
+}

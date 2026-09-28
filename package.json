@@ -6,6 +6,7 @@
     "apps/*",
     "apps/ads/*",
     "jobs/seo",
+    "jobs/ads/*",
     "jobs/meta/*",
     "jobs/google/*",
     "packages/*",

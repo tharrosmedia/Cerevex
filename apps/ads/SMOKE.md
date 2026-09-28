@@ -72,6 +72,7 @@ Wiring:
 - Brain register: `apps/brain/src/inngest/index.ts` re-exports `@cerevex/jobs-seo`
 - Brain Cloud resync: `apps/brain/scripts/sync-inngest.ts` → `POST https://api.inngest.com/v2/apps/${appId}/syncs` with `{ url: PUBLIC_URL + '/api/inngest' }` (`npm run inngest:sync`)
 - OS client: `apps/ads/shared/src/inngest.ts` — `id: OS_INNGEST_APP_ID \|\| INNGEST_APP_ID \|\| "cerevex-ads"`
+- OS functions: `@cerevex/jobs-ads-shared` + `@cerevex/jobs-ads-meta` + `@cerevex/jobs-ads-google` (composed in `apps/ads/workers/src/register.ts`). Legacy `@cerevex/jobs-meta-ads` / `@cerevex/jobs-google-ads` re-export the platform packages and are not served a second time.
 - OS serve: worker `GET/POST` `/api/inngest` (Inngest `serve` from `inngest/node`)
 - Local OS Dev Server: `apps/ads/package.json` `dev` → `inngest-cli … --port 43183 -u http://127.0.0.1:43182/api/inngest`
 

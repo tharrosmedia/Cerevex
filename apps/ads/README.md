@@ -20,9 +20,12 @@ M3 product (audits → findings → proposed recs) does **not** deploy or seed p
 | `@tharros/ads-api` | `apps/ads/api` | Hono HTTP API |
 | `@tharros/ads-web` | `apps/ads/web` | Next.js operator shell |
 | `@tharros/ads-shared` | `apps/ads/shared` | Drizzle schema (`os`), migrate/seed, Inngest client |
-| `@tharros/ads-workers` | `apps/ads/workers` | Serves `/api/inngest`; ads orchestration + paid job registration |
-| `@cerevex/jobs-meta-ads` | `jobs/meta/ads` | Legacy `meta/ads/*` listener (one release); canonical sync is `ads/account.sync` |
-| `@cerevex/jobs-google-ads` | `jobs/google/ads` | Legacy `google/ads/*` listener (one release); canonical sync is `ads/account.sync` |
+| `@tharros/ads-workers` | `apps/ads/workers` | Thin host: env, health, `/api/inngest` on app id `cerevex-ads` |
+| `@cerevex/jobs-ads-shared` | `jobs/ads/shared` | Stubs, apply, audit, canonical `ads/account.sync` |
+| `@cerevex/jobs-ads-meta` | `jobs/ads/meta` | Meta pull + legacy `meta/ads/*` listener |
+| `@cerevex/jobs-ads-google` | `jobs/ads/google` | Google pull + legacy `google/ads/*` listener |
+| `@cerevex/jobs-meta-ads` | `jobs/meta/ads` | Legacy-thin re-export of `@cerevex/jobs-ads-meta` until dual-compat removal |
+| `@cerevex/jobs-google-ads` | `jobs/google/ads` | Legacy-thin re-export of `@cerevex/jobs-ads-google` until dual-compat removal |
 | `@cerevex/contracts` | `packages/contracts` | Shared envelopes (merged; do not fork) |
 
 `jobs/meta/organic` remains a reserved stub.
@@ -78,11 +81,13 @@ Canonical names. Platform is payload data, not the event namespace. Legacy `os/*
 
 | Event | Function ID | Package |
 |---|---|---|
-| `ads/stub.ping` | `ads-stub-ping` | `apps/ads/workers` |
-| `ads/stub.sync` | `ads-stub-sync` | `apps/ads/workers` |
-| `ads/audit.requested` | `ads-audit-requested` | `apps/ads/workers` (local tables only; **no platform writes**) |
-| `ads/apply.requested` | `ads-apply-requested` | `apps/ads/workers` (kill switch + authorize + freeze; executes mutate-existing mutations) |
-| `ads/account.sync` | `ads-account-sync` | `apps/ads/workers` (`platform: "meta" \| "google"`) |
+| `ads/stub.ping` | `ads-stub-ping` | `@cerevex/jobs-ads-shared` |
+| `ads/stub.sync` | `ads-stub-sync` | `@cerevex/jobs-ads-shared` |
+| `ads/audit.requested` | `ads-audit-requested` | `@cerevex/jobs-ads-shared` (local tables only; **no platform writes**) |
+| `ads/apply.requested` | `ads-apply-requested` | `@cerevex/jobs-ads-shared` (kill switch + authorize + freeze; executes mutate-existing mutations) |
+| `ads/account.sync` | `ads-account-sync` | `@cerevex/jobs-ads-shared` (one function; `platform: "meta" \| "google"` selects the pull in `jobs/ads/meta` or `jobs/ads/google`) |
+
+One-release aliases stay registered: `os/*` on `@cerevex/jobs-ads-shared`, `meta/ads/account.sync` on `@cerevex/jobs-ads-meta`, `google/ads/account.sync` on `@cerevex/jobs-ads-google`. Customers never install Inngest. SEO stays `jobs/seo`; an LLMs vs search engines split is future and out of this slice.
 
 Brain `seo/*` / `seo-*` are untouched. Live Inngest app ids stay `shopify-brain` / `cerevex-ads`.
 

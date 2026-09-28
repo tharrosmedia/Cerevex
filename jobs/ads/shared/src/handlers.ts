@@ -1,18 +1,17 @@
-import { ADS_FUNCTION_IDS, LEGACY_ADS_EVENTS, LEGACY_ADS_FUNCTION_IDS } from "@cerevex/contracts";
+import { pullGoogleAdAccount } from "@cerevex/jobs-ads-google/pull";
+import { pullMetaAdAccount } from "@cerevex/jobs-ads-meta/pull";
 import { runApplyJob } from "@tharros/ads-shared/apply";
 import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
-import { EVENTS, inngest } from "@tharros/ads-shared/inngest";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
 
 /**
- * Cerevex ads orchestration (R5 / G7). Platform is event data, not the namespace.
- * Folder paths jobs/meta/ads and jobs/google/ads stay; they register legacy
- * meta/ads/* and google/ads/* listeners for one release so in-flight jobs finish.
- * Apply still runs evaluateApplyGate (kill switch + authorize + freeze).
+ * Shared step bodies for canonical ads/* functions and their os/* twins.
+ * Platform sync entry points live in jobs/ads/meta and jobs/ads/google.
+ * Connector / gate implementations stay in @tharros/ads-shared.
  */
 
-async function handleStubPing({ event, step }: any) {
+export async function handleStubPing({ event, step }: any) {
   await step.run("complete-stub", async () => {
     await writeInngestAudit({
       workspaceId: event.data.workspaceId,
@@ -30,7 +29,7 @@ async function handleStubPing({ event, step }: any) {
   return { ok: true, stub: true, processedAt: new Date().toISOString() };
 }
 
-async function handleStubSync({ event, step }: any) {
+export async function handleStubSync({ event, step }: any) {
   if (event.data.adAccountId) {
     return step.run("delegate-m2-sync", async () => runAdAccountSync(event.data.adAccountId as string));
   }
@@ -49,7 +48,7 @@ async function handleStubSync({ event, step }: any) {
   return { ok: true, stub: true, processedAt: new Date().toISOString() };
 }
 
-async function handleApplyRequested({ event, step }: any) {
+export async function handleApplyRequested({ event, step }: any) {
   const applyJobId = event.data.applyJobId as string | undefined;
   if (!applyJobId) {
     await step.run("audit-missing-job", async () => {
@@ -98,7 +97,7 @@ async function handleApplyRequested({ event, step }: any) {
   };
 }
 
-async function handleAuditRequested({ event, step }: any) {
+export async function handleAuditRequested({ event, step }: any) {
   const bundle = await step.run("evaluate-local-tables", async () => {
     return runAuditRun(event.data.auditRunId as string);
   });
@@ -112,8 +111,13 @@ async function handleAuditRequested({ event, step }: any) {
   };
 }
 
-async function handleAccountSync({ event, step }: any) {
-  const result = await step.run("pull-entities", async () => runAdAccountSync(event.data.adAccountId));
+export async function handleAccountSync({ event, step }: any) {
+  const result = await step.run("pull-entities", async () => {
+    const platform = event.data.platform as string | undefined;
+    if (platform === "meta") return pullMetaAdAccount(event.data.adAccountId);
+    if (platform === "google") return pullGoogleAdAccount(event.data.adAccountId);
+    return runAdAccountSync(event.data.adAccountId);
+  });
   await step.run("audit", async () => {
     await writeInngestAudit({
       workspaceId: event.data.workspaceId,
@@ -133,100 +137,3 @@ async function handleAccountSync({ event, step }: any) {
   });
   return result;
 }
-
-export const stubPing = inngest.createFunction(
-  { id: ADS_FUNCTION_IDS.stubPing, name: "Ads stub ping", triggers: [{ event: EVENTS.stubPing }] },
-  handleStubPing,
-);
-
-export const stubPingLegacy = inngest.createFunction(
-  {
-    id: LEGACY_ADS_FUNCTION_IDS.stubPing,
-    name: "Ads stub ping (legacy os/*)",
-    triggers: [{ event: LEGACY_ADS_EVENTS.stubPing }],
-  },
-  handleStubPing,
-);
-
-export const stubSync = inngest.createFunction(
-  { id: ADS_FUNCTION_IDS.stubSync, name: "Ads stub sync", triggers: [{ event: EVENTS.stubSync }] },
-  handleStubSync,
-);
-
-export const stubSyncLegacy = inngest.createFunction(
-  {
-    id: LEGACY_ADS_FUNCTION_IDS.stubSync,
-    name: "Ads stub sync (legacy os/*)",
-    triggers: [{ event: LEGACY_ADS_EVENTS.stubSync }],
-  },
-  handleStubSync,
-);
-
-export const applyRequested = inngest.createFunction(
-  {
-    id: ADS_FUNCTION_IDS.applyRequested,
-    name: "Ads apply requested",
-    triggers: [{ event: EVENTS.applyRequested }],
-    idempotency: "event.data.applyJobId",
-  },
-  handleApplyRequested,
-);
-
-export const applyRequestedLegacy = inngest.createFunction(
-  {
-    id: LEGACY_ADS_FUNCTION_IDS.applyRequested,
-    name: "Ads apply requested (legacy os/*)",
-    triggers: [{ event: LEGACY_ADS_EVENTS.applyRequested }],
-    idempotency: "event.data.applyJobId",
-  },
-  handleApplyRequested,
-);
-
-export const auditRequested = inngest.createFunction(
-  { id: ADS_FUNCTION_IDS.auditRequested, name: "Ads audit requested", triggers: [{ event: EVENTS.auditRequested }] },
-  handleAuditRequested,
-);
-
-export const auditRequestedLegacy = inngest.createFunction(
-  {
-    id: LEGACY_ADS_FUNCTION_IDS.auditRequested,
-    name: "Ads audit requested (legacy os/*)",
-    triggers: [{ event: LEGACY_ADS_EVENTS.auditRequested }],
-  },
-  handleAuditRequested,
-);
-
-export const accountSync = inngest.createFunction(
-  { id: ADS_FUNCTION_IDS.accountSync, name: "Ads account sync", triggers: [{ event: EVENTS.accountSync }] },
-  handleAccountSync,
-);
-
-export const adsFunctions = [
-  stubPing,
-  stubPingLegacy,
-  stubSync,
-  stubSyncLegacy,
-  applyRequested,
-  applyRequestedLegacy,
-  auditRequested,
-  auditRequestedLegacy,
-  accountSync,
-];
-
-/** @deprecated R5 alias */
-export const osFunctions = adsFunctions;
-
-export const ADS_WORKER_FUNCTION_IDS = [
-  ADS_FUNCTION_IDS.stubPing,
-  LEGACY_ADS_FUNCTION_IDS.stubPing,
-  ADS_FUNCTION_IDS.stubSync,
-  LEGACY_ADS_FUNCTION_IDS.stubSync,
-  ADS_FUNCTION_IDS.applyRequested,
-  LEGACY_ADS_FUNCTION_IDS.applyRequested,
-  ADS_FUNCTION_IDS.auditRequested,
-  LEGACY_ADS_FUNCTION_IDS.auditRequested,
-  ADS_FUNCTION_IDS.accountSync,
-] as const;
-
-/** @deprecated R5 alias */
-export const OS_FUNCTION_IDS = ADS_WORKER_FUNCTION_IDS;

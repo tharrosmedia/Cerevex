@@ -15,10 +15,13 @@ This repository is an **npm workspace monorepo** per [Accelerated Merge Plan 1.5
 ```
 apps/brain                 # Cerevex console (SEO command center + App Router)
 apps/ads                   # Cerevex ads module: api, web, shared, workers
-jobs/meta/ads              # legacy meta/ads/* listener; canonical ads/account.sync
+jobs/ads/shared            # cross-platform ads Inngest (stubs, apply, audit, ads/account.sync)
+jobs/ads/meta              # Meta pull + legacy meta/ads/* listener
+jobs/ads/google            # Google pull + legacy google/ads/* listener
+jobs/meta/ads              # legacy-thin re-export of jobs/ads/meta until dual-compat removal
 jobs/meta/organic          # Stub. Inngest prefix: meta/organic/*
-jobs/google/ads            # legacy google/ads/* listener; canonical ads/account.sync
-jobs/seo                   # Existing SEO Inngest functions (seo/* / seo-*)
+jobs/google/ads            # legacy-thin re-export of jobs/ads/google until dual-compat removal
+jobs/seo                   # Existing SEO Inngest functions (seo/* / seo-*). LLMs vs search engines split is future, not this slice
 packages/contracts         # Shared TypeScript contracts
 packages/db                # Stub. Brain Neon stays in apps/brain
 packages/shared            # Stub. No shared runtime yet

@@ -77,7 +77,7 @@ Producers emit the new names. Dual listeners keep the old events and function id
 | `meta/ads/account.sync` | `ads/account.sync` (`platform: "meta"`) | `meta-ads-account-sync` | `ads-account-sync` |
 | `google/ads/account.sync` | `ads/account.sync` (`platform: "google"`) | `google-ads-account-sync` | `ads-account-sync` |
 
-`jobs/meta/ads` and `jobs/google/ads` folders stay. They only register the legacy platform-prefixed listeners. Canonical sync is `ads-account-sync` on the ads worker.
+Canonical sync is `ads-account-sync` in `@cerevex/jobs-ads-shared` (platform is payload; Meta/Google pulls live in `jobs/ads/meta` and `jobs/ads/google`). Legacy `meta/ads/*` and `google/ads/*` listeners live in those platform packages. `jobs/meta/ads` and `jobs/google/ads` re-export them and stay legacy-thin until dual-compat removal. The ads worker serves the `jobs/ads/*` packages on app id `cerevex-ads`.
 
 Unchanged: `seo/*`, `seo-*`, Brain Inngest app id `shopify-brain`, ads Inngest app id `cerevex-ads`, env key `OS_INNGEST_APP_ID`.
 
