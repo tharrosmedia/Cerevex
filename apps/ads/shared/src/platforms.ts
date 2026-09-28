@@ -12,7 +12,7 @@ export type PulledEntity = {
 export type PulledMetric = {
   entityExternalId: string;
   entityType: string;
-  window: "7d" | "30d";
+  window: "today" | "7d" | "14d" | "30d";
   spendUsd: string;
   impressions: number;
   clicks: number;
@@ -28,7 +28,7 @@ export type PullResult = {
 
 function metric(
   entity: PulledEntity,
-  window: "7d" | "30d",
+  window: "today" | "7d" | "14d" | "30d",
   spendUsd: string,
   impressions: number,
   clicks: number,

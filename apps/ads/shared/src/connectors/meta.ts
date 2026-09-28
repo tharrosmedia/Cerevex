@@ -49,70 +49,110 @@ async function graphGet(path: string, accessToken: string): Promise<unknown> {
   return res.json();
 }
 
+type MetaStatusRow = {
+  id: string;
+  name: string;
+  status?: string;
+  effective_status?: string;
+  updated_time?: string;
+  campaign_id?: string;
+  adset_id?: string;
+};
+
+function metaEntity(
+  row: MetaStatusRow,
+  entityType: string,
+  parentExternalId?: string,
+) {
+  const configured = (row.status ?? "unknown").toLowerCase();
+  const effective = (row.effective_status ?? row.status ?? "unknown").toLowerCase();
+  return {
+    entityType,
+    externalId: row.id,
+    name: row.name,
+    status: effective,
+    parentExternalId,
+    raw: {
+      configuredStatus: configured,
+      effectiveStatus: row.effective_status ?? null,
+      updatedTime: row.updated_time ?? null,
+      updated_time: row.updated_time ?? null,
+    },
+  };
+}
+
+const META_WINDOWS = [
+  { preset: "today", window: "today" as const, required: false },
+  { preset: "last_7d", window: "7d" as const, required: true },
+  { preset: "last_14d", window: "14d" as const, required: false },
+  { preset: "last_30d", window: "30d" as const, required: true },
+] as const;
+
+const META_LEVELS = [
+  { level: "campaign", idField: "campaign_id", entityType: "campaign", required: true },
+  { level: "adset", idField: "adset_id", entityType: "adset", required: false },
+  { level: "ad", idField: "ad_id", entityType: "ad", required: false },
+] as const;
+
 async function pullMetaLive(tokens: StoredOAuthTokens, externalId: string) {
   const act = externalId.startsWith("act_") ? externalId : `act_${externalId}`;
+  const fields = "id,name,status,effective_status,updated_time";
   const campaigns = (await graphGet(
-    `${act}/campaigns?fields=id,name,status,objective&limit=50`,
+    `${act}/campaigns?fields=${fields},objective&limit=50`,
     tokens.accessToken,
-  )) as { data?: { id: string; name: string; status: string }[] };
+  )) as { data?: MetaStatusRow[] };
   const adsets = (await graphGet(
-    `${act}/adsets?fields=id,name,status,campaign_id&limit=50`,
+    `${act}/adsets?fields=${fields},campaign_id&limit=50`,
     tokens.accessToken,
-  )) as { data?: { id: string; name: string; status: string; campaign_id?: string }[] };
+  )) as { data?: MetaStatusRow[] };
   const ads = (await graphGet(
-    `${act}/ads?fields=id,name,status,adset_id&limit=50`,
+    `${act}/ads?fields=${fields},adset_id&limit=50`,
     tokens.accessToken,
-  )) as { data?: { id: string; name: string; status: string; adset_id?: string }[] };
+  )) as { data?: MetaStatusRow[] };
 
   const entities = [
-    ...(campaigns.data ?? []).map((row) => ({
-      entityType: "campaign",
-      externalId: row.id,
-      name: row.name,
-      status: row.status.toLowerCase(),
-    })),
-    ...(adsets.data ?? []).map((row) => ({
-      entityType: "adset",
-      externalId: row.id,
-      name: row.name,
-      status: row.status.toLowerCase(),
-      parentExternalId: row.campaign_id,
-    })),
-    ...(ads.data ?? []).map((row) => ({
-      entityType: "ad",
-      externalId: row.id,
-      name: row.name,
-      status: row.status.toLowerCase(),
-      parentExternalId: row.adset_id,
-    })),
+    ...(campaigns.data ?? []).map((row) => metaEntity(row, "campaign")),
+    ...(adsets.data ?? []).map((row) => metaEntity(row, "adset", row.campaign_id)),
+    ...(ads.data ?? []).map((row) => metaEntity(row, "ad", row.adset_id)),
   ];
 
   const metrics = [];
-  for (const window of ["last_7d", "last_30d"] as const) {
-    const insights = (await graphGet(
-      `${act}/insights?date_preset=${window}&fields=campaign_id,spend,impressions,clicks,actions&level=campaign`,
-      tokens.accessToken,
-    )) as {
-      data?: {
-        campaign_id?: string;
+  for (const level of META_LEVELS) {
+    for (const window of META_WINDOWS) {
+      const required = level.required && window.required;
+      type MetaInsightRow = {
         spend?: string;
         impressions?: string;
         clicks?: string;
+        campaign_id?: string;
+        adset_id?: string;
+        ad_id?: string;
         actions?: { action_type: string; value: string }[];
-      }[];
-    };
-    for (const row of insights.data ?? []) {
-      if (!row.campaign_id) continue;
-      const conversions = row.actions?.find((a) => a.action_type.includes("lead") || a.action_type.includes("purchase"));
-      metrics.push({
-        entityExternalId: row.campaign_id,
-        entityType: "campaign",
-        window: window === "last_7d" ? ("7d" as const) : ("30d" as const),
-        spendUsd: row.spend ?? "0",
-        impressions: Number(row.impressions ?? 0),
-        clicks: Number(row.clicks ?? 0),
-        conversions: conversions?.value ?? "0",
-      });
+      };
+      let insights: { data?: MetaInsightRow[] } | null = null;
+      try {
+        insights = (await graphGet(
+          `${act}/insights?date_preset=${window.preset}&fields=${level.idField},spend,impressions,clicks,actions&level=${level.level}`,
+          tokens.accessToken,
+        )) as { data?: MetaInsightRow[] };
+      } catch (error) {
+        if (required) throw error;
+        continue;
+      }
+      for (const row of insights.data ?? []) {
+        const entityExternalId = row[level.idField];
+        if (!entityExternalId) continue;
+        const conversions = row.actions?.find((action) => action.action_type.includes("lead") || action.action_type.includes("purchase"));
+        metrics.push({
+          entityExternalId,
+          entityType: level.entityType,
+          window: window.window,
+          spendUsd: row.spend ?? "0",
+          impressions: Number(row.impressions ?? 0),
+          clicks: Number(row.clicks ?? 0),
+          conversions: conversions?.value ?? "0",
+        });
+      }
     }
   }
 

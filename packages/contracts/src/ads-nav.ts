@@ -37,6 +37,7 @@ export type AdsNavShell = (typeof ADS_NAV_SHELLS)[number];
 
 export const ADS_NAV_ITEM_IDS = [
   "overview",
+  "in_market",
   "audits",
   "suggestions",
   "creatives",
@@ -59,6 +60,7 @@ export type AdsNavCatalogItem = {
 
 export const ADS_NAV_CATALOG: AdsNavCatalogItem[] = [
   { id: "overview", label: "Overview", capability: "cockpit" },
+  { id: "in_market", label: "In market", rail: "In market", capability: "in_market" },
   { id: "audits", label: "Audits", rail: "Audits", capability: "audits" },
   { id: "suggestions", label: "Suggestions", rail: "Suggestions", capability: "cockpit" },
   { id: "creatives", label: "Creatives", rail: "Creatives", capability: "m51.grok_creatives" },
@@ -73,6 +75,7 @@ export const ADS_NAV_CATALOG: AdsNavCatalogItem[] = [
 /** In-shell Cerevex console. Preferred operator path. */
 export const ADS_NAV_HREFS_IN_SHELL: Record<AdsNavItemId, string> = {
   overview: "/ads",
+  in_market: "/ads/in-market",
   audits: "/ads/audits",
   suggestions: "/ads/suggestions",
   creatives: "/ads/creatives",
@@ -90,6 +93,7 @@ export const ADS_NAV_HREFS_IN_SHELL: Record<AdsNavItemId, string> = {
  */
 export const ADS_NAV_HREFS_LEGACY_WEB: Record<AdsNavItemId, string> = {
   overview: "/app",
+  in_market: "/ads/in-market",
   audits: "/ads/audits",
   suggestions: "/ads/suggestions",
   creatives: "/ads/creatives",

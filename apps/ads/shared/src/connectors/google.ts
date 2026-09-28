@@ -3,7 +3,7 @@ import type { ApplyMutation } from "../audit-schemas";
 import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
-import { mockPull } from "../platforms";
+import { mockPull, type PullResult, type PulledEntity } from "../platforms";
 import type { AccessibleAdAccount, StoredOAuthTokens } from "../types";
 import type {
   AdPlatformConnector,
@@ -152,7 +152,7 @@ async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
   const body = (await res.json()) as {
     results?: { campaign?: { id?: string; name?: string; status?: string } }[];
   };
-  const entities = (body.results ?? []).flatMap((row) => {
+  const entities: PulledEntity[] = (body.results ?? []).flatMap((row) => {
     if (!row.campaign?.id) return [];
     return [
       {
@@ -163,7 +163,138 @@ async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
       },
     ];
   });
-  return { mode: "live" as const, externalAccountId: customerId, entities, metrics: [] };
+
+  const groups = await googleSearchSafe<GoogleAdGroupRow>(
+    tokens,
+    developerToken,
+    customerId,
+    "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id FROM ad_group WHERE ad_group.status != 'REMOVED' LIMIT 200",
+  );
+  for (const row of groups) {
+    if (!row.adGroup?.id) continue;
+    entities.push({
+      entityType: "ad_group",
+      externalId: row.adGroup.id,
+      name: row.adGroup.name ?? row.adGroup.id,
+      status: String(row.adGroup.status ?? "unknown").toLowerCase(),
+      parentExternalId: row.campaign?.id,
+    });
+  }
+
+  const ads = await googleSearchSafe<GoogleAdRow>(
+    tokens,
+    developerToken,
+    customerId,
+    "SELECT ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.status, ad_group.id, campaign.id FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED' LIMIT 200",
+  );
+  for (const row of ads) {
+    const adId = row.adGroupAd?.ad?.id;
+    if (!adId) continue;
+    entities.push({
+      entityType: "ad",
+      externalId: adId,
+      name: row.adGroupAd?.ad?.name ?? adId,
+      status: String(row.adGroupAd?.status ?? "unknown").toLowerCase(),
+      parentExternalId: row.adGroup?.id,
+    });
+  }
+
+  const metrics = await pullGoogleMetrics(tokens, developerToken, customerId);
+  return { mode: "live" as const, externalAccountId: customerId, entities, metrics };
+}
+
+type GoogleAdGroupRow = {
+  adGroup?: { id?: string; name?: string; status?: string };
+  campaign?: { id?: string };
+};
+type GoogleAdRow = {
+  adGroupAd?: { status?: string; ad?: { id?: string; name?: string } };
+  adGroup?: { id?: string };
+  campaign?: { id?: string };
+};
+type GoogleMetricRow = {
+  campaign?: { id?: string };
+  adGroup?: { id?: string };
+  adGroupAd?: { ad?: { id?: string } };
+  metrics?: { costMicros?: string; impressions?: string; clicks?: string; conversions?: number | string };
+};
+
+const GOOGLE_METRIC_WINDOWS = [
+  ["TODAY", "today"],
+  ["LAST_7_DAYS", "7d"],
+  ["LAST_14_DAYS", "14d"],
+  ["LAST_30_DAYS", "30d"],
+] as const;
+
+async function googleSearchSafe<T>(
+  tokens: StoredOAuthTokens,
+  developerToken: string,
+  customerId: string,
+  query: string,
+): Promise<T[]> {
+  try {
+    return await googleSearch<T>(tokens, developerToken, customerId, query);
+  } catch {
+    return [];
+  }
+}
+
+async function pullGoogleMetrics(
+  tokens: StoredOAuthTokens,
+  developerToken: string,
+  customerId: string,
+): Promise<PullResult["metrics"]> {
+  const metrics: PullResult["metrics"] = [];
+  const levels = [
+    {
+      entityType: "campaign",
+      from: "campaign",
+      idOf: (row: GoogleMetricRow) => row.campaign?.id,
+    },
+    {
+      entityType: "ad_group",
+      from: "ad_group",
+      idOf: (row: GoogleMetricRow) => row.adGroup?.id,
+    },
+    {
+      entityType: "ad",
+      from: "ad_group_ad",
+      idOf: (row: GoogleMetricRow) => row.adGroupAd?.ad?.id,
+    },
+  ] as const;
+  for (const level of levels) {
+    for (const [during, window] of GOOGLE_METRIC_WINDOWS) {
+      const rows = await googleSearchSafe<GoogleMetricRow>(
+        tokens,
+        developerToken,
+        customerId,
+        `SELECT ${level.entityType === "ad" ? "ad_group_ad.ad.id" : level.entityType === "ad_group" ? "ad_group.id" : "campaign.id"}, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM ${level.from} WHERE segments.date DURING ${during}`,
+      );
+      const summed = new Map<string, { costMicros: number; impressions: number; clicks: number; conversions: number }>();
+      for (const row of rows) {
+        const id = level.idOf(row);
+        if (!id) continue;
+        const current = summed.get(id) ?? { costMicros: 0, impressions: 0, clicks: 0, conversions: 0 };
+        current.costMicros += Number(row.metrics?.costMicros ?? 0);
+        current.impressions += Number(row.metrics?.impressions ?? 0);
+        current.clicks += Number(row.metrics?.clicks ?? 0);
+        current.conversions += Number(row.metrics?.conversions ?? 0);
+        summed.set(id, current);
+      }
+      for (const [id, totals] of summed) {
+        metrics.push({
+          entityExternalId: id,
+          entityType: level.entityType,
+          window,
+          spendUsd: (totals.costMicros / 1_000_000).toFixed(2),
+          impressions: totals.impressions,
+          clicks: totals.clicks,
+          conversions: String(totals.conversions),
+        });
+      }
+    }
+  }
+  return metrics;
 }
 
 export class GoogleAdPlatformConnector implements AdPlatformConnector {

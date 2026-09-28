@@ -15,6 +15,7 @@ import { clientConnectionSummary, listPublicAdAccounts } from "./connect";
 import { registerM51Routes } from "./m51";
 import { registerLpIntelligenceRoutes } from "./lp-intelligence";
 import { registerOfflineRoutes } from "./offline";
+import { registerInMarketRoutes } from "./in-market";
 import { registerPlanningRoutes } from "./planning";
 import { registerConnectRoutes } from "./routes";
 import { registerPendingConnectRoutes } from "./pending-connect";
@@ -251,6 +252,7 @@ export function createApp() {
   registerOfflineRoutes(app, requireAuth);
   registerLpIntelligenceRoutes(app, requireAuth);
   registerPlanningRoutes(app, requireAuth);
+  registerInMarketRoutes(app, requireAuth);
 
   app.post("/jobs/stub", requireAuth, async (c) => {
     const auth = c.get("auth");

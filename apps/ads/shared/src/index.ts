@@ -16,6 +16,24 @@ export {
   resolveAdsNav,
 } from "@cerevex/contracts";
 export type { AdsNavItemId, AdsNavShell, ResolvedAdsNavItem } from "@cerevex/contracts";
+export {
+  IN_MARKET_CAPABILITY_ID,
+  IN_MARKET_LOOKBACK_DAYS,
+  IN_MARKET_DEFAULT_WINDOW,
+  IN_MARKET_HELPER,
+  IN_MARKET_LOAD_ERROR,
+  IN_MARKET_EMPTY_META,
+  IN_MARKET_EMPTY_GOOGLE,
+  IN_MARKET_CONNECT_META,
+  IN_MARKET_CONNECT_GOOGLE,
+  buildInMarketView,
+  parseInMarketWindow,
+  inMarketChip,
+  inMarketDeepLink,
+  cockpitCostPerResultUsd,
+  cockpitClickRate,
+} from "@cerevex/contracts";
+export type { InMarketView, InMarketPlatform, InMarketWindowId } from "@cerevex/contracts";
 export type {
   AdPlatformConnector,
   AnalyticsConnector,
