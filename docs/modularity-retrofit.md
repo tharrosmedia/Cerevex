@@ -199,7 +199,7 @@ Canonical map lives in `@cerevex/contracts` (`OPS_ENV_REGISTRY`).
 | `APPROVE_OPERATOR_EMAILS` | identity | — | Adam-only soft-launch allowlist. Default `adam@tharrosmedia.com`. Not a capability. `SEED_OWNER_EMAIL` is seed-only. Still ANDed with `apply` + kill switch + freeze. |
 | `APP_PASSWORD` | secret | Brain console session | Not ads JWT. Not a feature flag. |
 | `JWT_SECRET` | secret | Ads user sessions | Separate from Brain login. |
-| `ADS_INTERNAL_KEY` | secret | Brain BFF → ads API | `x-cerevex-internal-key`. Acts as seeded owner. |
+| `ADS_INTERNAL_KEY` | secret | Brain BFF → ads API | `x-cerevex-internal-key`. Service principal, never a user. Cannot approve or apply. |
 | `ADS_API_TOKEN` | secret | Optional BFF Bearer | Not a feature flag. |
 | `TOKEN_ENCRYPTION_KEY` | secret | OAuth at rest | Not a feature flag. |
 

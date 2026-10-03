@@ -28,6 +28,7 @@ import {
 import {
   adAccounts,
   applyJobs,
+  auditLog,
   authorizations,
   recommendations,
   workspaces,
@@ -90,25 +91,62 @@ export type ApplyRunResult = {
   blocked: string | null;
 };
 
+function authorizationStillApplies(
+  job: { workspaceId: string },
+  authorization:
+    | { workspaceId: string; revokedAt: Date | null; expiresAt: Date | null }
+    | null
+    | undefined,
+  recommendation: { status: string } | null | undefined,
+  now = new Date(),
+): boolean {
+  if (!authorization || authorization.workspaceId !== job.workspaceId) return false;
+  if (authorization.revokedAt) return false;
+  if (authorization.expiresAt && authorization.expiresAt.getTime() <= now.getTime()) return false;
+  return recommendation?.status === "authorized";
+}
+
 export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
-  const db = getDb();
-  const job = await db.query.applyJobs.findFirst({
+  const root = getDb();
+  const peek = await root.query.applyJobs.findFirst({
     where: eq(applyJobs.id, applyJobId),
   });
-  if (!job) {
+  if (!peek) {
     throw new Error("Apply job not found");
   }
+  const authPeek = await root.query.authorizations.findFirst({
+    where: eq(authorizations.id, peek.authorizationId),
+  });
 
-  if (job.status === "succeeded") {
-    return {
-      applyJob: toApplyJobPublic(job),
-      outcomes: ((job.responseJson as { outcomes?: MutationOutcome[] } | null)?.outcomes ?? []),
-      writes: Boolean((job.responseJson as { writes?: boolean } | null)?.writes),
-      blocked: null,
-    };
-  }
+  return root.transaction(async (tx) => {
+    if (authPeek) {
+      await tx
+        .select({ id: recommendations.id })
+        .from(recommendations)
+        .where(eq(recommendations.id, authPeek.recommendationId))
+        .for("update");
+    }
+    await tx
+      .select({ id: authorizations.id })
+      .from(authorizations)
+      .where(eq(authorizations.id, peek.authorizationId))
+      .for("update");
+    const [job] = await tx.select().from(applyJobs).where(eq(applyJobs.id, applyJobId)).for("update");
+    if (!job) {
+      throw new Error("Apply job not found");
+    }
+    const db = tx;
 
-  const workspace = await db.query.workspaces.findFirst({
+    if (job.status === "succeeded") {
+      return {
+        applyJob: toApplyJobPublic(job),
+        outcomes: ((job.responseJson as { outcomes?: MutationOutcome[] } | null)?.outcomes ?? []),
+        writes: Boolean((job.responseJson as { writes?: boolean } | null)?.writes),
+        blocked: null,
+      };
+    }
+
+    const workspace = await db.query.workspaces.findFirst({
     where: eq(workspaces.id, job.workspaceId),
   });
   const authorization = await db.query.authorizations.findFirst({
@@ -124,6 +162,46 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
         where: eq(adAccounts.id, recommendation.adAccountId),
       })
     : null;
+
+  if (!authorizationStillApplies(job, authorization, recommendation)) {
+    const response = {
+      writes: false,
+      outcomes: [] as MutationOutcome[],
+      blocked: "authorization_revoked",
+      revoked: true,
+    };
+    await db
+      .update(applyJobs)
+      .set({
+        status: "failed",
+        attempts: job.attempts + 1,
+        error: "authorization_revoked",
+        finishedAt: new Date(),
+        responseJson: response,
+      })
+      .where(eq(applyJobs.id, job.id));
+    await db.insert(auditLog).values({
+      workspaceId: job.workspaceId,
+      actorType: "worker",
+      actorId: null,
+      action: "revoked",
+      entityType: "apply_job",
+      entityId: job.id,
+      payloadJson: {
+        recommendationId: recommendation?.id ?? authorization?.recommendationId ?? null,
+        authorizationId: job.authorizationId,
+        outcome: "revoked",
+        writes: false,
+      },
+    });
+    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    return {
+      applyJob: toApplyJobPublic(updated ?? job),
+      outcomes: [],
+      writes: false,
+      blocked: "authorization_revoked",
+    };
+  }
 
   const gate = evaluateApplyGate({
     expectedWorkspaceId: job.workspaceId,
@@ -475,4 +553,5 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
     writes,
     blocked: null,
   };
+  });
 }

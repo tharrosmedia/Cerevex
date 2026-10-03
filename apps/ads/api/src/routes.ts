@@ -32,6 +32,7 @@ import { exchangeCode } from "./oauth-exchange";
 import { signOAuthState, verifyOAuthState } from "./oauth-state";
 import { connectChosenAccounts, createPendingConnection } from "./pending-connect";
 import type { AccessibleAdAccount } from "@tharros/ads-shared";
+import { actorRef } from "./auth";
 import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
@@ -76,7 +77,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       });
     }
     const state = await signOAuthState({
-      userId: auth.user.id,
+      userId: actorRef(auth),
       clientId,
       platform,
     });
@@ -202,7 +203,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       adAccountId: row.id,
     });
     await sendAdAccountSync({
-      requestedBy: auth.user.id,
+      requestedBy: actorRef(auth),
       workspaceId: client.workspaceId,
       clientId: client.id,
       adAccountId: row.id,

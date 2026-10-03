@@ -63,7 +63,7 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "ADS_INTERNAL_KEY",
     kind: "secret",
-    help: "Server-side Brain BFF → ads API service key (x-cerevex-internal-key). Acts as the seeded owner. Never expose to the browser.",
+    help: "Server-side Brain BFF → ads API service key (x-cerevex-internal-key). Acts as the service principal, never a user. Cannot approve or apply. Never expose to the browser.",
   },
   {
     env: "ADS_API_TOKEN",

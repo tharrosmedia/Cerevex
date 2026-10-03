@@ -39,7 +39,8 @@
     "./attribution": "./src/attribution.ts",
     "./connector-settings": "./src/connector-settings.ts",
     "./planning-settings": "./src/planning-settings.ts",
-    "./server": "./src/server.ts"
+    "./server": "./src/server.ts",
+    "./actor": "./src/actor.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",

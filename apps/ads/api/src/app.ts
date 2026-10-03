@@ -26,8 +26,10 @@ import {
   extractBearer,
   extractInternalKey,
   internalKeyMatches,
+  actorRef,
+  auditActor,
   loadAuthContext,
-  loadInternalOperatorAuth,
+  loadServiceAuth,
   sessionCookieName,
   signSession,
   verifySession,
@@ -59,11 +61,7 @@ export const VERSION = "0.1.0";
 const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   const internalKey = extractInternalKey(c.req.header("x-cerevex-internal-key"));
   if (internalKeyMatches(internalKey)) {
-    const auth = await loadInternalOperatorAuth();
-    if (!auth) {
-      throw new HTTPException(401, { message: "Internal key is valid but no operator exists" });
-    }
-    c.set("auth", auth);
+    c.set("auth", await loadServiceAuth());
     await next();
     return;
   }
@@ -197,10 +195,11 @@ export function createApp() {
   app.get("/auth/me", requireAuth, (c) => {
     const auth = c.get("auth");
     return c.json({
+      principal: auth.principal,
       user: auth.user,
       memberships: auth.memberships,
       clientMemberships: auth.clientMemberships,
-      canApprove: canApproveApply(auth.user.email),
+      canApprove: canApproveApply(auth.user?.email),
     });
   });
 
@@ -275,7 +274,7 @@ export function createApp() {
     let eventIds: string[];
     try {
       eventIds = await sendStubPing({
-        requestedBy: auth.user.id,
+        requestedBy: actorRef(auth),
         workspaceId,
         clientId,
         note,
@@ -289,10 +288,11 @@ export function createApp() {
     }
 
     const jobId = eventIds[0] ?? "unknown";
+    const actor = auditActor(auth);
     await getDb().insert(auditLog).values({
       workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
       action: "jobs.stub_enqueued",
       entityType: "inngest_event",
       payloadJson: {
@@ -306,7 +306,7 @@ export function createApp() {
     childLogger(c.get("requestId")).info({
       msg: "jobs.stub_enqueued",
       jobId,
-      userId: auth.user.id,
+      ...(auth.user ? { userId: auth.user.id } : { actor: actor.actorType }),
     });
     return c.json({
       jobId,
