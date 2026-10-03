@@ -11,3 +11,9 @@ export const MIGRATIONS_TABLE = "__drizzle_migrations";
 export function migrationsRelation(): string {
   return `"${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}"`;
 }
+
+/**
+ * One-time copy for a local or other non-production database whose rows are
+ * still in `drizzle.__drizzle_migrations`. Do not run this against production.
+ */
+export const LEGACY_LEDGER_COPY_SQL = `INSERT INTO ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE} (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;`;

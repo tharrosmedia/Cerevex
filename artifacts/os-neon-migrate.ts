@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "../apps/ads/shared/src/migration-ledger.ts";
 
 export type OsMigration = {
   tag: string;
@@ -57,9 +58,7 @@ type BunSqlLike = {
   end?: () => Promise<void>;
 };
 
-const JOURNAL_TABLE = "__drizzle_migrations";
-/** Sticky Neon schema name (`ADS_DB_SCHEMA`). Do not ALTER SCHEMA. Filename keeps os- for Railway. */
-const SCHEMA = "os";
+/** Same ledger `ads:db:migrate` writes. Filename keeps os- for Railway. Do not ALTER SCHEMA. */
 
 function hereDir(): string {
   return dirname(fileURLToPath(import.meta.url));
@@ -232,10 +231,10 @@ export async function runOsNeonMigrate(options: OsMigrateOptions = {}): Promise<
   const client = await openClient(databaseUrl);
 
   try {
-    await client.query(`CREATE SCHEMA IF NOT EXISTS "${SCHEMA}"`);
-    await client.query(`SET search_path TO ${SCHEMA}, public`);
+    await client.query(`CREATE SCHEMA IF NOT EXISTS "${MIGRATIONS_SCHEMA}"`);
+    await client.query(`SET search_path TO ${MIGRATIONS_SCHEMA}, public`);
     await client.query(
-      `CREATE TABLE IF NOT EXISTS "${SCHEMA}"."${JOURNAL_TABLE}" (
+      `CREATE TABLE IF NOT EXISTS "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}" (
         id SERIAL PRIMARY KEY,
         hash text NOT NULL,
         created_at bigint
@@ -245,7 +244,7 @@ export async function runOsNeonMigrate(options: OsMigrateOptions = {}): Promise<
     const publicBefore = await listTables(client, "public");
 
     const journal = await client.query(
-      `SELECT hash, created_at FROM "${SCHEMA}"."${JOURNAL_TABLE}"`,
+      `SELECT hash, created_at FROM "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}"`,
     );
     const appliedRows = journal.rows as Array<{ hash: string; created_at: string | number | bigint }>;
     const migrationsApplied: string[] = [];
@@ -262,7 +261,7 @@ export async function runOsNeonMigrate(options: OsMigrateOptions = {}): Promise<
           await client.query(statement);
         }
         await client.query(
-          `INSERT INTO "${SCHEMA}"."${JOURNAL_TABLE}" (hash, created_at) VALUES ($1, $2)`,
+          `INSERT INTO "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}" (hash, created_at) VALUES ($1, $2)`,
           [hash, migration.when],
         );
         await client.query("COMMIT");
@@ -276,7 +275,7 @@ export async function runOsNeonMigrate(options: OsMigrateOptions = {}): Promise<
     }
 
     const publicAfter = await listTables(client, "public");
-    const osTables = await listTables(client, SCHEMA);
+    const osTables = await listTables(client, MIGRATIONS_SCHEMA);
 
     return {
       ok: true,

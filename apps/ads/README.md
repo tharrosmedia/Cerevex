@@ -58,7 +58,13 @@ Or from this directory: `npm run db:up && npm run db:migrate && npm run db:seed 
 
 ## Migration ledger
 
-`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. Before the first production run of this check, list the ledger. The script only reads:
+`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. Migrate refuses when schema `os` already has tables but `os.__drizzle_migrations` is missing or empty, including a database whose rows are still in `drizzle.__drizzle_migrations`. For that local or other non-production database, copy the ledger once, then run migrate again:
+
+```sql
+INSERT INTO os.__drizzle_migrations (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;
+```
+
+Do not run that copy against production. Before the first production run of this check, list the ledger. The script only reads:
 
 ```bash
 npm run ledger --workspace=@tharros/ads-shared

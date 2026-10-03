@@ -211,16 +211,7 @@ DATABASE_URL=... bun scripts/os-neon-smoke-migrate.ts
 # or: DATABASE_URL=... bun artifacts/os-neon-migrate.ts
 ```
 
-`npm` path (needs workspace install):
-
-```bash
-# Same DATABASE_URL as Brain. Do not change the Neon project.
-# Do NOT run ads:db:seed against production (would write local-dev owner password).
-cp -n apps/ads/.env.example apps/ads/.env
-# Put DATABASE_URL into apps/ads/.env (or export it). Leave META_/GOOGLE_ blank.
-
-npm run ads:db:migrate
-```
+`npm run ads:db:migrate` is not a production step. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
 
 Manual SQL equivalent (if you use `psql` instead of the migrator):
 
