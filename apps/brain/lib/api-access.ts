@@ -2,7 +2,10 @@ import { authorizeApprover, authorizeConsole, type AuthGate, type CredentialSour
 
 export type ApiAuthClass = 'public' | 'session' | 'approver';
 
+export type ApiSurface = 'brain' | 'ads-api' | 'ads-worker';
+
 export type ApiInventoryEntry = {
+  surface: ApiSurface;
   path: string;
   methods: string[];
   auth: ApiAuthClass;
@@ -11,6 +14,9 @@ export type ApiInventoryEntry = {
   intendedAuth: string;
   p0?: 'B1';
   notes?: string;
+  /** Repo file that must contain `marker` for a documented public route. */
+  source?: string;
+  marker?: string;
 };
 
 /**
@@ -20,6 +26,7 @@ export type ApiInventoryEntry = {
  */
 export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
   {
+    surface: 'brain',
     path: '/api/approve',
     methods: ['POST'],
     auth: 'approver',
@@ -30,6 +37,7 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     notes: 'Sends approval/decided. Does not call an ads platform mutation.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/decide',
     methods: ['POST'],
     auth: 'approver',
@@ -40,6 +48,7 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     notes: 'Whole Brain route is approver-or-internal-key. No query-string key.',
   },
   {
+    surface: 'ads-api',
     path: '/recommendations/:id/decide',
     methods: ['POST'],
     auth: 'approver',
@@ -50,6 +59,7 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     notes: 'Actions: approve, authorize, deny, snooze. No rollback route exists.',
   },
   {
+    surface: 'ads-api',
     path: '/recommendations/:id/apply',
     methods: ['POST'],
     auth: 'approver',
@@ -59,6 +69,7 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     notes: 'There is no /rollback and no separate authorize-to-apply HTTP route. authorize is the decide action plus this apply gate.',
   },
   {
+    surface: 'brain',
     path: '/api/login',
     methods: ['POST'],
     auth: 'public',
@@ -66,6 +77,7 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     intendedAuth: 'Public. This is how a console session is created.',
   },
   {
+    surface: 'brain',
     path: '/api/inngest',
     methods: ['GET', 'POST', 'PUT'],
     auth: 'public',
@@ -74,20 +86,23 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     notes: 'Ads worker also exposes /api/inngest the same way, plus GET /health.',
   },
   {
+    surface: 'brain',
     path: '/api/gsc/oauth/callback',
     methods: ['GET'],
     auth: 'public',
     currentAuth: 'none — state query was the raw store id',
-    intendedAuth: 'Public OAuth callback. Signed single-use state binds the initiating session and store. Redirects use PUBLIC_URL.',
+    intendedAuth: 'Public OAuth callback. Signed single-use state is bound to a random httpOnly sid, not the console password. Redirects use PUBLIC_URL.',
   },
   {
+    surface: 'brain',
     path: '/api/gsc/oauth/start',
     methods: ['GET'],
     auth: 'session',
     currentAuth: 'none',
-    intendedAuth: 'Console session. Mints the signed state. Not an OAuth callback.',
+    intendedAuth: 'Middleware and handler both use authorizeConsole (session or internal key). The state bind is an HMAC of a random sid, not APP_PASSWORD.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/pixel',
     methods: ['GET'],
     auth: 'public',
@@ -95,109 +110,170 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     intendedAuth: 'Public pixel script. Customer sites load it without a console session.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/collect',
     methods: ['POST', 'OPTIONS'],
     auth: 'public',
-    currentAuth: 'none — funnel collect beacon',
-    intendedAuth: 'Public beacon. The ads API records the event; it does not approve or apply.',
+    currentAuth: 'none — funnel collect beacon, CORS *, no body cap',
+    intendedAuth: 'Public beacon. 32KB body cap, per-IP rate limit, CORS allowlist from ADS_COLLECT_ORIGINS. Generic errors. Does not approve or apply.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/connect',
     methods: ['GET'],
     auth: 'session',
-    currentAuth: 'consoleAuthorized (APP_PASSWORD)',
-    intendedAuth: 'Console session or internal key.',
+    currentAuth: 'consoleAuthorized (APP_PASSWORD cookie only)',
+    intendedAuth: 'Middleware allows a console session or the internal key. The handler calls consoleAuthorized(), which accepts the APP_PASSWORD cookie only and does not accept the internal key.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/checks',
     methods: ['POST'],
     auth: 'session',
-    currentAuth: 'consoleAuthorized',
-    intendedAuth: 'Console session or internal key.',
+    currentAuth: 'consoleAuthorized (APP_PASSWORD cookie only)',
+    intendedAuth: 'Middleware allows a console session or the internal key. The handler calls consoleAuthorized(), which accepts the APP_PASSWORD cookie only and does not accept the internal key.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/sync',
     methods: ['POST'],
     auth: 'session',
-    currentAuth: 'consoleAuthorized',
-    intendedAuth: 'Console session or internal key. Sync is not an approve/apply path.',
+    currentAuth: 'consoleAuthorized (APP_PASSWORD cookie only)',
+    intendedAuth: 'Middleware allows a console session or the internal key. The handler calls consoleAuthorized(), which accepts the APP_PASSWORD cookie only and does not accept the internal key. Sync is not an approve/apply path.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/m51',
     methods: ['POST'],
     auth: 'session',
-    currentAuth: 'consoleAuthorized',
-    intendedAuth: 'Console session or internal key.',
+    currentAuth: 'consoleAuthorized (APP_PASSWORD cookie only)',
+    intendedAuth: 'Middleware allows a console session or the internal key. The handler calls consoleAuthorized(), which accepts the APP_PASSWORD cookie only and does not accept the internal key.',
   },
   {
+    surface: 'brain',
     path: '/api/ads/*',
     methods: ['GET', 'POST'],
     auth: 'session',
     currentAuth: 'consoleAuthorized on the proxy; decide/apply paths are blocked by the proxy allowlist',
-    intendedAuth: 'Console session or internal key. Catch-all proxy. Does not forward approve/apply.',
+    intendedAuth: 'Middleware allows a console session or the internal key. The handler calls consoleAuthorized(), which accepts the APP_PASSWORD cookie only and does not accept the internal key. Catch-all proxy. Does not forward approve/apply.',
   },
   {
+    surface: 'brain',
     path: '/api/wordpress/plugin',
     methods: ['GET'],
     auth: 'session',
     currentAuth: 'none at the edge; handler reads the active store cookie',
-    intendedAuth: 'Console session or internal key.',
+    intendedAuth: 'Middleware allows a console session or the internal key. The handler does not call consoleAuthorized().',
   },
   {
+    surface: 'brain',
     path: '/api/wordpress/install-note',
     methods: ['GET'],
     auth: 'session',
     currentAuth: 'none at the edge',
-    intendedAuth: 'Console session or internal key.',
+    intendedAuth: 'Middleware allows a console session or the internal key. The handler does not call consoleAuthorized().',
   },
   {
+    surface: 'brain',
     path: '/api/health',
     methods: ['GET'],
     auth: 'public',
     currentAuth: 'no Brain handler',
-    intendedAuth: 'Reserved public health check. No handler in this repo (Next returns 404). Ads API /health and /ready are separate and already public.',
+    intendedAuth: 'Public. In production, 503 when ENCRYPTION_KEY, GSC_OAUTH_STATE_SECRET, APP_PASSWORD, or ADS_INTERNAL_KEY is missing or ENCRYPTION_KEY has stray whitespace. Railway healthcheck path after merge.',
   },
+];
+
+/** Ads processes. Not Brain middleware routes, so guardApi does not treat them as public Brain paths. */
+export const ADS_PUBLIC_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
   {
-    path: '/api/ready',
+    surface: 'ads-api',
+    path: '/health',
     methods: ['GET'],
     auth: 'public',
-    currentAuth: 'no Brain handler',
-    intendedAuth: 'Reserved public readiness check. No handler in this repo.',
+    currentAuth: 'public',
+    intendedAuth: 'Public ads API liveness.',
+    source: 'apps/ads/api/src/app.ts',
+    marker: 'app.get("/health"',
   },
   {
-    path: '/api/webhooks/shopify',
+    surface: 'ads-api',
+    path: '/ready',
+    methods: ['GET'],
+    auth: 'public',
+    currentAuth: 'public',
+    intendedAuth: 'Public ads API readiness.',
+    source: 'apps/ads/api/src/app.ts',
+    marker: 'app.get("/ready"',
+  },
+  {
+    surface: 'ads-api',
+    path: '/auth/login',
     methods: ['POST'],
     auth: 'public',
-    currentAuth: 'no handler',
-    intendedAuth: 'Reserved public Shopify webhook. No handler yet, so nothing is accepted. A future handler must verify the Shopify HMAC before it reads the body.',
+    currentAuth: 'public password check',
+    intendedAuth: 'Public login. Creates the ads session.',
+    source: 'apps/ads/api/src/app.ts',
+    marker: 'app.post("/auth/login"',
   },
   {
-    path: '/api/shopify/webhooks',
+    surface: 'ads-api',
+    path: '/auth/logout',
     methods: ['POST'],
     auth: 'public',
-    currentAuth: 'no handler',
-    intendedAuth: 'Reserved alias of the Shopify webhook. HMAC required before any handler is added.',
+    currentAuth: 'public',
+    intendedAuth: 'Public logout.',
+    source: 'apps/ads/api/src/app.ts',
+    marker: 'app.post("/auth/logout"',
   },
   {
-    path: '/api/webhooks/meta',
-    methods: ['POST'],
+    surface: 'ads-api',
+    path: '/oauth/:platform/callback',
+    methods: ['GET'],
     auth: 'public',
-    currentAuth: 'no handler',
-    intendedAuth: 'Reserved public Meta webhook. Signature verification is required before any handler is added.',
+    currentAuth: 'public OAuth callback',
+    intendedAuth: 'Public OAuth callback.',
+    source: 'apps/ads/api/src/routes.ts',
+    marker: 'app.get("/oauth/:platform/callback"',
   },
   {
-    path: '/api/meta/data-deletion',
-    methods: ['GET', 'POST'],
+    surface: 'ads-api',
+    path: '/funnel/pixel.js',
+    methods: ['GET'],
     auth: 'public',
-    currentAuth: 'no API handler — operators use the public /data-deletion page',
-    intendedAuth: 'Reserved public Meta data-deletion callback. Must stay public. No handler yet.',
+    currentAuth: 'public pixel',
+    intendedAuth: 'Public pixel script.',
+    source: 'apps/ads/api/src/m51.ts',
+    marker: 'app.get("/funnel/pixel.js"',
   },
   {
-    path: '/api/meta/deauthorize',
-    methods: ['POST'],
+    surface: 'ads-api',
+    path: '/funnel/collect',
+    methods: ['POST', 'OPTIONS'],
     auth: 'public',
-    currentAuth: 'no handler',
-    intendedAuth: 'Reserved public Meta deauthorize callback.',
+    currentAuth: 'public collect',
+    intendedAuth: 'Public funnel collect. Writes os.funnel_events only.',
+    source: 'apps/ads/api/src/m51.ts',
+    marker: 'app.post("/funnel/collect"',
+  },
+  {
+    surface: 'ads-worker',
+    path: '/health',
+    methods: ['GET'],
+    auth: 'public',
+    currentAuth: 'public',
+    intendedAuth: 'Public worker liveness.',
+    source: 'apps/ads/workers/src/index.ts',
+    marker: 'app.get("/health"',
+  },
+  {
+    surface: 'ads-worker',
+    path: '/api/inngest',
+    methods: ['GET', 'POST', 'PUT'],
+    auth: 'public',
+    currentAuth: 'Inngest signing key',
+    intendedAuth: 'Public worker Inngest endpoint. Signature verification stays in the SDK.',
+    source: 'apps/ads/workers/src/index.ts',
+    marker: '"/api/inngest"',
   },
 ];
 
@@ -219,9 +295,10 @@ export function classifyApiRoute(pathname: string, method: string): ApiAuthClass
   const path = normalizePath(pathname);
   const verb = method.toUpperCase();
   if (!path.startsWith('/api')) return 'deny';
-  const exact = API_ROUTE_INVENTORY.find((entry) => entry.path === path && entry.methods.includes(verb));
+  const brainRoutes = API_ROUTE_INVENTORY.filter((entry) => entry.surface === 'brain');
+  const exact = brainRoutes.find((entry) => entry.path === path && entry.methods.includes(verb));
   if (exact) return exact.auth;
-  const wildcard = API_ROUTE_INVENTORY.find(
+  const wildcard = brainRoutes.find(
     (entry) => entry.path.endsWith('/*') && entry.methods.includes(verb) && matches(entry.path, path),
   );
   if (wildcard) return wildcard.auth;
