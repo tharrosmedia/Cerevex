@@ -1,15 +1,17 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const GSC_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+export const GSC_OAUTH_SID_COOKIE = 'gsc_oauth_sid';
 
 export type GscOAuthState = {
   storeId: string;
-  sub: string;
+  /** HMAC of the httpOnly sid. Not a password, cookie, or session secret. */
+  bind: string;
   nonce: string;
   exp: number;
 };
 
-export type GscOAuthStateCode = 'malformed' | 'tampered' | 'expired' | 'replayed' | 'store_mismatch' | 'user_mismatch';
+export type GscOAuthStateCode = 'malformed' | 'tampered' | 'expired' | 'replayed' | 'store_mismatch' | 'bind_mismatch';
 
 export class GscOAuthStateError extends Error {
   code: GscOAuthStateCode;
@@ -27,16 +29,24 @@ export function resetGscOAuthStateForTests(): void {
   usedNonces.clear();
 }
 
-export function oauthSubjectFromCookie(cookieValue: string): string {
-  return createHmac('sha256', 'gsc-oauth-subject').update(cookieValue).digest('base64url');
+export function newGscOAuthSid(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 function stateSecret(explicit?: string): string {
-  const secret = (explicit ?? process.env.GSC_OAUTH_STATE_SECRET ?? '').trim();
-  if (!secret) {
+  const secret = explicit ?? process.env.GSC_OAUTH_STATE_SECRET ?? '';
+  if (!secret.trim()) {
     throw new Error('GSC_OAUTH_STATE_SECRET is required to sign Search Console OAuth state');
   }
+  if (secret !== secret.trim()) {
+    throw new Error('GSC_OAUTH_STATE_SECRET has leading or trailing whitespace.');
+  }
   return secret;
+}
+
+/** Bind a random sid. The password and the sid itself never enter the Google URL. */
+export function gscOAuthBind(sid: string, explicitSecret?: string): string {
+  return createHmac('sha256', stateSecret(explicitSecret)).update(`gsc-oauth-bind:${sid}`).digest('base64url');
 }
 
 function signBody(body: string, secret: string): string {
@@ -57,14 +67,14 @@ function pruneNonces(now: number): void {
 }
 
 export function signGscOAuthState(
-  input: { storeId: string; sub: string },
+  input: { storeId: string; bind: string },
   options?: { now?: number; ttlMs?: number; secret?: string; nonce?: string },
 ): string {
   const now = options?.now ?? Date.now();
   const ttl = options?.ttlMs ?? GSC_OAUTH_STATE_TTL_MS;
   const payload: GscOAuthState = {
     storeId: input.storeId,
-    sub: input.sub,
+    bind: input.bind,
     nonce: options?.nonce ?? randomBytes(16).toString('base64url'),
     exp: now + ttl,
   };
@@ -74,7 +84,7 @@ export function signGscOAuthState(
 
 export function verifyGscOAuthState(
   token: string,
-  options?: { now?: number; secret?: string; storeId?: string; sub?: string; consume?: boolean },
+  options?: { now?: number; secret?: string; storeId?: string; bind?: string; consume?: boolean },
 ): GscOAuthState {
   const now = options?.now ?? Date.now();
   pruneNonces(now);
@@ -86,19 +96,19 @@ export function verifyGscOAuthState(
   if (!signaturesMatch(sig, signBody(body, stateSecret(options?.secret)))) {
     throw new GscOAuthStateError('tampered');
   }
-  let parsed: { v?: number; storeId?: unknown; sub?: unknown; nonce?: unknown; exp?: unknown };
+  let parsed: { v?: number; storeId?: unknown; bind?: unknown; nonce?: unknown; exp?: unknown };
   try {
     parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
   } catch {
     throw new GscOAuthStateError('malformed');
   }
-  if (parsed.v !== 1 || typeof parsed.storeId !== 'string' || typeof parsed.sub !== 'string' || typeof parsed.nonce !== 'string' || typeof parsed.exp !== 'number') {
+  if (parsed.v !== 1 || typeof parsed.storeId !== 'string' || typeof parsed.bind !== 'string' || typeof parsed.nonce !== 'string' || typeof parsed.exp !== 'number') {
     throw new GscOAuthStateError('malformed');
   }
   if (parsed.exp <= now) throw new GscOAuthStateError('expired');
   if (options?.storeId && options.storeId !== parsed.storeId) throw new GscOAuthStateError('store_mismatch');
-  if (options?.sub && options.sub !== parsed.sub) throw new GscOAuthStateError('user_mismatch');
+  if (options?.bind && !signaturesMatch(options.bind, parsed.bind)) throw new GscOAuthStateError('bind_mismatch');
   if (usedNonces.has(parsed.nonce)) throw new GscOAuthStateError('replayed');
   if (options?.consume !== false) usedNonces.set(parsed.nonce, parsed.exp);
-  return { storeId: parsed.storeId, sub: parsed.sub, nonce: parsed.nonce, exp: parsed.exp };
+  return { storeId: parsed.storeId, bind: parsed.bind, nonce: parsed.nonce, exp: parsed.exp };
 }

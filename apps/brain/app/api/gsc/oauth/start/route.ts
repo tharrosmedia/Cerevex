@@ -1,8 +1,14 @@
-import { NextRequest } from 'next/server';
-import { AUTH_COOKIE_NAME } from '@/lib/auth-cookie';
+import { NextRequest, NextResponse } from 'next/server';
+import { isProductionRuntime } from '@/lib/runtime-env';
 import { authorizeConsole, credentialsFrom, gateJson } from '@/lib/sensitive-auth';
 import { buildAuthUrl, isGscConfigured } from '@/src/lib/gsc/client';
-import { oauthSubjectFromCookie, signGscOAuthState } from '@/src/lib/gsc/oauth-state';
+import {
+  GSC_OAUTH_SID_COOKIE,
+  GSC_OAUTH_STATE_TTL_MS,
+  gscOAuthBind,
+  newGscOAuthSid,
+  signGscOAuthState,
+} from '@/src/lib/gsc/oauth-state';
 
 export async function GET(req: NextRequest) {
   const creds = credentialsFrom({ headers: req.headers, cookies: req.cookies, url: req.url });
@@ -13,13 +19,22 @@ export async function GET(req: NextRequest) {
   }
   const storeId = req.nextUrl.searchParams.get('storeId') || '';
   if (!storeId) return new Response('storeId required', { status: 400 });
-  const cookie = req.cookies.get(AUTH_COOKIE_NAME)?.value ?? '';
-  if (!cookie) return gateJson({ ok: false, status: 401, error: 'Sign in required' });
   try {
-    const state = signGscOAuthState({ storeId, sub: oauthSubjectFromCookie(cookie) });
-    return Response.redirect(buildAuthUrl(state));
+    const sid = newGscOAuthSid();
+    const state = signGscOAuthState({ storeId, bind: gscOAuthBind(sid) });
+    const response = NextResponse.redirect(buildAuthUrl(state));
+    response.cookies.set({
+      name: GSC_OAUTH_SID_COOKIE,
+      value: sid,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isProductionRuntime(),
+      path: '/api/gsc/oauth',
+      maxAge: Math.floor(GSC_OAUTH_STATE_TTL_MS / 1000),
+    });
+    return response;
   } catch (e) {
-    console.error('gsc oauth start', e instanceof Error ? e.message : e);
+    console.error('gsc oauth start', e instanceof Error ? e.message : 'state signing failed');
     return new Response('GSC OAuth state is not configured', { status: 500 });
   }
 }
