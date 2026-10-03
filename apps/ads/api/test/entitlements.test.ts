@@ -8,6 +8,7 @@ import {
   decideLocationActivation,
   scholarshipDowngradeAdAccountMessage,
 } from "@cerevex/contracts";
+import { mockPull } from "@tharros/ads-shared";
 import { getAdPlatformConnector } from "@tharros/ads-shared/connectors";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
@@ -588,7 +589,14 @@ describe("disconnected ad account sync", () => {
 });
 
 describe("lock order under concurrent writes", () => {
-  const NAMES = ["Lock Order Paid", "Lock Order Scholarship"];
+  const NAMES = [
+    "Lock Order Paid",
+    "Lock Order Scholarship",
+    "Lock Reconnect paid loc",
+    "Lock Reconnect paid noloc",
+    "Lock Reconnect scholarship loc",
+    "Lock Reconnect scholarship noloc",
+  ];
   let workspaceId = "";
 
   beforeAll(async () => {
@@ -668,4 +676,57 @@ describe("lock order under concurrent writes", () => {
       expect(failures).toEqual([]);
     }
   }, 120_000);
+
+  it("reconnects the account being synced with no deadlocks, with and without a location write", async () => {
+    for (const plan of ["paid", "scholarship"] as const) {
+      for (const withLocation of [true, false]) {
+        const name = `Lock Reconnect ${plan} ${withLocation ? "loc" : "noloc"}`;
+        // Sync writes mockPull's external id. Seed that id so reconnect updates the
+        // same row the sync holds, instead of inserting a second Meta account.
+        const externalId = mockPull("meta", name).externalAccountId;
+        const [client] = await getDb()
+          .insert(clients)
+          .values({ workspaceId, name, status: "active", plan })
+          .returning();
+        const meta = await upsertConnectedAccount({
+          workspaceId,
+          clientId: client.id,
+          platform: "meta",
+          externalId,
+          scopes: [],
+          tokens: { accessToken: "lock-order-token", mock: true },
+          label: "mock",
+        });
+        if (withLocation) await activateStore(client.id, `reconnect-store-${plan}`);
+
+        const failures: string[] = [];
+        const rounds = 40;
+        for (let round = 0; round < rounds; round += 1) {
+          const ops = [
+            outcome(() => runAdAccountSync(meta.id)),
+            outcome(() => runAdAccountSync(meta.id)),
+            outcome(() =>
+              upsertConnectedAccount({
+                workspaceId,
+                clientId: client.id,
+                platform: "meta",
+                externalId,
+                scopes: [],
+                tokens: { accessToken: "lock-order-token", mock: true },
+                label: "mock",
+              }),
+            ),
+          ];
+          if (withLocation) ops.push(outcome(() => activateStore(client.id, `reconnect-store-${plan}`)));
+          const results = await Promise.all(ops);
+          for (const result of results) {
+            if (result) failures.push(result);
+          }
+        }
+
+        expect(failures.filter((failure) => /deadlock/i.test(failure)), `${plan} location=${withLocation}`).toEqual([]);
+        expect(failures, `${plan} location=${withLocation}`).toEqual([]);
+      }
+    }
+  }, 180_000);
 });

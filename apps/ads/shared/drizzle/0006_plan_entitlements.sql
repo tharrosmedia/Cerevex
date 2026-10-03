@@ -52,18 +52,29 @@ DECLARE
   client_plan text;
   active_count integer;
 BEGIN
-  -- Lock order is fixed: client row, then the advisory lock. App writers lock
-  -- the client row first. Taking the advisory lock first deadlocks them.
-  -- READ COMMITTED (the app default) takes a fresh snapshot after the row
-  -- wait, so the count sees the other write.
+  -- A write that cannot add an active location takes no lock. Sync and
+  -- reconnect update the same row and must not wait on the client.
+  IF NEW.status IS DISTINCT FROM 'active' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND OLD.status = 'active'
+     AND OLD.client_id IS NOT DISTINCT FROM NEW.client_id
+     AND OLD.store_id IS NOT DISTINCT FROM NEW.store_id THEN
+    RETURN NEW;
+  END IF;
+
+  -- Lock order: client row, then the advisory lock. NO KEY UPDATE still
+  -- serializes these writers and does not block a foreign-key KEY SHARE.
+  -- READ COMMITTED takes a fresh snapshot after the row wait.
   SELECT plan INTO client_plan
   FROM os.clients
   WHERE id = NEW.client_id
-  FOR UPDATE;
+  FOR NO KEY UPDATE;
 
   PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
 
-  IF client_plan IS DISTINCT FROM 'scholarship' OR NEW.status IS DISTINCT FROM 'active' THEN
+  IF client_plan IS DISTINCT FROM 'scholarship' THEN
     RETURN NEW;
   END IF;
 
@@ -99,15 +110,28 @@ DECLARE
   active_count integer;
   platform_key text;
 BEGIN
+  -- A write that cannot add an active account takes no lock. A sync status
+  -- change and a reconnect of the same account are in that set.
+  IF NEW.connection_status = 'disconnected' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND OLD.connection_status IS DISTINCT FROM 'disconnected'
+     AND OLD.client_id IS NOT DISTINCT FROM NEW.client_id
+     AND OLD.platform IS NOT DISTINCT FROM NEW.platform
+     AND OLD.external_id IS NOT DISTINCT FROM NEW.external_id THEN
+    RETURN NEW;
+  END IF;
+
   -- Same order as the location trigger: client row, then advisory lock.
   SELECT plan INTO client_plan
   FROM os.clients
   WHERE id = NEW.client_id
-  FOR UPDATE;
+  FOR NO KEY UPDATE;
 
   PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
 
-  IF client_plan IS DISTINCT FROM 'scholarship' OR NEW.connection_status = 'disconnected' THEN
+  IF client_plan IS DISTINCT FROM 'scholarship' THEN
     RETURN NEW;
   END IF;
 

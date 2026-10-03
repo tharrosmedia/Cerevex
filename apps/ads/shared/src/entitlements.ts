@@ -4,10 +4,10 @@
  * getEntitlements reports the plan. precheckCanActivateAdAccounts is an
  * unlocked batch pre-check for the connect screen. It does not lock the
  * client row. The real guards are activateStore and rejectAdAccountIfBlocked,
- * which lock the client row and check again before writing. Triggers lock
- * that same client row before the Scholarship advisory lock. setClientPlan
- * refuses an over-limit move to Scholarship and turns nothing off. Monthly
- * counters are not stored here.
+ * which lock the client row with NO KEY UPDATE and check again before writing.
+ * Triggers use that same lock, and only when the write can add an active row.
+ * setClientPlan refuses an over-limit move to Scholarship and turns nothing
+ * off. Monthly counters are not stored here.
  */
 import {
   SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM,
@@ -50,7 +50,8 @@ function planOf(row: TenantRow): PlanId {
 }
 
 async function lockTenant(tx: Tx, tenantId: string): Promise<TenantRow> {
-  const [row] = await tx.select().from(clients).where(eq(clients.id, tenantId)).for("update");
+  // NO KEY UPDATE serializes plan writes and does not block a foreign-key KEY SHARE.
+  const [row] = await tx.select().from(clients).where(eq(clients.id, tenantId)).for("no key update");
   if (!row) throw new EntitlementError("Client not found", 404);
   return row;
 }
