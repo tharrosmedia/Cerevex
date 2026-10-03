@@ -75,6 +75,8 @@ export const clients = osSchema.table(
     name: text("name").notNull(),
     pilotFlag: boolean("pilot_flag").notNull().default(false),
     status: text("status").notNull().default("active"),
+    /** paid | scholarship. Existing rows default to paid (no location or ad-account limit). */
+    plan: text("plan").notNull().default("paid"),
     /** Console site (Brain stores.id) that owns this client's ad accounts. No FK: different schema. */
     siteId: text("site_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -83,6 +85,31 @@ export const clients = osSchema.table(
     index("clients_workspace_idx").on(table.workspaceId),
     uniqueIndex("clients_workspace_name_idx").on(table.workspaceId, table.name),
     uniqueIndex("clients_workspace_site_idx").on(table.workspaceId, table.siteId),
+  ],
+);
+
+/**
+ * One location = one store_id on a client. Only status `active` counts.
+ * store_id is a Brain store id. No cross-schema foreign key.
+ */
+export const locations = osSchema.table(
+  "locations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    storeId: text("store_id").notNull(),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("locations_client_store_idx").on(table.clientId, table.storeId),
+    index("locations_client_status_idx").on(table.clientId, table.status),
   ],
 );
 

@@ -1,6 +1,7 @@
 import { LEGACY_ADS_EVENTS, LEGACY_ADS_FUNCTION_IDS } from "@cerevex/contracts";
 import { inngest } from "@tharros/ads-shared/inngest";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
+import { syncJobAuditAction } from "@tharros/ads-shared/sync";
 import { pullGoogleAdAccount } from "../pull";
 
 /**
@@ -14,6 +15,7 @@ export const googleAdsAccountSync = inngest.createFunction(
     id: LEGACY_ADS_FUNCTION_IDS.googleAdsAccountSync,
     name: "Google ads account sync (legacy google/ads/*)",
     triggers: [{ event: LEGACY_ADS_EVENTS.googleAdsAccountSync }],
+    concurrency: { limit: 1, key: "event.data.adAccountId" },
   },
   async ({ event, step }: any) => {
     const result = await step.run("pull-entities", async () => pullGoogleAdAccount(event.data.adAccountId));
@@ -21,7 +23,7 @@ export const googleAdsAccountSync = inngest.createFunction(
       await writeInngestAudit({
         workspaceId: event.data.workspaceId,
         actorId: event.data.requestedBy,
-        action: result.status === "error" ? "jobs.sync_failed" : "jobs.sync_complete",
+        action: syncJobAuditAction(result.status),
         payload: {
           event: event.name,
           clientId: event.data.clientId,
