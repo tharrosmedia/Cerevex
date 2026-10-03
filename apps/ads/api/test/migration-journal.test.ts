@@ -1,11 +1,18 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
-import { assertMigrationJournal, MigrationJournalError } from "@tharros/ads-shared/migration-journal";
+import {
+  assertMigrationJournal,
+  assertMigrationsApplied,
+  assertNoSkippedBeforeMigrate,
+  migrationSqlHash,
+  MigrationJournalError,
+} from "@tharros/ads-shared/migration-journal";
 import { assertSafeTestDatabase } from "@tharros/ads-shared/test-database";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -13,6 +20,8 @@ const repoRoot = resolve(here, "../../../..");
 const realMigrations = resolve(here, "../../shared/drizzle");
 const tsxBin = resolve(repoRoot, "node_modules/.bin/tsx");
 const migrateScript = resolve(here, "../../shared/src/migrate.ts");
+const ledgerScript = resolve(here, "../../shared/src/query-migration-ledger.ts");
+const journalCheckScript = resolve(here, "../../shared/scripts/check-migration-journal.mjs");
 const createdDatabases: string[] = [];
 
 function assertLocalDatabase(databaseUrl: string): void {
@@ -63,10 +72,14 @@ async function createDatabase(name: string): Promise<string> {
   return databaseUrlFor(name);
 }
 
-function runMigrate(env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
+function runNode(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  cwd = repoRoot,
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [tsxBin, migrateScript], {
-      cwd: repoRoot,
+    const child = spawn(process.execPath, args, {
+      cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -93,6 +106,10 @@ function runMigrate(env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: str
       resolvePromise({ code: code ?? 1, stdout, stderr });
     });
   });
+}
+
+function runMigrate(env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
+  return runNode([tsxBin, migrateScript], env);
 }
 
 function copyMigrations(): string {
@@ -171,6 +188,7 @@ describe("migration journal", () => {
 
     const result = await runMigrate({
       ...process.env,
+      NODE_ENV: "test",
       ADS_MIGRATIONS_FOLDER: dir,
       DATABASE_URL: process.env.DATABASE_URL,
     });
@@ -215,6 +233,7 @@ describe("migration journal", () => {
     const databaseUrl = await createDatabase(`cerevex_migrate_test_${process.pid}_skip`);
     const first = await runMigrate({
       ...process.env,
+      NODE_ENV: "test",
       DATABASE_URL: databaseUrl,
       ADS_MIGRATIONS_FOLDER: folder,
     });
@@ -224,12 +243,242 @@ describe("migration journal", () => {
     cpSync(join(realMigrations, "0004_site_clients.sql"), join(folder, "0004_site_clients.sql"));
     const second = await runMigrate({
       ...process.env,
+      NODE_ENV: "test",
       DATABASE_URL: databaseUrl,
       ADS_MIGRATIONS_FOLDER: folder,
     });
     expect(second.code).not.toBe(0);
     expect(second.stderr).toContain("0004_site_clients");
     expect(second.stderr).toContain("drizzle.__drizzle_migrations");
+    expect(second.stderr).toContain("Refusing to migrate");
     rmSync(folder, { recursive: true, force: true });
   }, 60_000);
+
+  it("refuses a gap before Drizzle can commit a newer migration", async () => {
+    const folder = copyMigrations();
+    const journalPath = join(folder, "meta", "_journal.json");
+    const original = readFileSync(journalPath, "utf8");
+    const journal = JSON.parse(original) as { entries: Array<{ tag: string; idx: number; when: number }> };
+    journal.entries = journal.entries.filter((entry) => entry.tag !== "0004_site_clients");
+    writeFileSync(journalPath, JSON.stringify(journal));
+    rmSync(join(folder, "0004_site_clients.sql"));
+
+    const databaseUrl = await createDatabase(`cerevex_migrate_test_${process.pid}_gap`);
+    const first = await runMigrate({
+      ...process.env,
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+      ADS_MIGRATIONS_FOLDER: folder,
+    });
+    expect(first.code, first.stderr).toBe(0);
+
+    const restored = JSON.parse(original) as {
+      entries: Array<{ tag: string; idx: number; when: number; version?: string; breakpoints?: boolean }>;
+    };
+    const maxWhen = Math.max(...restored.entries.map((entry) => entry.when));
+    const maxIdx = Math.max(...restored.entries.map((entry) => entry.idx));
+    restored.entries.push({
+      idx: maxIdx + 1,
+      version: "7",
+      when: maxWhen + 1_000_000,
+      tag: "0006_probe",
+      breakpoints: true,
+    });
+    writeFileSync(journalPath, JSON.stringify(restored));
+    cpSync(join(realMigrations, "0004_site_clients.sql"), join(folder, "0004_site_clients.sql"));
+    writeFileSync(join(folder, "0006_probe.sql"), "CREATE TABLE IF NOT EXISTS os.migrate_guard_probe (id integer);\n");
+
+    const second = await runMigrate({
+      ...process.env,
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+      ADS_MIGRATIONS_FOLDER: folder,
+    });
+    expect(second.code).not.toBe(0);
+    expect(second.stderr).toContain("Refusing to migrate");
+    expect(second.stderr).toContain("0004_site_clients");
+    expect(second.stdout).not.toContain("Applied OS migrations");
+
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const probe = await client.query(`select to_regclass('os.migrate_guard_probe') as name`);
+      const pending = await client.query(`select to_regclass('os.oauth_pending_connections') as name`);
+      expect(probe.rows[0]?.name).toBeNull();
+      expect(pending.rows[0]?.name).toBeNull();
+    } finally {
+      await client.end();
+    }
+    rmSync(folder, { recursive: true, force: true });
+  }, 60_000);
+
+  it("prints both hashes and does not throw when a ledger hash is null", () => {
+    const folder = copyMigrations();
+    const entries = assertMigrationJournal(folder);
+    const skipped = entries.find((entry) => entry.tag === "0004_site_clients");
+    expect(skipped).toBeTruthy();
+    const expected = migrationSqlHash(readFileSync(join(folder, "0004_site_clients.sql"), "utf8"));
+    const applied = entries
+      .filter((entry) => entry.tag !== "0004_site_clients")
+      .map((entry) => ({
+        hash: migrationSqlHash(readFileSync(join(folder, `${entry.tag}.sql`), "utf8")),
+        createdAt: entry.when,
+      }));
+    expect(() => assertNoSkippedBeforeMigrate(folder, entries, applied)).toThrow(
+      new RegExp(`Expected hash ${expected}\\. Found hash <none>`),
+    );
+
+    const mismatched = [
+      ...applied,
+      { hash: "abc123", createdAt: skipped!.when },
+    ];
+    expect(() => assertMigrationsApplied(folder, entries, mismatched)).toThrow(
+      new RegExp(`Expected hash ${expected}\\. Found hash abc123`),
+    );
+    expect(() => assertMigrationsApplied(folder, entries, [{ hash: null, createdAt: 1 }])).toThrow(/<null>/);
+    rmSync(folder, { recursive: true, force: true });
+  });
+
+  it("ignores ADS_MIGRATIONS_FOLDER unless NODE_ENV is test", async () => {
+    const folder = join(tmpdir(), "cerevex-foreign-migrations-missing");
+    for (const nodeEnv of ["production", undefined]) {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        ADS_MIGRATIONS_FOLDER: folder,
+        DATABASE_URL: "postgres://user:pw@127.0.0.1:1/nope",
+      };
+      if (nodeEnv) env.NODE_ENV = nodeEnv;
+      else delete env.NODE_ENV;
+      const result = await runMigrate(env);
+      expect(result.code, nodeEnv ?? "unset").not.toBe(0);
+      expect(result.stderr, nodeEnv ?? "unset").toContain("ADS_MIGRATIONS_FOLDER is honored only when NODE_ENV=test");
+      expect(result.stderr, nodeEnv ?? "unset").toContain("Refusing to read a foreign migrations folder");
+      expect(result.stderr, nodeEnv ?? "unset").not.toContain("could not be read");
+      expect(result.stderr, nodeEnv ?? "unset").not.toContain("ECONNREFUSED");
+    }
+  });
+
+  it("lists the ledger without writing and fails when the ledger is missing", async () => {
+    const databaseUrl = await createDatabase(`cerevex_migrate_test_${process.pid}_ledger`);
+    const missing = await runNode([tsxBin, ledgerScript], {
+      ...process.env,
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+    });
+    expect(missing.code).not.toBe(0);
+    expect(missing.stderr).toContain("drizzle.__drizzle_migrations does not exist");
+    expect(missing.stderr).toContain("os.__drizzle_migrations");
+
+    const migrated = await runMigrate({
+      ...process.env,
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+    });
+    expect(migrated.code, migrated.stderr).toBe(0);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const before = await client.query(`select count(*)::int as n from "drizzle"."__drizzle_migrations"`);
+      const listed = await runNode([tsxBin, ledgerScript], {
+        ...process.env,
+        NODE_ENV: "test",
+        DATABASE_URL: databaseUrl,
+      });
+      expect(listed.code, listed.stderr).toBe(0);
+      expect(listed.stdout).toContain(`drizzle.__drizzle_migrations rows: ${before.rows[0]?.n}`);
+      const after = await client.query(`select count(*)::int as n from "drizzle"."__drizzle_migrations"`);
+      expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
+    } finally {
+      await client.end();
+    }
+  }, 60_000);
+
+  it("forces LF for drizzle SQL and fails CI when main's tags change", async () => {
+    const attributes = readFileSync(resolve(repoRoot, ".gitattributes"), "utf8");
+    expect(attributes).toContain("apps/ads/shared/drizzle/*.sql text eol=lf");
+    const sql = readFileSync(join(realMigrations, "0004_site_clients.sql"));
+    expect(sql.includes(13)).toBe(false);
+
+    const root = mkdtempSync(join(tmpdir(), "cerevex-journal-git-"));
+    const gitEnv = { ...process.env };
+    delete gitEnv.GIT_DIR;
+    delete gitEnv.GIT_WORK_TREE;
+    delete gitEnv.GIT_INDEX_FILE;
+    gitEnv.GIT_AUTHOR_NAME = "Cerevex Test";
+    gitEnv.GIT_AUTHOR_EMAIL = "test@example.com";
+    gitEnv.GIT_COMMITTER_NAME = "Cerevex Test";
+    gitEnv.GIT_COMMITTER_EMAIL = "test@example.com";
+    const git = (args: string[]) => execFileSync("git", args, { cwd: root, env: gitEnv });
+    git(["init", "-b", "main"]);
+    const drizzle = join(root, "apps/ads/shared/drizzle");
+    mkdirSync(join(drizzle, "meta"), { recursive: true });
+    const originalSql = "select 1;\n";
+    writeFileSync(join(drizzle, "0000_base.sql"), originalSql);
+    writeFileSync(
+      join(drizzle, "meta", "_journal.json"),
+      JSON.stringify({
+        version: "7",
+        dialect: "postgresql",
+        entries: [{ idx: 0, version: "7", when: 100, tag: "0000_base", breakpoints: true }],
+      }),
+    );
+    git(["add", "."]);
+    git(["commit", "-m", "base"]);
+    git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+
+    const check = (ci: boolean) => {
+      const env: NodeJS.ProcessEnv = { ...gitEnv };
+      if (ci) env.CI = "true";
+      else delete env.CI;
+      return runNode([journalCheckScript], env, root);
+    };
+    const ok = await check(true);
+    expect(ok.code, ok.stderr).toBe(0);
+
+    git(["update-ref", "-d", "refs/remotes/origin/main"]);
+    const missingCi = await check(true);
+    expect(missingCi.code).not.toBe(0);
+    expect(missingCi.stderr).toContain("origin/main is missing");
+    const missingLocal = await check(false);
+    expect(missingLocal.code, missingLocal.stderr).toBe(0);
+    git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+
+    writeFileSync(
+      join(drizzle, "meta", "_journal.json"),
+      JSON.stringify({
+        version: "7",
+        dialect: "postgresql",
+        entries: [{ idx: 0, version: "7", when: 50, tag: "0000_base", breakpoints: true }],
+      }),
+    );
+    const changedWhen = await check(true);
+    expect(changedWhen.code).not.toBe(0);
+    expect(changedWhen.stderr).toContain("0000_base when 50 does not match origin/main (100)");
+
+    writeFileSync(
+      join(drizzle, "meta", "_journal.json"),
+      JSON.stringify({
+        version: "7",
+        dialect: "postgresql",
+        entries: [{ idx: 0, version: "7", when: 100, tag: "0000_base", breakpoints: true }],
+      }),
+    );
+    const editedSql = "select 2;\n";
+    writeFileSync(join(drizzle, "0000_base.sql"), editedSql);
+    const changedSql = await check(true);
+    expect(changedSql.code).not.toBe(0);
+    expect(changedSql.stderr).toContain(createHash("sha256").update(originalSql).digest("hex"));
+    expect(changedSql.stderr).toContain(createHash("sha256").update(editedSql).digest("hex"));
+
+    writeFileSync(join(drizzle, "0000_base.sql"), originalSql);
+    writeFileSync(
+      join(drizzle, "meta", "_journal.json"),
+      JSON.stringify({ version: "7", dialect: "postgresql", entries: [] }),
+    );
+    rmSync(join(drizzle, "0000_base.sql"));
+    const removed = await check(true);
+    expect(removed.code).not.toBe(0);
+    expect(removed.stderr).toContain("0000_base is on origin/main but missing");
+    rmSync(root, { recursive: true, force: true });
+  }, 30_000);
 });
