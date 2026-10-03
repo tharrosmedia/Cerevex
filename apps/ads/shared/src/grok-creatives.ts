@@ -10,6 +10,7 @@ import { getDb } from "./db";
 import { platformLabel } from "./creative-analysis";
 import { brainstormIdeas, brainstormSessions, recommendations } from "./schema";
 import type { Platform } from "./types";
+import { recordUsage } from "./usage";
 
 const XAI_BASE = "https://api.x.ai/v1";
 
@@ -178,31 +179,43 @@ export async function saveGrokIdea(input: {
   sourceAdExternalId?: string;
 }): Promise<{ sessionId: string; ideaId: string; alternative: GrokAlternative }> {
   const db = getDb();
-  const [session] = await db
-    .insert(brainstormSessions)
-    .values({
-      workspaceId: input.workspaceId,
-      clientId: input.clientId,
-      title: input.title,
-      status: "ready",
-    })
-    .returning();
-  const [idea] = await db
-    .insert(brainstormIdeas)
-    .values({
-      sessionId: session.id,
-      workspaceId: input.workspaceId,
-      clientId: input.clientId,
-      title: input.title,
-      bodyJson: {
-        writes: false,
-        promoted: false,
-        sourceAdExternalId: input.sourceAdExternalId ?? null,
-        alternative: input.alternative,
+  return db.transaction(async (tx) => {
+    const [session] = await tx
+      .insert(brainstormSessions)
+      .values({
+        workspaceId: input.workspaceId,
+        clientId: input.clientId,
+        title: input.title,
+        status: "ready",
+      })
+      .returning();
+    const [idea] = await tx
+      .insert(brainstormIdeas)
+      .values({
+        sessionId: session.id,
+        workspaceId: input.workspaceId,
+        clientId: input.clientId,
+        title: input.title,
+        bodyJson: {
+          writes: false,
+          promoted: false,
+          sourceAdExternalId: input.sourceAdExternalId ?? null,
+          alternative: input.alternative,
+        },
+      })
+      .returning();
+    await recordUsage(
+      {
+        tenantId: input.clientId,
+        kind: "creative_variations",
+        itemId: idea.id,
+        outcome: "created",
+        createdAt: idea.createdAt,
       },
-    })
-    .returning();
-  return { sessionId: session.id, ideaId: idea.id, alternative: input.alternative };
+      tx,
+    );
+    return { sessionId: session.id, ideaId: idea.id, alternative: input.alternative };
+  });
 }
 
 export async function listGrokIdeas(workspaceId: string, clientId?: string | null) {
