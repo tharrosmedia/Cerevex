@@ -9,12 +9,14 @@ import { parseRecommendationDraft } from "@tharros/ads-shared/audit-schemas";
 import { createApplyJobForAuthorization, decideRecommendation } from "@tharros/ads-shared/audit";
 import { runApplyJob } from "@tharros/ads-shared/apply";
 import {
+  countClientAuditLog,
   csvCell,
   insertJobRecommendation,
   listClientAuditLog,
+  readApproval,
   recordRecLifecycle,
 } from "@tharros/ads-shared/rec-lifecycle";
-import { clientAuditLog, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
+import { applyJobs, clientAuditLog, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
 loadEnv();
@@ -152,11 +154,20 @@ describe("client audit log", () => {
     expect(ran.blocked).toBeTruthy();
 
     const applied = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
-    expect(applied?.approvalJson).toMatchObject({
-      status: "approved",
-      executed_by: "cerevex_apply",
-    });
-    expect(String((applied?.approvalJson as { apply_result?: string }).apply_result)).toMatch(/^error:/);
+    const blockedApproval = readApproval(applied?.approvalJson);
+    expect(blockedApproval.status).toBe("approved");
+    expect(blockedApproval.executed_by).toBeNull();
+    expect(blockedApproval.executed_at).toBeNull();
+    const blockedEvents = await listClientAuditLog({ clientId, action: "apply_blocked", limit: 100 });
+    expect(blockedEvents.rows.some((row) => row.entityId === created.id)).toBe(true);
+    expect(JSON.stringify(blockedEvents.rows)).not.toContain("should-not-leak");
+    expect(JSON.stringify(blockedEvents.rows)).toContain("[redacted]");
+
+    const beforeRetry = await countClientAuditLog(clientId);
+    await getDb().update(applyJobs).set({ status: "succeeded" }).where(eq(applyJobs.id, job.id));
+    const retried = await runApplyJob(job.id);
+    expect(retried.fresh).toBe(false);
+    expect(await countClientAuditLog(clientId)).toBe(beforeRetry);
 
     const deniedDraft = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
       source: "agent:test",
@@ -185,7 +196,13 @@ describe("client audit log", () => {
     const markedBody = await json(marked);
     expect((markedBody.recommendation as { approval: { executed_by: string } }).approval.executed_by).toBe("human");
 
-    const rolled = await app.request(`/recommendations/${created.id}/decide`, {
+    const rolledBlocked = await app.request(`/recommendations/${created.id}/decide`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ action: "rollback" }),
+    });
+    expect(rolledBlocked.status).toBe(409);
+    const rolled = await app.request(`/recommendations/${manual.id}/decide`, {
       method: "POST",
       headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
       body: JSON.stringify({ action: "rollback" }),
@@ -200,9 +217,15 @@ describe("client audit log", () => {
         clientId,
         version: "hvac-usa@v1",
         storeId: "store-got-ductless",
+        note: "reach ada@example.com or 555-123-4567",
       }),
     });
     expect(layer.status).toBe(200);
+    const layerBody = await json(layer);
+    const layerPayload = JSON.stringify(layerBody);
+    expect(layerPayload).not.toContain("ada@example.com");
+    expect(layerPayload).not.toContain("555-123-4567");
+    expect(layerPayload).toContain("[redacted]");
     const layerBack = await app.request("/recommendations/lifecycle", {
       method: "POST",
       headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
@@ -311,7 +334,7 @@ describe("client audit log", () => {
     expect(csv).toContain("'@ads");
     expect(csv).toContain("+layer");
     expect(csv.startsWith("created_at,")).toBe(true);
-    const appliedEvents = await listClientAuditLog({ clientId, action: "applied", limit: 100 });
+    const appliedEvents = await listClientAuditLog({ clientId, action: "apply_blocked", limit: 100 });
     expect(JSON.stringify(appliedEvents.rows)).not.toContain("should-not-leak");
     expect(JSON.stringify(appliedEvents.rows)).toContain("[redacted]");
 
@@ -327,6 +350,8 @@ describe("client audit log", () => {
     expect(killSwitch.status).toBe(409);
     const killBody = await json(killSwitch);
     expect(String(killBody.error)).toMatch(/paused/i);
+    const refusals = await listClientAuditLog({ clientId, action: "approve_refused", limit: 100 });
+    expect(refusals.rows.some((row) => row.entityId === paused.id && JSON.stringify(row.payload).includes("apply_kill_switch"))).toBe(true);
 
     const sample = listed.rows[0];
     expect(sample).toBeTruthy();
@@ -339,5 +364,119 @@ describe("client audit log", () => {
     ).rejects.toThrow(/append-only/);
     const still = await getDb().query.clientAuditLog.findFirst({ where: eq(clientAuditLog.id, sample!.id) });
     expect(still?.action).toBe(sample!.action);
+
+    const countBefore = await countClientAuditLog(clientId);
+    await expectTruncateRefused("TRUNCATE os.client_audit_log");
+    await expectTruncateRefused("TRUNCATE os.workspaces CASCADE");
+    await expectTruncateRefusedAsGrantee();
+    expect(await countClientAuditLog(clientId)).toBe(countBefore);
+  });
+
+  it("refuses person lifecycle events from the service key and writes no audit row", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    const before = await countClientAuditLog(clientId);
+    const previousKey = process.env.ADS_INTERNAL_KEY;
+    process.env.ADS_INTERNAL_KEY = "audit-service-key";
+    try {
+      const bodies = [
+        { kind: "approved", clientId, recommendationId: created.id },
+        { kind: "mark_done", clientId, recommendationId: created.id },
+        { kind: "rolled_back", clientId, recommendationId: created.id },
+        { kind: "prompt_layer_approved", clientId, version: "forged@v99" },
+      ];
+      for (const body of bodies) {
+        const res = await app.request("/recommendations/lifecycle", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-cerevex-internal-key": "audit-service-key",
+          },
+          body: JSON.stringify(body),
+        });
+        expect(res.status).toBe(403);
+      }
+    } finally {
+      if (previousKey === undefined) delete process.env.ADS_INTERNAL_KEY;
+      else process.env.ADS_INTERNAL_KEY = previousKey;
+    }
+    expect(await countClientAuditLog(clientId)).toBe(before);
+    const rec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
+    expect(readApproval(rec?.approvalJson).status).toBe("PENDING_APPROVAL");
+    expect(rec?.status).toBe("proposed");
+    const forged = await listClientAuditLog({ clientId, action: "prompt_layer_approved", limit: 100 });
+    expect(JSON.stringify(forged.rows)).not.toContain("forged@v99");
+  });
+
+  it("rolls back the recommendation change when the audit insert fails", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    const pool = getPool();
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION os.reject_client_audit_insert_probe()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'audit insert probe' USING ERRCODE = '55000';
+      END;
+      $$
+    `);
+    await pool.query(`
+      CREATE TRIGGER client_audit_log_insert_probe
+      BEFORE INSERT ON os.client_audit_log
+      FOR EACH ROW
+      EXECUTE FUNCTION os.reject_client_audit_insert_probe()
+    `);
+    try {
+      await expect(
+        decideRecommendation({
+          recommendationId: created.id,
+          userId: ownerId,
+          action: "deny",
+        }),
+      ).rejects.toThrow(/audit insert probe/);
+      const rec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
+      expect(rec?.status).toBe("proposed");
+      expect(readApproval(rec?.approvalJson).status).toBe("PENDING_APPROVAL");
+    } finally {
+      await pool.query(`DROP TRIGGER IF EXISTS client_audit_log_insert_probe ON os.client_audit_log`);
+      await pool.query(`DROP FUNCTION IF EXISTS os.reject_client_audit_insert_probe()`);
+    }
   });
 });
+
+async function expectTruncateRefused(sql: string) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await expect(client.query(sql)).rejects.toThrow(/append-only/);
+    await client.query("ROLLBACK");
+  } finally {
+    client.release();
+  }
+}
+
+async function expectTruncateRefusedAsGrantee() {
+  const pool = getPool();
+  await pool.query(`
+    DO $$ BEGIN
+      CREATE ROLE audit_truncate_probe NOINHERIT;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+  await pool.query(`GRANT USAGE ON SCHEMA os TO audit_truncate_probe`);
+  await pool.query(`GRANT ALL ON os.client_audit_log TO audit_truncate_probe`);
+  await pool.query(`GRANT audit_truncate_probe TO CURRENT_USER`);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL ROLE audit_truncate_probe");
+    await expect(client.query("TRUNCATE os.client_audit_log")).rejects.toThrow(/append-only/);
+    await client.query("ROLLBACK");
+  } finally {
+    client.release();
+  }
+}

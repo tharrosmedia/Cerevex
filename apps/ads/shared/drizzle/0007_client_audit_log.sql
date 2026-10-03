@@ -54,4 +54,9 @@ CREATE TRIGGER "client_audit_log_no_delete"
   FOR EACH ROW
   EXECUTE FUNCTION "os"."reject_client_audit_log_mutation"();
 --> statement-breakpoint
-REVOKE UPDATE, DELETE ON "os"."client_audit_log" FROM PUBLIC;
+CREATE TRIGGER "client_audit_log_no_truncate"
+  BEFORE TRUNCATE ON "os"."client_audit_log"
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION "os"."reject_client_audit_log_mutation"();
+--> statement-breakpoint
+REVOKE UPDATE, DELETE, TRUNCATE ON "os"."client_audit_log" FROM PUBLIC;

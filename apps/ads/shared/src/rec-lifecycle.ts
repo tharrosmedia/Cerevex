@@ -23,12 +23,29 @@ export const CLIENT_AUDIT_ACTIONS = [
   "approved",
   "rejected",
   "applied",
+  "apply_attempt",
+  "apply_blocked",
+  "approve_refused",
   "mark_done",
   "rolled_back",
   "prompt_layer_approved",
   "prompt_layer_rolled_back",
   "role_changed",
 ] as const;
+
+/** Person decisions. The internal service key cannot write these. */
+export const SERVICE_REFUSED_LIFECYCLE_KINDS = [
+  "approved",
+  "rejected",
+  "mark_done",
+  "rolled_back",
+  "prompt_layer_approved",
+  "prompt_layer_rolled_back",
+] as const;
+
+export function servicePrincipalRefused(principal: string | undefined, kind: string): boolean {
+  return principal === "service" && (SERVICE_REFUSED_LIFECYCLE_KINDS as readonly string[]).includes(kind);
+}
 
 export type ClientAuditAction = (typeof CLIENT_AUDIT_ACTIONS)[number];
 
@@ -38,6 +55,8 @@ export const AUDIT_EXPORT_CAP = 2000;
 
 const SECRET_KEY = /token|secret|password|authorization|api[_-]?key|credential/i;
 const SECRET_TEXT = /(?:bearer\s+\S+|ya29\.[A-Za-z0-9._-]+|EAA[A-Za-z0-9]{20,})/i;
+const EMAIL_TEXT = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const PHONE_TEXT = /(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}/g;
 
 export type ClientAuditRow = {
   id: string;
@@ -91,13 +110,14 @@ export type RecLifecycleInput =
   | (LifecycleBase & { kind: "rec_created"; source: string; recommendationId: string })
   | (LifecycleBase & { kind: "approved" | "rejected"; recommendationId: string; at?: string })
   | (LifecycleBase & {
-      kind: "applied";
+      kind: "applied" | "apply_attempt" | "apply_blocked";
       recommendationId: string;
       applyResult: string;
       before: unknown;
       after: unknown;
       at?: string;
     })
+  | (LifecycleBase & { kind: "approve_refused"; recommendationId: string; at?: string })
   | (LifecycleBase & { kind: "mark_done"; recommendationId: string; at?: string })
   | (LifecycleBase & { kind: "rolled_back"; recommendationId: string; at?: string })
   | (LifecycleBase & {
@@ -129,8 +149,16 @@ function stripSecrets(value: unknown): unknown {
     }
     return out;
   }
-  if (typeof value === "string" && SECRET_TEXT.test(value)) return "[redacted]";
+  if (typeof value === "string") return scrubFreeText(value);
   return value;
+}
+
+/** Secret-shaped strings, then emails and phone numbers in free text such as notes. */
+function scrubFreeText(value: string): string {
+  if (SECRET_TEXT.test(value)) return "[redacted]";
+  EMAIL_TEXT.lastIndex = 0;
+  PHONE_TEXT.lastIndex = 0;
+  return value.replace(EMAIL_TEXT, "[redacted]").replace(PHONE_TEXT, "[redacted]");
 }
 
 export function readApproval(value: unknown): RecommendationApproval {
@@ -180,12 +208,16 @@ async function approverName(db: Database, actorId: string | null | undefined, fa
 }
 
 export async function recordRecLifecycle(input: RecLifecycleInput, db: Database = getDb()): Promise<ClientAuditRow> {
+  return db.transaction(async (tx) => recordRecLifecycleOn(input, tx as unknown as Database));
+}
+
+async function recordRecLifecycleOn(input: RecLifecycleInput, db: Database): Promise<ClientAuditRow> {
   const at = "at" in input && input.at ? input.at : new Date().toISOString();
   const storeId = await storeIdFor(db, input.clientId, input.storeId);
   const approver = await approverName(db, input.actorId, input.approver);
 
   const recommendationId = recommendationIdOf(input);
-  if (recommendationId) {
+  if (recommendationId && touchesApproval(input.kind)) {
     const rec = await db.query.recommendations.findFirst({
       where: eq(recommendations.id, recommendationId),
     });
@@ -212,7 +244,11 @@ export async function recordRecLifecycle(input: RecLifecycleInput, db: Database 
     }
     await db
       .update(recommendations)
-      .set({ approvalJson: approval })
+      .set({
+        approvalJson: approval,
+        ...(input.kind === "approved" ? { status: "authorized" } : {}),
+        ...(input.kind === "rejected" ? { status: "denied" } : {}),
+      })
       .where(eq(recommendations.id, rec.id));
   }
 
@@ -236,15 +272,19 @@ export async function recordRecLifecycle(input: RecLifecycleInput, db: Database 
   return toPublic(row);
 }
 
+function touchesApproval(kind: RecLifecycleInput["kind"]): boolean {
+  return kind === "approved" || kind === "rejected" || kind === "applied" || kind === "mark_done" || kind === "rolled_back";
+}
+
 function lifecyclePayload(input: RecLifecycleInput, at: string, approver: string | null): Record<string, unknown> {
   const extra = input.payload ?? {};
   if (input.kind === "rec_created") return { source: input.source, ...extra };
   if (input.kind === "approved" || input.kind === "rejected") {
     return { approver, at, ...extra };
   }
-  if (input.kind === "applied") {
+  if (input.kind === "applied" || input.kind === "apply_attempt" || input.kind === "apply_blocked") {
     return {
-      executed_by: "cerevex_apply",
+      ...(input.kind === "applied" ? { executed_by: "cerevex_apply" } : {}),
       apply_result: input.applyResult,
       before: redactAuditValue(input.before),
       after: redactAuditValue(input.after),
@@ -252,6 +292,7 @@ function lifecyclePayload(input: RecLifecycleInput, at: string, approver: string
       ...extra,
     };
   }
+  if (input.kind === "approve_refused") return { approver, at, ...extra };
   if (input.kind === "mark_done") return { executed_by: "human", at, approver, ...extra };
   if (input.kind === "rolled_back") return { rolled_back_by: approver, at, ...extra };
   if (input.kind === "prompt_layer_approved" || input.kind === "prompt_layer_rolled_back") {
@@ -276,6 +317,9 @@ function recommendationIdOf(input: RecLifecycleInput): string | null {
     case "approved":
     case "rejected":
     case "applied":
+    case "apply_attempt":
+    case "apply_blocked":
+    case "approve_refused":
     case "mark_done":
     case "rolled_back":
       return input.recommendationId;
@@ -289,27 +333,30 @@ export async function insertJobRecommendation(
   meta: { source: string; module?: string; storeId?: string | null; approval?: unknown },
   db: Database = getDb(),
 ) {
-  const approval = sealSkillJobApproval(meta.approval);
-  const [inserted] = await db
-    .insert(recommendations)
-    .values({ ...draft, approvalJson: approval })
-    .returning();
-  await recordRecLifecycle(
-    {
-      kind: "rec_created",
-      recommendationId: inserted.id,
-      workspaceId: inserted.workspaceId,
-      clientId: inserted.clientId,
-      storeId: meta.storeId,
-      module: meta.module ?? "ads",
-      actorType: "worker",
-      entityType: "recommendation",
-      entityId: inserted.id,
-      source: meta.source,
-    },
-    db,
-  );
-  return inserted;
+  return db.transaction(async (tx) => {
+    const database = tx as unknown as Database;
+    const approval = sealSkillJobApproval(meta.approval);
+    const [inserted] = await database
+      .insert(recommendations)
+      .values({ ...draft, approvalJson: approval })
+      .returning();
+    await recordRecLifecycle(
+      {
+        kind: "rec_created",
+        recommendationId: inserted.id,
+        workspaceId: inserted.workspaceId,
+        clientId: inserted.clientId,
+        storeId: meta.storeId,
+        module: meta.module ?? "ads",
+        actorType: "worker",
+        entityType: "recommendation",
+        entityId: inserted.id,
+        source: meta.source,
+      },
+      database,
+    );
+    return inserted;
+  });
 }
 
 export async function setWorkspaceRole(
@@ -326,30 +373,33 @@ export async function setWorkspaceRole(
   });
   if (!existing) throw new Error("Membership not found");
   if (existing.role === input.role) return;
-  await db
-    .update(memberships)
-    .set({ role: input.role })
-    .where(and(eq(memberships.userId, input.userId), eq(memberships.workspaceId, input.workspaceId)));
-  const clientRows = await db.select().from(clients).where(eq(clients.workspaceId, input.workspaceId));
-  for (const client of clientRows) {
-    await recordRecLifecycle(
-      {
-        kind: "role_changed",
-        workspaceId: input.workspaceId,
-        clientId: client.id,
-        storeId: client.siteId,
-        module: "roles",
-        actorType: "user",
-        actorId: input.actorId,
-        entityType: "membership",
-        entityId: input.userId,
-        userId: input.userId,
-        fromRole: existing.role,
-        toRole: input.role,
-      },
-      db,
-    );
-  }
+  await db.transaction(async (tx) => {
+    const database = tx as unknown as Database;
+    await database
+      .update(memberships)
+      .set({ role: input.role })
+      .where(and(eq(memberships.userId, input.userId), eq(memberships.workspaceId, input.workspaceId)));
+    const clientRows = await database.select().from(clients).where(eq(clients.workspaceId, input.workspaceId));
+    for (const client of clientRows) {
+      await recordRecLifecycle(
+        {
+          kind: "role_changed",
+          workspaceId: input.workspaceId,
+          clientId: client.id,
+          storeId: client.siteId,
+          module: "roles",
+          actorType: "user",
+          actorId: input.actorId,
+          entityType: "membership",
+          entityId: input.userId,
+          userId: input.userId,
+          fromRole: existing.role,
+          toRole: input.role,
+        },
+        database,
+      );
+    }
+  });
 }
 
 export function encodeAuditCursor(createdAt: string, id: string): string {

@@ -31,6 +31,11 @@ export type AuthContext = {
   user: SessionUser;
   memberships: Membership[];
   clientMemberships: ClientMembership[];
+  /**
+   * Set only for the ads internal service key. Session auth leaves this unset,
+   * which is a person. Person lifecycle events refuse `service`.
+   */
+  principal?: "user" | "service";
 };
 
 export type ClientSummary = {

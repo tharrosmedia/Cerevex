@@ -6,7 +6,7 @@ Cerevex does not read the box or Drive at runtime. Jobs load `template@version` 
 
 ## Re-sync
 
-One command replaces the vendored trees, rebuilds `generated/manifest.json`, and rebuilds `generated/client-configs.json`.
+One command replaces the vendored trees, runs `manifest` to rebuild `generated/manifest.json`, and runs `import` to rebuild `generated/client-configs.json`. It refuses symlinks in the source tree instead of copying them into `vendor/`.
 
 ```bash
 npm run resync --workspace=@cerevex/skills -- --source /home/box/agent-data/workflows

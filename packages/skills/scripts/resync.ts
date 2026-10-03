@@ -22,6 +22,7 @@ import { SKILLS_PACKAGE_ROOT, SNAPSHOT_PATH, readSnapshot } from "../src/paths";
 import {
   DEFAULT_SKILLS_SOURCE,
   SHARED_REFERENCE_OVERLAY_ROOT,
+  assertNoSymlinks,
   loadSharedReferencePins,
   verifySharedReferencePins,
 } from "../src/shared-reference-pins";
@@ -97,6 +98,12 @@ for (const overlay of overlays) {
   cpSync(overlay.dir, dest, { recursive: true });
 }
 
+assertNoSymlinks(source);
+assertNoSymlinks(SHARED_REFERENCE_OVERLAY_ROOT);
+for (const overlay of overlays) assertNoSymlinks(overlay.dir);
+assertNoSymlinks(stagedReferences);
+assertNoSymlinks(stagedSkills);
+
 const vendor = path.join(SKILLS_PACKAGE_ROOT, "vendor");
 rmSync(path.join(vendor, REFERENCES_DIR_NAME), { recursive: true, force: true });
 rmSync(path.join(vendor, "skills"), { recursive: true, force: true });
@@ -135,8 +142,13 @@ const snapshot = {
 };
 
 writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(snapshot, null, 2)}\n`);
-execFileSync("npm", ["run", "build", "--workspace=@cerevex/skills"], {
-  cwd: path.resolve(SKILLS_PACKAGE_ROOT, "../.."),
+const repoRoot = path.resolve(SKILLS_PACKAGE_ROOT, "../..");
+execFileSync("npm", ["run", "manifest", "--workspace=@cerevex/skills"], {
+  cwd: repoRoot,
+  stdio: "inherit",
+});
+execFileSync("npm", ["run", "import", "--workspace=@cerevex/skills"], {
+  cwd: repoRoot,
   stdio: "inherit",
 });
 rmSync(temp, { recursive: true, force: true });

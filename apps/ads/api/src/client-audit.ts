@@ -9,6 +9,7 @@ import {
   listClientAuditLog,
   readApproval,
   recordRecLifecycle,
+  servicePrincipalRefused,
   setWorkspaceRole,
   streamClientAuditCsv,
   type AuditListQuery,
@@ -110,6 +111,11 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
     if (!client) throw new HTTPException(404, { message: "Client not found" });
     if (!canMutate(auth, client.workspaceId)) {
       throw new HTTPException(403, { message: "Owner or operator role required" });
+    }
+    if (servicePrincipalRefused(auth.principal, parsed.data.kind)) {
+      throw new HTTPException(403, {
+        message: "The service key cannot approve, mark done, roll back, or change the prompt layer.",
+      });
     }
     const personKinds = new Set(["approved", "mark_done", "rolled_back", "prompt_layer_approved", "prompt_layer_rolled_back"]);
     if (personKinds.has(parsed.data.kind) && !canApproveApply(auth.user.email)) {

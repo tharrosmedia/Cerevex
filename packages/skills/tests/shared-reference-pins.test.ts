@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,7 @@ import { REFERENCES_ROOT } from "../src/paths";
 import {
   DEFAULT_SKILLS_SOURCE,
   SHARED_REFERENCE_OVERLAY_ROOT,
+  assertNoSymlinks,
   loadSharedReferencePins,
   sha256File,
   verifySharedReferencePins,
@@ -48,7 +49,22 @@ assert.equal(resync.includes("-04:00"), false);
 assert.match(resync, /snapshotTimestamp/);
 assert.match(resync, /--source/);
 assert.match(resync, /verifySharedReferencePins/);
+assert.match(resync, /assertNoSymlinks/);
+assert.equal(resync.includes('["run", "build"'), false);
+assert.match(resync, /\["run", "manifest"/);
+assert.match(resync, /\["run", "import"/);
 assert.match(resync, new RegExp(DEFAULT_SKILLS_SOURCE.replaceAll("/", "\\/")));
+assert.match(readme, /refuses symlinks/);
+
+const linkRoot = mkdtempSync(path.join(tmpdir(), "cerevex-symlink-"));
+try {
+  writeFileSync(path.join(linkRoot, "real.txt"), "ok");
+  symlinkSync("real.txt", path.join(linkRoot, "link.txt"));
+  assert.throws(() => assertNoSymlinks(linkRoot), /symlink/);
+  assertNoSymlinks(path.join(linkRoot, "real.txt"));
+} finally {
+  rmSync(linkRoot, { recursive: true, force: true });
+}
 assert.match(readme, /--source/);
 assert.match(readme, new RegExp(DEFAULT_SKILLS_SOURCE.replaceAll("/", "\\/")));
 assert.match(readme, /69e3d463c490519ad80603125d872ce5aa29cae20580cb3bb19c4108f73097e9/);

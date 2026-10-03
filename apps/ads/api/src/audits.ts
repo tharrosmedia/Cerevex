@@ -64,6 +64,25 @@ function normalizeDecisionAction(action: "authorize" | "approve" | "deny" | "sno
   return action === "approve" ? "authorize" : action;
 }
 
+async function recordApproveRefusal(
+  row: { id: string; workspaceId: string; clientId: string },
+  actorId: string,
+  reason: string,
+): Promise<void> {
+  await recordRecLifecycle({
+    kind: "approve_refused",
+    recommendationId: row.id,
+    workspaceId: row.workspaceId,
+    clientId: row.clientId,
+    module: "ads",
+    actorType: "user",
+    actorId,
+    entityType: "recommendation",
+    entityId: row.id,
+    payload: { reason },
+  });
+}
+
 export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHandler<AppEnv>) {
   app.post("/clients/:id/audits", requireAuth, async (c) => {
     const parsed = startAuditSchema.safeParse(await c.req.json().catch(() => ({})));
@@ -286,19 +305,22 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
     if (parsed.data.action === "mark_done" || parsed.data.action === "rollback") {
       const auth = c.get("auth");
+      const row = await getRecommendation(c.req.param("id"));
+      if (!row) throw new HTTPException(404, { message: "Recommendation not found" });
       if (!canApproveApply(auth.user.email)) {
+        await recordApproveRefusal(row, auth.user.id, "allowlist");
         throw new HTTPException(403, {
           message: "Approve is limited to the Adam allowlist during soft-launch.",
         });
       }
-      const row = await getRecommendation(c.req.param("id"));
-      if (!row) throw new HTTPException(404, { message: "Recommendation not found" });
       const client = await requireMutableClient(auth, row.clientId);
       const approval = readApproval(row.approvalJson);
       if (parsed.data.action === "mark_done" && approval.status !== "approved") {
+        await recordApproveRefusal(row, auth.user.id, "mark_done_before_approve");
         throw new HTTPException(409, { message: "Approve this recommendation before marking it done." });
       }
       if (parsed.data.action === "rollback" && !approval.executed_at) {
+        await recordApproveRefusal(row, auth.user.id, "rollback_before_execute");
         throw new HTTPException(409, { message: "Nothing has been applied yet, so there is nothing to roll back." });
       }
       await recordRecLifecycle({
@@ -333,11 +355,13 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     if (action === "authorize") {
       if (!canApproveApply(auth.user.email)) {
+        await recordApproveRefusal(row, auth.user.id, "allowlist");
         throw new HTTPException(403, {
           message: "Approve is limited to the Adam allowlist during soft-launch.",
         });
       }
       if (row.status !== "proposed") {
+        await recordApproveRefusal(row, auth.user.id, "not_open");
         throw new HTTPException(409, { message: "This recommendation is no longer open." });
       }
       const workspace = await db.query.workspaces.findFirst({
@@ -347,9 +371,11 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         where: eq(adAccounts.id, row.adAccountId),
       });
       if (workspace?.applyKillSwitch) {
+        await recordApproveRefusal(row, auth.user.id, "apply_kill_switch");
         throw new HTTPException(409, { message: applyBlockMessage("apply_kill_switch") });
       }
       if (account?.frozen) {
+        await recordApproveRefusal(row, auth.user.id, "account_frozen");
         throw new HTTPException(409, { message: applyBlockMessage("account_frozen") });
       }
     }
@@ -475,6 +501,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
     const auth = c.get("auth");
     if (!canApproveApply(auth.user.email)) {
+      await recordApproveRefusal(row, auth.user.id, "allowlist");
       throw new HTTPException(403, {
         message: "Apply is limited to the Adam allowlist during soft-launch.",
       });
@@ -496,6 +523,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     });
 
     if (!gate.allowed) {
+      await recordApproveRefusal(row, auth.user.id, gate.blocked ?? "apply_blocked");
       throw new HTTPException(409, {
         message: applyBlockMessage(gate.blocked),
       });

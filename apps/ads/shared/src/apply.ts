@@ -16,7 +16,7 @@ import { getDefaultSiteConnector } from "./connectors/site";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { parseApplyMutations } from "./audit-schemas";
-import { getDb } from "./db";
+import { getDb, type Database } from "./db";
 import { executeMutation, type MutationOutcome } from "./mutate";
 import {
   inferApplyJobType,
@@ -94,52 +94,100 @@ export type ApplyRunResult = {
 };
 
 export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
-  const result = await runApplyJobUnlogged(applyJobId);
-  if (result.fresh !== false) {
-    await recordApplyLifecycle(applyJobId, result);
-  }
-  return result;
+  return runApplyJobUnlogged(applyJobId);
 }
 
-async function recordApplyLifecycle(applyJobId: string, result: ApplyRunResult): Promise<void> {
+type AuditRecommendation = {
+  id: string;
+  workspaceId: string;
+  clientId: string;
+  proposedMutationsJson: unknown;
+};
+
+/**
+ * Job status and the client audit row commit together.
+ * `apply_attempt` is the pre-platform intent. `applied` is only a real write.
+ * A blocked run records `apply_blocked` and leaves executed_* unset.
+ */
+async function settleApplyJob(input: {
+  jobId: string;
+  attempts?: number;
+  status: string;
+  error: string | null;
+  responseJson: Record<string, unknown>;
+  recommendation: AuditRecommendation | null;
+  writes: boolean;
+  blocked: string | null;
+  outcomes: MutationOutcome[];
+  auditKind: "apply_attempt" | "applied" | "apply_blocked" | null;
+  finished: boolean;
+}): Promise<typeof applyJobs.$inferSelect | undefined> {
   const db = getDb();
-  const job = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
-  if (!job) return;
-  const authorization = await db.query.authorizations.findFirst({
-    where: eq(authorizations.id, job.authorizationId),
+  return db.transaction(async (tx) => {
+    const database = tx as unknown as Database;
+    const [row] = await database
+      .update(applyJobs)
+      .set({
+        status: input.status,
+        error: input.error,
+        responseJson: input.responseJson,
+        ...(input.attempts == null ? {} : { attempts: input.attempts }),
+        ...(input.finished ? { finishedAt: new Date() } : {}),
+      })
+      .where(eq(applyJobs.id, input.jobId))
+      .returning();
+    if (input.auditKind && input.recommendation) {
+      const applyResult =
+        input.auditKind === "apply_attempt"
+          ? `attempt:${input.jobId}`
+          : input.blocked
+            ? `error:${input.blocked}`
+            : input.error
+              ? `error:${input.error}`
+              : input.status === "succeeded"
+                ? `success:${input.jobId}`
+                : `error:${input.status}`;
+      await recordRecLifecycle(
+        {
+          kind: input.auditKind,
+          recommendationId: input.recommendation.id,
+          workspaceId: input.recommendation.workspaceId,
+          clientId: input.recommendation.clientId,
+          module: "ads",
+          actorType: "worker",
+          actorId: null,
+          entityType: "recommendation",
+          entityId: input.recommendation.id,
+          applyResult,
+          before: input.recommendation.proposedMutationsJson,
+          after: {
+            status: input.status,
+            writes: input.writes,
+            blocked: input.blocked,
+            outcomes: input.outcomes,
+            response: input.responseJson,
+          },
+        },
+        database,
+      );
+    }
+    return row;
   });
-  if (!authorization) return;
-  const recommendation = await db.query.recommendations.findFirst({
-    where: eq(recommendations.id, authorization.recommendationId),
-  });
-  if (!recommendation) return;
-  const applyResult = result.blocked
-    ? `error:${result.blocked}`
-    : result.applyJob.error
-      ? `error:${result.applyJob.error}`
-      : result.applyJob.status === "succeeded"
-        ? `success:${result.applyJob.id}`
-        : `error:${result.applyJob.status}`;
-  await recordRecLifecycle({
-    kind: "applied",
-    recommendationId: recommendation.id,
-    workspaceId: recommendation.workspaceId,
-    clientId: recommendation.clientId,
-    module: "ads",
-    actorType: "worker",
-    actorId: null,
-    entityType: "recommendation",
-    entityId: recommendation.id,
-    applyResult,
-    before: recommendation.proposedMutationsJson,
-    after: {
-      status: result.applyJob.status,
-      writes: result.writes,
-      blocked: result.blocked,
-      outcomes: result.outcomes,
-      response: result.applyJob.response,
-    },
-  });
+}
+
+function settledResult(
+  job: typeof applyJobs.$inferSelect,
+  settled: typeof applyJobs.$inferSelect | undefined,
+  outcomes: MutationOutcome[],
+  writes: boolean,
+  blocked: string | null,
+): ApplyRunResult {
+  return {
+    applyJob: toApplyJobPublic(settled ?? job),
+    outcomes,
+    writes,
+    blocked,
+  };
 }
 
 async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> {
@@ -167,11 +215,12 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
   const authorization = await db.query.authorizations.findFirst({
     where: eq(authorizations.id, job.authorizationId),
   });
-  const recommendation = authorization
-    ? await db.query.recommendations.findFirst({
-        where: eq(recommendations.id, authorization.recommendationId),
-      })
-    : null;
+  const recommendation =
+    (authorization
+      ? await db.query.recommendations.findFirst({
+          where: eq(recommendations.id, authorization.recommendationId),
+        })
+      : null) ?? null;
   const account = recommendation
     ? await db.query.adAccounts.findFirst({
         where: eq(adAccounts.id, recommendation.adAccountId),
@@ -185,45 +234,47 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
     account,
   });
 
-  await db
-    .update(applyJobs)
-    .set({
-      status: gate.allowed ? "applying" : "failed",
-      attempts: job.attempts + 1,
-      error: gate.allowed ? null : gate.blocked,
-    })
-    .where(eq(applyJobs.id, job.id));
+  const attempts = job.attempts + 1;
+  const finishBlocked = async (
+    blocked: string,
+    response: object,
+    status: "failed" | "succeeded" = "succeeded",
+  ): Promise<ApplyRunResult> => {
+    const settled = await settleApplyJob({
+      jobId: job.id,
+      attempts,
+      status,
+      error: status === "failed" ? blocked : null,
+      responseJson: response as Record<string, unknown>,
+      recommendation,
+      writes: false,
+      blocked,
+      outcomes: [],
+      auditKind: "apply_blocked",
+      finished: true,
+    });
+    return settledResult(job, settled, [], false, blocked);
+  };
 
   if (!gate.allowed) {
     const response = { ...gate, outcomes: [], writes: false };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "failed",
-        error: gate.blocked,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: gate.blocked,
-    };
+    return finishBlocked(gate.blocked, response, "failed");
   }
 
   if (!recommendation || !account) {
-    await db
-      .update(applyJobs)
-      .set({
-        status: "failed",
-        error: "recommendation_or_account_missing",
-        finishedAt: new Date(),
-        responseJson: { writes: false, outcomes: [] },
-      })
-      .where(eq(applyJobs.id, job.id));
+    await settleApplyJob({
+      jobId: job.id,
+      attempts,
+      status: "failed",
+      error: "recommendation_or_account_missing",
+      responseJson: { writes: false, outcomes: [] },
+      recommendation,
+      writes: false,
+      blocked: "recommendation_or_account_missing",
+      outcomes: [],
+      auditKind: recommendation ? "apply_blocked" : null,
+      finished: true,
+    });
     throw new Error("Recommendation or ad account missing for apply job");
   }
 
@@ -239,22 +290,7 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
       jobType,
       mode: "mock",
     };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: "capability_apply",
-    };
+    return finishBlocked("capability_apply", response);
   }
 
   const crmBlocked = crmWriteBlockedReason(recommendation.type);
@@ -268,22 +304,7 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
       reason: "Lead lifecycle is recommend-only. CRM apply later — nothing writes Housecall Pro.",
       crmWrite: "later",
     };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: crmBlocked,
-    };
+    return finishBlocked(crmBlocked, response);
   }
 
   const bookedJobBlocked = bookedJobSignalWriteBlockedReason(capabilities, recommendation.type);
@@ -296,22 +317,7 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
       mode: "mock",
       reason: "Booked-job signal is recommend-only or off. No platform write.",
     };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: bookedJobBlocked,
-    };
+    return finishBlocked(bookedJobBlocked, response);
   }
 
   const siteBlocked = siteApplyBlockedReason(getDefaultSiteConnector(), recommendation.type);
@@ -325,22 +331,7 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
       reason: "LP intelligence is recommend-only. Site apply later — nothing writes the website.",
       siteApply: "later",
     };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: siteBlocked,
-    };
+    return finishBlocked(siteBlocked, response);
   }
 
   const hygieneBlocks: Array<{ blocked: string | null; reason: string }> = [
@@ -379,22 +370,7 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
       mode: "mock",
       reason: row.reason,
     };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: row.blocked,
-    };
+    return finishBlocked(row.blocked, response);
   }
 
   const budgetShiftBlocked = budgetShiftWriteBlockedReason(capabilities, recommendation.type);
@@ -407,22 +383,7 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
       mode: "mock",
       reason: "Budget shift is recommend-only or off. No platform write.",
     };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: budgetShiftBlocked,
-    };
+    return finishBlocked(budgetShiftBlocked, response);
   }
 
   if (isSealedCreateEntityJob(jobType) && !isCapabilityOn("apply.create_entity", capabilities)) {
@@ -435,23 +396,22 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
       mode: "mock",
       reason: sealed,
     };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: "create_entity_sealed",
-    };
+    return finishBlocked("create_entity_sealed", response);
   }
+
+  await settleApplyJob({
+    jobId: job.id,
+    attempts,
+    status: "applying",
+    error: null,
+    responseJson: { writes: false, outcomes: [], phase: "attempt" },
+    recommendation,
+    writes: false,
+    blocked: null,
+    outcomes: [],
+    auditKind: "apply_attempt",
+    finished: false,
+  });
 
   const mutations = parseApplyMutations(recommendation.proposedMutationsJson);
   const outcomes: MutationOutcome[] = [];
@@ -511,21 +471,17 @@ async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> 
     jobType,
   };
 
-  await db
-    .update(applyJobs)
-    .set({
-      status,
-      error: failed,
-      finishedAt: new Date(),
-      responseJson: response,
-    })
-    .where(eq(applyJobs.id, job.id));
-
-  const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-  return {
-    applyJob: toApplyJobPublic(updated ?? { ...job, status, error: failed, responseJson: response }),
-    outcomes,
+  const settled = await settleApplyJob({
+    jobId: job.id,
+    status,
+    error: failed,
+    responseJson: response,
+    recommendation,
     writes,
-    blocked: null,
-  };
+    blocked: writes ? null : failed,
+    outcomes,
+    auditKind: writes ? "applied" : "apply_blocked",
+    finished: true,
+  });
+  return settledResult(job, settled, outcomes, writes, writes ? null : failed);
 }

@@ -1,4 +1,8 @@
 import { inngest } from '../../../src/inngest/client';
+<<<<<<< HEAD
+=======
+import { authorizeApproveSession, credentialsFrom, gateJson } from '@/lib/sensitive-auth';
+>>>>>>> 7a657ee (Close the audit-log forgery and immutability gaps in skills PR 2.)
 
 export async function POST(request: Request) {
   const body = await request.json();

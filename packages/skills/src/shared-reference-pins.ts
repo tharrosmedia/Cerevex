@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { SKILLS_PACKAGE_ROOT } from "./paths";
 
@@ -59,4 +59,24 @@ export function verifySharedReferencePins(root: string, pins: SharedReferencePin
       "Refusing to replace vendor/. The accepted files stay in place.",
     ].join("\n"),
   );
+}
+
+/** Re-sync copies bytes, not links. A symlink would vendor a path outside the tree. */
+export function assertNoSymlinks(root: string): void {
+  const walk = (current: string) => {
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch {
+      return;
+    }
+    if (stat.isSymbolicLink()) {
+      throw new Error(
+        `Refusing to copy symlink ${current}. Re-sync does not follow or vendor links, and vendor/ stays as it is.`,
+      );
+    }
+    if (!stat.isDirectory()) return;
+    for (const name of readdirSync(current)) walk(path.join(current, name));
+  };
+  walk(root);
 }

@@ -111,7 +111,9 @@ export async function loadInternalOperatorAuth(): Promise<AuthContext | null> {
     .where(eq(memberships.role, "owner"))
     .limit(1);
   if (!row) return null;
-  return loadAuthContext(row.userId);
+  const auth = await loadAuthContext(row.userId);
+  if (!auth) return null;
+  return { ...auth, principal: "service" };
 }
 
 export { and, eq };

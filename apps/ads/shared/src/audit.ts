@@ -9,7 +9,7 @@ import { readWorkspaceCapabilities } from "./capabilities";
 import type { CallRecord } from "./attribution";
 import { readConnectorSettings, resolveCallTrackingForClient } from "./connector-settings";
 import { seasonalityFromSettings } from "./seasonality-calendar";
-import { getDb } from "./db";
+import { getDb, type Database } from "./db";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
 import { inferApplyJobType } from "./mutation-families";
 import {
@@ -490,6 +490,18 @@ export async function decideRecommendation(input: {
   note?: string;
 }): Promise<{ recommendation: RecommendationPublic; authorization: AuthorizationPublic | null }> {
   const db = getDb();
+  return db.transaction(async (tx) => decideRecommendationOn(input, tx as unknown as Database));
+}
+
+async function decideRecommendationOn(
+  input: {
+    recommendationId: string;
+    userId: string;
+    action: DecisionAction;
+    note?: string;
+  },
+  db: Database,
+): Promise<{ recommendation: RecommendationPublic; authorization: AuthorizationPublic | null }> {
   const row = await db.query.recommendations.findFirst({
     where: eq(recommendations.id, input.recommendationId),
   });
