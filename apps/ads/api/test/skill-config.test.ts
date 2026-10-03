@@ -181,38 +181,41 @@ describe("skill config import", () => {
         passwordHash: "not-a-real-hash",
       })
       .returning();
-    const existingOther = await db.query.workspaces.findFirst({
-      where: eq(workspaces.name, "Skill Config Fixture Agency"),
-    });
-    const [insertedWorkspace] = existingOther
-      ? []
-      : await db
-          .insert(workspaces)
-          .values({ name: "Skill Config Fixture Agency", applyKillSwitch: true })
-          .returning();
-    const otherWorkspace = existingOther ?? insertedWorkspace;
-    if (!otherUser || !otherWorkspace) throw new Error("Failed to insert the other owner");
+    if (!otherUser) throw new Error("Failed to insert the other owner");
 
     const previousUserId = process.env.APPROVAL_OWNER_USER_ID;
     try {
-      await db.insert(memberships).values({
-        userId: otherUser.id,
-        workspaceId: otherWorkspace.id,
-        role: "owner",
-      });
-      const bound = await importSkillConfigBundle(db, importProfiles());
-      expect(bound.approvalOwnerUserId).toBe(adam.userId);
-      expect(bound.approvalOwnerUserId).not.toBe(otherUser.id);
+      await expect(
+        db.transaction(async (tx) => {
+          const [otherWorkspace] = await tx
+            .insert(workspaces)
+            .values({ name: "Skill Config Fixture Agency", applyKillSwitch: true })
+            .returning();
+          if (!otherWorkspace) throw new Error("Failed to insert the fixture workspace");
+          await tx.insert(memberships).values({
+            userId: otherUser.id,
+            workspaceId: otherWorkspace.id,
+            role: "owner",
+          });
+          const bound = await importSkillConfigBundle(tx as unknown as typeof db, importProfiles());
+          expect(bound.approvalOwnerUserId).toBe(adam.userId);
+          expect(bound.approvalOwnerUserId).not.toBe(otherUser.id);
+          throw new Error("rollback fixture workspace");
+        }),
+      ).rejects.toThrow("rollback fixture workspace");
 
       await db
         .update(memberships)
         .set({ role: "operator" })
         .where(and(eq(memberships.userId, adam.userId), eq(memberships.workspaceId, workspace.id)));
-      await db.insert(memberships).values({
-        userId: otherUser.id,
-        workspaceId: workspace.id,
-        role: "owner",
-      });
+      await db
+        .insert(memberships)
+        .values({
+          userId: otherUser.id,
+          workspaceId: workspace.id,
+          role: "owner",
+        })
+        .onConflictDoNothing();
       await expect(importSkillConfigBundle(db, importProfiles())).rejects.toThrow(
         /Refusing to bind another workspace owner/,
       );
