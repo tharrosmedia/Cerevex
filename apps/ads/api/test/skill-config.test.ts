@@ -36,6 +36,23 @@ describe("skill config import", () => {
     expect(() => assertLocalDatabase("postgres://u:p@[::1]/cerevex", env)).not.toThrow();
     expect(() => assertLocalDatabase("postgres://u:p@LOCALHOST/cerevex", env)).not.toThrow();
     expect(() => assertLocalDatabase("postgres://tharros:tharros@127.0.0.1:54329/tharros", env)).not.toThrow();
+    const remote = "postgres://u:p@ep-other.neon.tech/cerevex";
+    expect(() => assertLocalDatabase(remote, { ALLOW_NONLOCAL_TEST_DB: "1" })).toThrow(/PRODUCTION_NEON_HOST/);
+    expect(() =>
+      assertLocalDatabase(remote, {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_NEON_HOST: "ep-prod.neon.tech",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertLocalDatabase("postgres://u:p@ep-prod.neon.tech/cerevex", {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_NEON_HOST: "ep-prod.neon.tech",
+      }),
+    ).toThrow(/production Neon host/);
+    expect(() => assertLocalDatabase("postgres://u:p@ep-name-branch.neon.tech/neondb", env)).toThrow(
+      /PRODUCTION_NEON_HOST/,
+    );
   });
 
   it("links by alias, including a row named KC Prestige HVAC", () => {
@@ -234,6 +251,21 @@ describe("skill config import", () => {
         .where(and(eq(memberships.userId, otherUser.id), eq(memberships.workspaceId, workspace.id)));
 
       process.env.APPROVAL_OWNER_USER_ID = otherUser.id;
+      await expect(importSkillConfigBundle(db, importProfiles())).rejects.toThrow(/not an owner of workspace/);
+      const refused = await db
+        .select({ approvalOwnerUserId: skillClientConfigs.approvalOwnerUserId })
+        .from(skillClientConfigs)
+        .where(eq(skillClientConfigs.slug, "got-ductless"));
+      expect(refused[0]?.approvalOwnerUserId).toBe(adam.userId);
+
+      await db
+        .insert(memberships)
+        .values({
+          userId: otherUser.id,
+          workspaceId: workspace.id,
+          role: "owner",
+        })
+        .onConflictDoNothing();
       const explicit = await importSkillConfigBundle(db, importProfiles());
       expect(explicit.approvalOwnerUserId).toBe(otherUser.id);
 
@@ -252,6 +284,32 @@ describe("skill config import", () => {
       if (previousUserId !== undefined) process.env.APPROVAL_OWNER_USER_ID = previousUserId;
       await importSkillConfigBundle(db, importProfiles());
     }
+  });
+
+  it("rolls back the first client when the last client fails, and refreshes imported_at", async () => {
+    const db = getDb();
+    await importSkillConfigBundle(db, importProfiles());
+    const stale = new Date("2020-01-01T00:00:00.000Z");
+    await db.update(skillClientConfigs).set({ importedAt: stale }).where(eq(skillClientConfigs.slug, "hvac-usa"));
+
+    const bundle = importProfiles();
+    const last = bundle.clients[bundle.clients.length - 1];
+    if (!last || last.slug === "hvac-usa") throw new Error("Expected a later client than HVAC USA");
+    (last as { loop?: unknown }).loop = last;
+    await expect(importSkillConfigBundle(db, bundle)).rejects.toThrow(/circular/i);
+
+    const [rolledBack] = await db
+      .select({ importedAt: skillClientConfigs.importedAt })
+      .from(skillClientConfigs)
+      .where(eq(skillClientConfigs.slug, "hvac-usa"));
+    expect(rolledBack?.importedAt.toISOString()).toBe(stale.toISOString());
+
+    await importSkillConfigBundle(db, importProfiles());
+    const [fresh] = await db
+      .select({ importedAt: skillClientConfigs.importedAt })
+      .from(skillClientConfigs)
+      .where(eq(skillClientConfigs.slug, "hvac-usa"));
+    expect(fresh?.importedAt.getTime()).toBeGreaterThan(stale.getTime());
   });
 
   it("rolls back the store delete when the reinsert fails", async () => {

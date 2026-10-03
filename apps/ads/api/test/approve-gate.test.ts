@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
-import { memberships, users } from "@tharros/ads-shared/schema";
+import { memberships, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
 loadEnv();
@@ -26,7 +26,9 @@ describe("M5 Adam-only Approve + freeze", () => {
     ).token;
 
     const db = getDb();
-    const workspace = await db.query.workspaces.findFirst();
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.name, "Tharros Media"),
+    });
     if (!workspace) throw new Error("workspace missing");
     const email = "operator@tharrosmedia.com";
     const passwordHash = await hash("operator-local-only", 10);
