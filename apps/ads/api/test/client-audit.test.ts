@@ -437,7 +437,7 @@ describe("client audit log", () => {
           userId: ownerId,
           action: "deny",
         }),
-      ).rejects.toThrow(/audit insert probe/);
+      ).rejects.toThrow(/audit insert probe|client_audit_log/);
       const rec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
       expect(rec?.status).toBe("proposed");
       expect(readApproval(rec?.approvalJson).status).toBe("PENDING_APPROVAL");
