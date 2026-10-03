@@ -140,7 +140,7 @@ The runner:
 3. Records each file in `os.__drizzle_migrations` (`hash` + `created_at`, same shape as Drizzle)
 4. Prints JSON: `ok`, `migrationsApplied`, `osTables[]`, `publicTableCount`, `publicUnchanged`
 
-The bundle and sibling SQL files cover every current journal tag, `0000` through `0005`. That still does not make this a production migrate.
+The bundle and sibling SQL files cover every current journal tag, `0000` through `0006`. That still does not make this a production migrate.
 
 Drizzle SQL under `apps/ads/shared/drizzle/` is schema-qualified to **`os`** (`CREATE TYPE "os".…`, `CREATE TABLE "os".…`).
 
