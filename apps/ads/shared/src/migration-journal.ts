@@ -96,9 +96,51 @@ export function migrationSqlHash(sql: string): string {
 }
 
 export type AppliedMigration = {
-  hash: string;
+  hash: string | null;
   createdAt: number;
 };
+
+function journalHashes(migrationsFolder: string, entries: JournalEntry[]): Array<JournalEntry & { hash: string }> {
+  return entries.map((entry) => ({
+    ...entry,
+    hash: migrationSqlHash(readFileSync(join(migrationsFolder, `${entry.tag}.sql`), "utf8")),
+  }));
+}
+
+function foundHash(applied: AppliedMigration[], createdAt: number): string {
+  const row = applied.find((candidate) => candidate.createdAt === createdAt);
+  if (!row) return "<none>";
+  return String(row.hash ?? "<null>");
+}
+
+/**
+ * Before Drizzle migrate. Drizzle commits a migration newer than the latest
+ * applied `created_at` and skips an older one. An older journal entry with no
+ * ledger row has to fail first, or that newer migration is already committed.
+ */
+export function assertNoSkippedBeforeMigrate(
+  migrationsFolder: string,
+  entries: JournalEntry[],
+  applied: AppliedMigration[],
+): void {
+  if (applied.length === 0) return;
+  let maxCreated = Number.NEGATIVE_INFINITY;
+  for (const row of applied) {
+    if (Number.isFinite(row.createdAt) && row.createdAt > maxCreated) maxCreated = row.createdAt;
+  }
+  if (!Number.isFinite(maxCreated)) return;
+  const problems: string[] = [];
+  for (const entry of journalHashes(migrationsFolder, entries)) {
+    if (entry.when > maxCreated) continue;
+    const match = applied.some((row) => row.hash === entry.hash && row.createdAt === entry.when);
+    if (!match) {
+      problems.push(
+        `Refusing to migrate. ${entry.tag} (when ${entry.when}) is at or below the latest applied created_at ${maxCreated} and has no matching row in ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}. Expected hash ${entry.hash}. Found hash ${foundHash(applied, entry.when)}.`,
+      );
+    }
+  }
+  if (problems.length > 0) throw new MigrationJournalError(problems.join(" "));
+}
 
 /**
  * After Drizzle migrate: every journal entry has a row with the same hash and
@@ -109,16 +151,13 @@ export function assertMigrationsApplied(
   entries: JournalEntry[],
   applied: AppliedMigration[],
 ): void {
-  const expected = entries.map((entry) => ({
-    ...entry,
-    hash: migrationSqlHash(readFileSync(join(migrationsFolder, `${entry.tag}.sql`), "utf8")),
-  }));
+  const expected = journalHashes(migrationsFolder, entries);
   const problems: string[] = [];
   for (const entry of expected) {
     const match = applied.some((row) => row.hash === entry.hash && row.createdAt === entry.when);
     if (!match) {
       problems.push(
-        `Unapplied or out-of-order migration ${entry.tag} (when ${entry.when}) has no matching row in ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}.`,
+        `Unapplied or out-of-order migration ${entry.tag} (when ${entry.when}) has no matching row in ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}. Expected hash ${entry.hash}. Found hash ${foundHash(applied, entry.when)}.`,
       );
     }
   }
@@ -126,7 +165,7 @@ export function assertMigrationsApplied(
     const match = expected.some((entry) => entry.hash === row.hash && entry.when === row.createdAt);
     if (!match) {
       problems.push(
-        `Applied migration created_at ${row.createdAt} hash ${row.hash.slice(0, 12)} is not in the journal.`,
+        `Applied migration created_at ${row.createdAt} hash ${String(row.hash ?? "<null>").slice(0, 12)} is not in the journal.`,
       );
     }
   }

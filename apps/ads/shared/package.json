@@ -43,6 +43,7 @@
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",
+    "ledger": "tsx src/query-migration-ledger.ts",
     "seed": "tsx --conditions=react-server src/seed.ts",
     "import:skill-config": "tsx --conditions=react-server src/skill-config-import-cli.ts",
     "drizzle:generate": "drizzle-kit generate",
