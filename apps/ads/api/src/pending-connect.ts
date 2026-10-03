@@ -10,6 +10,7 @@ import { sendAdAccountSync } from "@tharros/ads-shared/inngest";
 import { GOOGLE_SCOPES, META_SCOPES } from "@tharros/ads-shared/oauth";
 import { adAccounts, oauthPendingConnections } from "@tharros/ads-shared/schema";
 import { precheckCanActivateAdAccounts } from "@tharros/ads-shared/entitlements";
+import { actorRef } from "./auth";
 import { requireMutableClient, upsertConnectedAccount } from "./connect";
 import type { AppEnv } from "./types";
 
@@ -131,7 +132,7 @@ export function registerPendingConnectRoutes(app: Hono<AppEnv>, requireAuth: Mid
       workspaceId: client.workspaceId,
       clientId: client.id,
       platform: pending.row.platform,
-      requestedBy: auth.user.id,
+      requestedBy: actorRef(auth),
       tokens: pending.payload.tokens,
       accounts: chosen,
     });

@@ -14,6 +14,7 @@ import {
 import { clarityAnalyticsConnector, getDefaultSiteConnector } from "@tharros/ads-shared/connectors";
 import { siteApplyMode } from "@tharros/ads-shared/lp-intelligence";
 import { loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
+import { auditActor } from "./auth";
 import { requireMutableClient } from "./connect";
 import { childLogger } from "./logger";
 import { getVisibleClient } from "./tenancy";
@@ -97,8 +98,7 @@ export function registerLpIntelligenceRoutes(app: Hono<AppEnv>, requireAuth: Mid
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "clarity_connect",
       entityType: "client",
       entityId: client.id,
@@ -132,8 +132,7 @@ export function registerLpIntelligenceRoutes(app: Hono<AppEnv>, requireAuth: Mid
     await clarityAnalyticsConnector.disconnect({ workspaceId: client.workspaceId, clientId: client.id });
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "clarity_disconnect",
       entityType: "client",
       entityId: client.id,
@@ -184,8 +183,7 @@ export function registerLpIntelligenceRoutes(app: Hono<AppEnv>, requireAuth: Mid
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "clarity_pull",
       entityType: "client",
       entityId: client.id,
