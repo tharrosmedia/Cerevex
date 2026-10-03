@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens, storeTokens, tokenNearExpiry } from "./credentials";
@@ -9,9 +9,26 @@ export type SyncResult = {
   adAccountId: string;
   mode: "mock" | "live";
   entityCount: number;
-  status: "connected" | "error";
+  status: "connected" | "error" | "skipped";
   lastError: string | null;
 };
+
+/** Audit label for a finished sync. A disconnected account is a no-op, not a failure. */
+export function syncJobAuditAction(status: SyncResult["status"]): "jobs.sync_failed" | "jobs.sync_skipped" | "jobs.sync_complete" {
+  if (status === "error") return "jobs.sync_failed";
+  if (status === "skipped") return "jobs.sync_skipped";
+  return "jobs.sync_complete";
+}
+
+function skippedSync(adAccountId: string): SyncResult {
+  return {
+    adAccountId,
+    mode: "mock",
+    entityCount: 0,
+    status: "skipped",
+    lastError: null,
+  };
+}
 
 export async function runAdAccountSync(adAccountId: string): Promise<SyncResult> {
   const db = getDb();
@@ -21,11 +38,17 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
   if (!account) {
     throw new Error("Ad account not found");
   }
+  if (account.connectionStatus === "disconnected") {
+    return skippedSync(adAccountId);
+  }
 
-  await db
+  const stillSyncing = and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected"));
+  const [markedSyncing] = await db
     .update(adAccounts)
     .set({ connectionStatus: "syncing", lastError: null })
-    .where(eq(adAccounts.id, adAccountId));
+    .where(stillSyncing)
+    .returning({ id: adAccounts.id });
+  if (!markedSyncing) return skippedSync(adAccountId);
 
   try {
     const client = await db.query.clients.findFirst({
@@ -62,6 +85,13 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
       clientName: client?.name ?? "Pilot",
       allowLive: connector.isLiveAllowed(tokens, capabilities),
     });
+
+    const current = await db.query.adAccounts.findFirst({
+      where: eq(adAccounts.id, adAccountId),
+    });
+    if (!current || current.connectionStatus === "disconnected") {
+      return skippedSync(adAccountId);
+    }
 
     await db.delete(adEntities).where(eq(adEntities.adAccountId, adAccountId));
 
@@ -104,7 +134,7 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
       });
     }
 
-    await db
+    const [connected] = await db
       .update(adAccounts)
       .set({
         connectionStatus: "connected",
@@ -112,7 +142,9 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
         lastError: null,
         externalId: pulled.externalAccountId,
       })
-      .where(eq(adAccounts.id, adAccountId));
+      .where(and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected")))
+      .returning({ id: adAccounts.id });
+    if (!connected) return skippedSync(adAccountId);
 
     return {
       adAccountId,
@@ -123,13 +155,15 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";
-    await db
+    const [errored] = await db
       .update(adAccounts)
       .set({
         connectionStatus: "error",
         lastError: message,
       })
-      .where(and(eq(adAccounts.id, adAccountId)));
+      .where(and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected")))
+      .returning({ id: adAccounts.id });
+    if (!errored) return skippedSync(adAccountId);
     return {
       adAccountId,
       mode: "mock",

@@ -2,7 +2,7 @@ import { pullGoogleAdAccount } from "@cerevex/jobs-ads-google/pull";
 import { pullMetaAdAccount } from "@cerevex/jobs-ads-meta/pull";
 import { runApplyJob } from "@tharros/ads-shared/apply";
 import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
-import { runAdAccountSync } from "@tharros/ads-shared/sync";
+import { runAdAccountSync, syncJobAuditAction } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
 
 /**
@@ -122,7 +122,7 @@ export async function handleAccountSync({ event, step }: any) {
     await writeInngestAudit({
       workspaceId: event.data.workspaceId,
       actorId: event.data.requestedBy,
-      action: result.status === "error" ? "jobs.sync_failed" : "jobs.sync_complete",
+      action: syncJobAuditAction(result.status),
       payload: {
         event: event.name,
         clientId: event.data.clientId,

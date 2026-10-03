@@ -7,7 +7,7 @@ import { canMutate, workspaceIdsFor, type AuthContext } from "@tharros/ads-share
 import { getDb } from "@tharros/ads-shared/db";
 import { clients } from "@tharros/ads-shared/schema";
 import { requireMutableClient } from "./connect";
-import { activateStore, deactivateStore } from "@tharros/ads-shared/entitlements";
+import { activateStore, assignClientSite } from "@tharros/ads-shared/entitlements";
 import { writeAuditEvent } from "@tharros/ads-shared/audit";
 import type { AppEnv } from "./types";
 
@@ -80,8 +80,7 @@ export async function ensureSiteClient(auth: AuthContext, siteId: string, name: 
     ),
   });
   if (sameName) {
-    await activateStore(sameName.id, siteId, { replacingStoreId: sameName.siteId });
-    const [adopted] = await db.update(clients).set({ siteId }).where(eq(clients.id, sameName.id)).returning();
+    const adopted = await assignClientSite(sameName.id, siteId);
     await writeAuditEvent({
       workspaceId,
       actorType: "user",
@@ -142,15 +141,8 @@ export function registerSiteRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHan
       if (other && other.id !== client.id) {
         throw new HTTPException(409, { message: `That site is already linked to ${other.name}.` });
       }
-      await activateStore(client.id, parsed.data.siteId, { replacingStoreId: client.siteId });
-    } else if (client.siteId) {
-      await deactivateStore(client.id, client.siteId);
     }
-    const [row] = await db
-      .update(clients)
-      .set({ siteId: parsed.data.siteId })
-      .where(eq(clients.id, client.id))
-      .returning();
+    const row = await assignClientSite(client.id, parsed.data.siteId);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
       actorType: "user",

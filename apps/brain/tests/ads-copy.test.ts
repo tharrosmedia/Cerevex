@@ -70,6 +70,19 @@ assert.equal(parseAdsFilters({ connected: 'google', count: '3' }).notice, 'Conne
 assert.equal(parseAdsFilters({ connected: 'meta' }).notice, 'Meta is connected. The first sync is running.');
 assert.ok(oauthErrorMessage('no_accounts').includes('no ad accounts'));
 assert.equal(parseAdsFilters({ connect_error: 'Choose Meta or Google.', oauth_error: 'x' }).notice, 'Choose Meta or Google.');
+assert.equal(
+  oauthErrorMessage('plan_limit'),
+  'This Scholarship includes 1 ad account on this platform. Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts.',
+);
+assert.equal(parseAdsFilters({ oauth_error: 'plan_limit' }).notice, oauthErrorMessage('plan_limit'));
+assert.equal(
+  parseAdsFilters({
+    oauth_error: 'plan_limit',
+    connect_error: 'This Scholarship includes 1 Meta ad account. Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts.',
+  }).notice,
+  'This Scholarship includes 1 Meta ad account. Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts.',
+);
+assert.ok(!/tenant|entitlement|store_id|\bcap\b/i.test(oauthErrorMessage('plan_limit')));
 
 assert.equal(findingLabel('low_ctr'), 'Ads not getting clicks');
 assert.equal(findingLabel('zero_conversion_spend'), 'Spend with no leads');
