@@ -103,6 +103,7 @@ try {
   };
   const scrubbedTxn = scrubSentryEvent(transaction);
   assert.equal(scrubbedTxn.type, 'transaction');
+  assert.equal(String(scrubbedTxn.transaction).startsWith('GET /callback?'), true);
   assert.equal(String(scrubbedTxn.transaction).includes('keep-me-out'), false);
   assert.equal(String(scrubbedTxn.request?.url).includes('keep-me-out'), false);
 
@@ -139,6 +140,41 @@ try {
   assert.equal(leakedDump.includes('encryption-key-value'), false);
   assert.equal(leakedDump.includes('gsc-state-secret-value'), false);
 
+  const pathUrl = [
+    'https://console.example',
+    env.APP_PASSWORD,
+    'adam@tharrosmedia.com',
+    'shpat_live999',
+    env.ADS_INTERNAL_KEY,
+    env.ENCRYPTION_KEY,
+    env.GSC_OAUTH_STATE_SECRET,
+  ].join('/');
+  const pathEvent = scrubSentryEvent({
+    request: { url: pathUrl },
+    transaction: `GET /cb/${env.ADS_INTERNAL_KEY}`,
+    breadcrumbs: [{ data: { url: pathUrl } }],
+    spans: [{ description: `GET ${pathUrl}`, data: { url: pathUrl } }],
+    extra: { 'the-app-password-value': 'kept-value', note: 'next%3Fcode%3Doauth-code tail%26token%3Dsecrettoken' },
+  });
+  env.ENCRYPTION_KEY = 'AbCDef1234';
+  const hexEvent = scrubSentryEvent({ message: 'leak abcdef1234 and AbCDef1234' });
+  env.ENCRYPTION_KEY = 'encryption-key-value';
+  const pathDump = JSON.stringify(pathEvent) + JSON.stringify(hexEvent);
+  for (const secret of [
+    'the-app-password-value',
+    'ads-internal-test-key',
+    'encryption-key-value',
+    'gsc-state-secret-value',
+    'adam@tharrosmedia.com',
+    'shpat_live999',
+    'oauth-code',
+    'secrettoken',
+    'abcdef1234',
+    'AbCDef1234',
+  ]) {
+    assert.equal(pathDump.includes(secret), false, secret);
+  }
+
   const cyclic: Record<string, unknown> = {
     type: 'transaction',
     transaction: 'middleware',
@@ -148,11 +184,25 @@ try {
   let deep: Record<string, unknown> = { message: 'leaf the-app-password-value' };
   for (let i = 0; i < 40; i += 1) deep = { child: deep };
   cyclic.extra = deep;
-  cyclic.sdkProcessingMetadata = { client: cyclic };
-  const scrubbedCycle = scrubSentryEvent(cyclic);
+  class SdkClient {}
+  const sdkClient = new SdkClient();
+  cyclic.sdkProcessingMetadata = {
+    client: sdkClient,
+    dynamicSamplingContext: { trace_id: 'trace-kept-123' },
+    normalizedRequest: cyclic,
+  };
+  const scrubbedCycle = scrubSentryEvent(cyclic) as {
+    sdkProcessingMetadata?: {
+      client?: unknown;
+      dynamicSamplingContext?: { trace_id?: string };
+      normalizedRequest?: unknown;
+    };
+  };
+  assert.equal(scrubbedCycle.sdkProcessingMetadata?.client, sdkClient);
+  assert.equal(scrubbedCycle.sdkProcessingMetadata?.dynamicSamplingContext?.trace_id, 'trace-kept-123');
+  assert.notEqual(scrubbedCycle.sdkProcessingMetadata?.normalizedRequest, cyclic);
   assert.equal(JSON.stringify(scrubbedCycle).includes('the-app-password-value'), false);
   assert.equal(JSON.stringify(scrubbedCycle).includes('Maximum call stack'), false);
-  assert.equal('sdkProcessingMetadata' in scrubbedCycle, false);
 
   const evil: Record<string, unknown> = {};
   Object.defineProperty(evil, 'boom', {
@@ -218,7 +268,7 @@ try {
     transaction: 'GET /middleware',
     timestamp: Date.now() / 1000,
     start_timestamp: Date.now() / 1000 - 1,
-    contexts: { trace: { trace_id: 'a'.repeat(32), span_id: 'b'.repeat(16), op: 'http.server' } },
+    contexts: { trace: { trace_id: 'c'.repeat(32), span_id: 'b'.repeat(16), op: 'http.server' } },
     message: 'refresh_token=1//refreshvalue the-app-password-value',
   };
   tx.self = tx;
@@ -232,9 +282,66 @@ try {
   assert.equal(blob.includes('the-app-password-value'), false);
   assert.equal(blob.includes('oauth-code'), false);
   assert.equal(blob.includes('refreshvalue'), false);
-  assert.equal(blob.includes('transaction'), true);
+  assert.match(blob, /"type":"transaction"/);
+  assert.equal(blob.includes('c'.repeat(32)), true);
 
   await client?.close(2000);
+
+  const fetched: string[] = [];
+  const fetchClient = Sentry.init({
+    dsn: 'https://public@o0.ingest.sentry.io/1',
+    tracesSampleRate: 1,
+    skipOpenTelemetrySetup: true,
+    registerEsmLoaderHooks: false,
+    defaultIntegrations: false,
+    integrations: [Sentry.nativeNodeFetchIntegration({ breadcrumbs: true, spans: true })],
+    transport() {
+      return {
+        send(envelope) {
+          fetched.push(JSON.stringify(envelope));
+          return Promise.resolve({});
+        },
+        flush() {
+          return Promise.resolve(true);
+        },
+      };
+    },
+    ...sentryScrubHooks(),
+  });
+  const http = await import('node:http');
+  const server = http.createServer((_req, res) => {
+    res.statusCode = 200;
+    res.end('ok');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  const tracked = [
+    `http://127.0.0.1:${port}`,
+    env.APP_PASSWORD,
+    env.ADS_INTERNAL_KEY,
+    env.ENCRYPTION_KEY,
+    env.GSC_OAUTH_STATE_SECRET,
+    'adam@tharrosmedia.com',
+    'shpat_live999',
+  ].join('/');
+  await fetch(tracked);
+  Sentry.captureException(new Error('fetch follow-up'));
+  await Sentry.flush(2000);
+  server.close();
+  const fetchedBlob = fetched.join('\n');
+  assert.ok(fetched.length >= 1);
+  for (const secret of [
+    'the-app-password-value',
+    'ads-internal-test-key',
+    'encryption-key-value',
+    'gsc-state-secret-value',
+    'adam@tharrosmedia.com',
+    'shpat_live999',
+  ]) {
+    assert.equal(fetchedBlob.includes(secret), false, secret);
+  }
+  await fetchClient?.close(2000);
   console.log('sentry-scrub: ok');
 } finally {
   if (prevKey === undefined) delete env.ADS_INTERNAL_KEY;

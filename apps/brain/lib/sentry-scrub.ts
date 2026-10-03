@@ -7,7 +7,7 @@ const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const ENCODED_EMAIL = /[A-Za-z0-9._%+-]+%40[A-Za-z0-9.-]+(?:\.[A-Za-z]{2,}|%2[Ee][A-Za-z]{2,})/g;
 const EMBEDDED_URL = /https?:\/\/[^\s"'<>]+/gi;
 const INLINE_SECRET = /(^|[^A-Za-z0-9_])((?:refresh_token|access_token|client_secret|id_token|token|password|secret|code|state|email|key)=)([^&\s"'<>#]*)/gi;
-const INLINE_SECRET_ENCODED = /(^|[^A-Za-z0-9_])((?:refresh_token|access_token|client_secret|id_token|token|password|secret|code|state|email|key)%3[Dd])([^&\s"'<>#%]*)/gi;
+const INLINE_SECRET_ENCODED = /(^|[^A-Za-z0-9_]|%3[Ff]|%26)((?:refresh_token|access_token|client_secret|id_token|token|password|secret|code|state|email|key)%3[Dd])([^%&\s"'<>#]*)/gi;
 const REDACTED = '[redacted]';
 const MAX_DEPTH = 12;
 
@@ -31,14 +31,27 @@ function isQueryKey(name: string): boolean {
   return key === 'query_string' || key === 'query' || key === 'fragment' || key.endsWith('.query') || key.endsWith('.fragment');
 }
 
+function secretVariants(secret: string): string[] {
+  const encoded = encodeURIComponent(secret);
+  const form = encoded.replace(/%20/g, '+');
+  const variants = [secret, secret.toLowerCase(), encoded, encoded.toLowerCase(), form, form.toLowerCase()];
+  return variants.filter((variant, index) => variant.length >= 4 && variants.indexOf(variant) === index);
+}
+
 function scrubConfiguredSecrets(value: string): string {
-  let out = value;
+  const variants: string[] = [];
   for (const name of SECRET_ENV_NAMES) {
     const secret = process.env[name];
     if (!secret || secret.length < 4) continue;
-    if (out.includes(secret)) out = out.split(secret).join(REDACTED);
-    const encoded = encodeURIComponent(secret);
-    if (encoded !== secret && encoded.length >= 4 && out.includes(encoded)) out = out.split(encoded).join(REDACTED);
+    variants.push(...secretVariants(secret));
+  }
+  variants.sort((a, b) => b.length - a.length);
+  let out = value;
+  const seen = new Set<string>();
+  for (const variant of variants) {
+    if (seen.has(variant)) continue;
+    seen.add(variant);
+    if (out.includes(variant)) out = out.split(variant).join(REDACTED);
   }
   return out;
 }
@@ -78,15 +91,31 @@ function scrubUrl(value: string): string {
       url.searchParams.set(key, isSensitiveQuery(key) ? REDACTED : scrubLoose(current));
     }
     url.hash = '';
-    if (absolute) return url.toString();
-    return `${url.pathname}${url.search}`;
+    const rendered = absolute ? url.toString() : `${url.pathname}${url.search}`;
+    return scrubLoose(rendered);
   } catch {
     return scrubLoose(value);
   }
 }
 
-function looksLikeUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value) || (value.startsWith('/') && value.includes('?'));
+/** Query values first, then free-text scrub of the host and path. Transaction names keep their prefix. */
+function scrubUrlField(value: string): string {
+  if (/^https?:\/\//i.test(value) || value.startsWith('/')) return scrubUrl(value);
+  const queryAt = value.indexOf('?');
+  if (queryAt === -1) return scrubLoose(value);
+  const head = value.slice(0, queryAt);
+  const query = value.slice(queryAt + 1);
+  try {
+    const url = new URL(`http://sentry.invalid/?${query}`);
+    for (const key of [...url.searchParams.keys()]) {
+      const current = url.searchParams.get(key) ?? '';
+      url.searchParams.set(key, isSensitiveQuery(key) ? REDACTED : scrubLoose(current));
+    }
+    const search = url.search.startsWith('?') ? url.search.slice(1) : url.search;
+    return scrubLoose(`${head}?${search}`);
+  } catch {
+    return scrubLoose(value);
+  }
 }
 
 function scrubText(value: string, seen: WeakSet<object>, depth: number): string {
@@ -147,16 +176,47 @@ function scrubQuery(value: unknown, seen: WeakSet<object>, depth: number): unkno
   return value;
 }
 
+function safeObjectKey(key: string): string {
+  return scrubLoose(key);
+}
+
+/**
+ * Keep Client, Scope, and other live SDK objects so the envelope trace header survives.
+ * Plain objects are copied and scrubbed. Cycles are cut.
+ */
+function scrubMetadata(value: unknown, seen: WeakSet<object>, depth: number): unknown {
+  if (typeof value === 'string') return scrubLoose(value);
+  if (!value || typeof value !== 'object') return value;
+  if (depth > MAX_DEPTH) return isPlainObject(value) || Array.isArray(value) ? REDACTED : value;
+  if (seen.has(value)) return REDACTED;
+  if (Array.isArray(value)) {
+    seen.add(value);
+    return value.map((item) => scrubMetadata(item, seen, depth + 1));
+  }
+  if (!isPlainObject(value)) return value;
+  seen.add(value);
+  const out: Record<string, unknown> = {};
+  for (const [childKey, child] of Object.entries(value)) {
+    const key = safeObjectKey(childKey);
+    if (isSensitiveHeader(childKey) || SENSITIVE_FIELD.test(childKey)) {
+      out[key] = REDACTED;
+      continue;
+    }
+    out[key] = scrubMetadata(child, seen, depth + 1);
+  }
+  return out;
+}
+
 function scrubUnknown(value: unknown, key?: string, seen: WeakSet<object> = new WeakSet(), depth = 0): unknown {
   if (depth > MAX_DEPTH) return REDACTED;
-  if (key === 'sdkProcessingMetadata') return undefined;
+  if (key === 'sdkProcessingMetadata') return scrubMetadata(value, seen, depth + 1);
   if (key && (isSensitiveHeader(key) || SENSITIVE_FIELD.test(key))) return REDACTED;
   if (key === 'cookies' && value && typeof value === 'object' && !Array.isArray(value) && isPlainObject(value)) {
     return scrubCookieBag(value as Record<string, unknown>);
   }
   if (key && isQueryKey(key)) return scrubQuery(value, seen, depth);
   if (key && URL_FIELDS.has(key) && typeof value === 'string') {
-    return looksLikeUrl(value) || value.includes('?') ? scrubUrl(value) : scrubText(value, seen, depth);
+    return scrubUrlField(value);
   }
   if (typeof value === 'string') return scrubText(value, seen, depth);
   if (Array.isArray(value)) {
@@ -170,8 +230,7 @@ function scrubUnknown(value: unknown, key?: string, seen: WeakSet<object> = new 
     seen.add(value);
     const out: Record<string, unknown> = {};
     for (const [childKey, child] of Object.entries(value as Record<string, unknown>)) {
-      if (childKey === 'sdkProcessingMetadata') continue;
-      out[childKey] = scrubUnknown(child, childKey, seen, depth + 1);
+      out[safeObjectKey(childKey)] = scrubUnknown(child, childKey, seen, depth + 1);
     }
     return out;
   }
@@ -223,6 +282,9 @@ export function sentryScrubHooks() {
     },
     beforeSendLog(log: any): any {
       return safeScrubSentryEvent(log);
+    },
+    beforeSendSpan(span: any): any {
+      return safeScrubSentryEvent(span);
     },
   };
 }
