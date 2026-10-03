@@ -192,7 +192,7 @@ describe("migration journal", () => {
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-      const rows = await client.query<{ hash: string }>(`select hash from "drizzle"."__drizzle_migrations"`);
+      const rows = await client.query<{ hash: string }>(`select hash from "os"."__drizzle_migrations"`);
       expect(rows.rows).toHaveLength(assertMigrationJournal(realMigrations).length);
       const table = await client.query(`select to_regclass('os.skill_client_configs') as name`);
       expect(table.rows[0]?.name).toBe("skill_client_configs");
@@ -229,7 +229,7 @@ describe("migration journal", () => {
     });
     expect(second.code).not.toBe(0);
     expect(second.stderr).toContain("0004_site_clients");
-    expect(second.stderr).toContain("drizzle.__drizzle_migrations");
+    expect(second.stderr).toContain("os.__drizzle_migrations");
     rmSync(folder, { recursive: true, force: true });
   }, 60_000);
 });

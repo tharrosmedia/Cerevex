@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
 
 export type JournalEntry = {
   idx: number;
@@ -117,7 +118,7 @@ export function assertMigrationsApplied(
     const match = applied.some((row) => row.hash === entry.hash && row.createdAt === entry.when);
     if (!match) {
       problems.push(
-        `Unapplied or out-of-order migration ${entry.tag} (when ${entry.when}) has no matching row in drizzle.__drizzle_migrations.`,
+        `Unapplied or out-of-order migration ${entry.tag} (when ${entry.when}) has no matching row in ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}.`,
       );
     }
   }

@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { closeDb, getPool } from "./db";
 import { loadEnv } from "./env";
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE, migrationsRelation } from "./migration-ledger";
 import { assertMigrationJournal, assertMigrationsApplied } from "./migration-journal";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -25,9 +26,13 @@ async function main(): Promise<void> {
     await client.query('CREATE SCHEMA IF NOT EXISTS "os"');
     await client.query("SET search_path TO os, public");
     const db = drizzle(client);
-    await migrate(db, { migrationsFolder: folder });
+    await migrate(db, {
+      migrationsFolder: folder,
+      migrationsSchema: MIGRATIONS_SCHEMA,
+      migrationsTable: MIGRATIONS_TABLE,
+    });
     const applied = await client.query<{ hash: string; created_at: string | number }>(
-      `select hash, created_at from "drizzle"."__drizzle_migrations"`,
+      `select hash, created_at from ${migrationsRelation()}`,
     );
     assertMigrationsApplied(
       folder,
