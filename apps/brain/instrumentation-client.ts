@@ -12,6 +12,12 @@ Sentry.init({
   replaysOnErrorSampleRate: 1.0,
 
   includeLocalVariables: false,
+  sendDefaultPii: false,
+  dataCollection: {
+    cookies: false,
+    urlQueryParams: false,
+    userInfo: false,
+  },
 
   enableLogs: true,
 
@@ -21,6 +27,9 @@ Sentry.init({
   ],
 
   beforeSend(event) {
+    return scrubSentryEvent(event);
+  },
+  beforeSendTransaction(event) {
     return scrubSentryEvent(event);
   },
   beforeBreadcrumb(breadcrumb) {

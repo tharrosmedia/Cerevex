@@ -8,10 +8,19 @@ Sentry.init({
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.1,
 
   includeLocalVariables: false,
+  sendDefaultPii: false,
+  dataCollection: {
+    cookies: false,
+    urlQueryParams: false,
+    userInfo: false,
+  },
 
   enableLogs: true,
 
   beforeSend(event) {
+    return scrubSentryEvent(event);
+  },
+  beforeSendTransaction(event) {
     return scrubSentryEvent(event);
   },
   beforeBreadcrumb(breadcrumb) {
