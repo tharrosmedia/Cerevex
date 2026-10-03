@@ -108,7 +108,7 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
     if (!parsed.success) throw new HTTPException(400, { message: "Invalid audit event" });
     const auth = c.get("auth");
     const client = await getVisibleClient(auth, parsed.data.clientId);
-    if (!client) throw new HTTPException(404, { message: "Client not found" });
+    if (!client) throw new HTTPException(404, { message: "Not found" });
     if (!canMutate(auth, client.workspaceId)) {
       throw new HTTPException(403, { message: "Owner or operator role required" });
     }
@@ -139,17 +139,17 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
       return c.json({ event: row, writes: false });
     }
 
+    if (parsed.data.kind === "approved" || parsed.data.kind === "rejected") {
+      throw new HTTPException(409, { message: "Approve and deny go through the decide route." });
+    }
     if (!parsed.data.recommendationId) {
       throw new HTTPException(400, { message: "recommendationId is required" });
     }
     const rec = await getRecommendation(parsed.data.recommendationId);
-    if (!rec || rec.clientId !== client.id) throw new HTTPException(404, { message: "Recommendation not found" });
+    if (!rec || rec.clientId !== client.id) throw new HTTPException(404, { message: "Not found" });
     const approval = readApproval(rec.approvalJson);
-    if (parsed.data.kind === "approved" && rec.status !== "proposed") {
-      throw new HTTPException(409, { message: "This recommendation is no longer open." });
-    }
-    if ((parsed.data.kind === "approved" || parsed.data.kind === "rejected") && approval.status !== "PENDING_APPROVAL") {
-      throw new HTTPException(409, { message: "This recommendation is no longer open." });
+    if (parsed.data.kind === "mark_done" && approval.executed_at) {
+      throw new HTTPException(409, { message: "This recommendation is already marked done." });
     }
     if (parsed.data.kind === "mark_done" && approval.status !== "approved") {
       throw new HTTPException(409, { message: "Approve this recommendation before marking it done." });

@@ -33,6 +33,7 @@ import {
   listAuditRunsForClients,
   listRecommendations,
   listRecommendationsForClients,
+  RecommendationNotOpenError,
   runAuditRun,
   toAuthorizationPublic,
   toFindingPublic,
@@ -48,6 +49,14 @@ import { requireMutableClient, requireVisibleAccount } from "./connect";
 import { childLogger } from "./logger";
 import { getVisibleClient, listVisibleClients } from "./tenancy";
 import type { AppEnv } from "./types";
+
+const REC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertRecommendationId(id: string) {
+  if (!REC_UUID.test(id)) {
+    throw new HTTPException(400, { message: "Invalid recommendation id" });
+  }
+}
 
 const startAuditSchema = z.object({
   adAccountId: z.string().uuid().optional(),
@@ -299,6 +308,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
   });
 
   app.post("/recommendations/:id/decide", requireAuth, async (c) => {
+    assertRecommendationId(c.req.param("id"));
     const parsed = decideSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       throw new HTTPException(400, { message: "action must be approve, deny, snooze, mark_done, or rollback" });
@@ -315,6 +325,9 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         });
       }
       const approval = readApproval(row.approvalJson);
+      if (parsed.data.action === "mark_done" && approval.executed_at) {
+        throw new HTTPException(409, { message: "This recommendation is already marked done." });
+      }
       if (parsed.data.action === "mark_done" && approval.status !== "approved") {
         await recordApproveRefusal(row, auth.user.id, "mark_done_before_approve");
         throw new HTTPException(409, { message: "Approve this recommendation before marking it done." });
@@ -380,12 +393,20 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       }
     }
 
-    const result = await decideRecommendation({
-      recommendationId: row.id,
-      userId: auth.user.id,
-      action,
-      note: parsed.data.note,
-    });
+    let result: Awaited<ReturnType<typeof decideRecommendation>>;
+    try {
+      result = await decideRecommendation({
+        recommendationId: row.id,
+        userId: auth.user.id,
+        action,
+        note: parsed.data.note,
+      });
+    } catch (error) {
+      if (error instanceof RecommendationNotOpenError) {
+        throw new HTTPException(409, { message: "This recommendation is no longer open." });
+      }
+      throw error;
+    }
 
     if (action !== "authorize") {
       childLogger(c.get("requestId")).info({
@@ -494,6 +515,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
   });
 
   app.post("/recommendations/:id/apply", requireAuth, async (c) => {
+    assertRecommendationId(c.req.param("id"));
     const parsed = z.object({ inline: z.boolean().optional() }).safeParse(await c.req.json().catch(() => ({})));
     const row = await getRecommendation(c.req.param("id"));
     if (!row) {

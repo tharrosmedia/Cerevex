@@ -483,6 +483,13 @@ export async function getFinding(id: string) {
   });
 }
 
+export class RecommendationNotOpenError extends Error {
+  constructor() {
+    super("This recommendation is no longer open.");
+    this.name = "RecommendationNotOpenError";
+  }
+}
+
 export async function decideRecommendation(input: {
   recommendationId: string;
   userId: string;
@@ -502,11 +509,16 @@ async function decideRecommendationOn(
   },
   db: Database,
 ): Promise<{ recommendation: RecommendationPublic; authorization: AuthorizationPublic | null }> {
-  const row = await db.query.recommendations.findFirst({
-    where: eq(recommendations.id, input.recommendationId),
-  });
+  const [row] = await db
+    .select()
+    .from(recommendations)
+    .where(eq(recommendations.id, input.recommendationId))
+    .for("update");
   if (!row) {
     throw new Error("Recommendation not found");
+  }
+  if (input.action === "authorize" && row.status !== "proposed") {
+    throw new RecommendationNotOpenError();
   }
 
   const status =
