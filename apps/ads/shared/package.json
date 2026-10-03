@@ -12,6 +12,7 @@
     "./test-database": "./src/test-database.ts",
     "./migration-ledger": "./src/migration-ledger.ts",
     "./migration-journal": "./src/migration-journal.ts",
+    "./entitlements": "./src/entitlements.ts",
     "./crypto": "./src/crypto.ts",
     "./oauth": "./src/oauth.ts",
     "./credentials": "./src/credentials.ts",

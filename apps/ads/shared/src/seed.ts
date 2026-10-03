@@ -98,6 +98,7 @@ async function main(): Promise<void> {
         name,
         pilotFlag: true,
         status: "active",
+        plan: "paid",
       })
       .onConflictDoNothing()
       .returning();

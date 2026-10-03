@@ -43,6 +43,13 @@
       "when": 1790800000000,
       "tag": "0005_skill_config",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790700000000,
+      "tag": "0005_plan_entitlements",
+      "breakpoints": true
     }
   ]
 }
