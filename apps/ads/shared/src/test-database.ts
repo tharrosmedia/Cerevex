@@ -20,7 +20,21 @@
  * hostname regex cannot tell them apart. If PRODUCTION_NEON_HOST or
  * PRODUCTION_DATABASE_URL is present in the environment, that host (and the
  * matching Neon pooler/direct twin) is refused even when the opt-in is set.
- * A set PRODUCTION_DATABASE_URL that does not parse fails closed.
+ * PRODUCTION_NEON_HOST may be a bare host, host:port, or any scheme URL.
+ * `postgres://` and `postgresql://` are parsed with the driver, so `?host=`
+ * is the host that is denied. Other schemes use the URL hostname. Trailing
+ * dots are stripped. A Neon `options=endpoint=` or `options=project=` id that
+ * matches a configured production endpoint is denied even when the URL host
+ * is different. Empty or whitespace-only values of either variable are unset.
+ * A non-empty value that does not parse fails closed.
+ *
+ * Without PRODUCTION_NEON_HOST or PRODUCTION_DATABASE_URL, an unmarked Neon
+ * host is only a normal remote host: refused by default, allowed with the
+ * opt-in. The guard cannot tell a production compute from a branch compute
+ * by hostname shape alone.
+ *
+ * A `branch` query parameter does not mark a Neon branch. Host and database
+ * markers still can, but never for a host that matches the production list.
  *
  * Wired from:
  * - apps/ads/shared/src/seed.ts
@@ -31,6 +45,7 @@
  * runners. Migrate scripts are intentional ops paths and are not guarded.
  */
 
+import "server-only";
 import { parse as parseConnectionString, type ConnectionOptions } from "pg-connection-string";
 
 export const TEST_DATABASE_OPT_IN_ENV = "ALLOW_NONLOCAL_TEST_DB";
@@ -46,22 +61,6 @@ const TEST_DATABASE_NAME = /^(?:test|.+[_-]test)$/i;
 const BRANCH_ID = /^br-[a-z0-9_-]+$/i;
 
 const BRANCH_TOKEN = /(?:^|[_-])branch(?:[_-]|$)/i;
-
-const SKIPPED_CONNECTION_KEYS = new Set([
-  "host",
-  "hostaddr",
-  "password",
-  "user",
-  "port",
-  "database",
-  "client_encoding",
-  "ssl",
-  "sslnegotiation",
-  "application_name",
-  "fallback_application_name",
-  "options",
-  "keepalives",
-]);
 
 export type TestDatabaseVerdict = {
   allowed: boolean;
@@ -81,7 +80,7 @@ export type AssessTestDatabaseInput = {
 type ParsedConnection = {
   hosts: string[];
   database: string;
-  params: Record<string, string>;
+  endpointIds: string[];
 };
 
 type ProductionHosts = { ok: true; hosts: string[] } | { ok: false; detail: string };
@@ -93,6 +92,7 @@ function purposeLabel(purpose: string | undefined): string {
 function normalizeHost(hostname: string): string {
   let host = hostname.trim().toLowerCase();
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+  if (!host.startsWith("/")) host = host.replace(/\.+$/, "");
   return host;
 }
 
@@ -100,11 +100,34 @@ function isAbsoluteConnectionString(value: string): boolean {
   return /^(?:postgres|postgresql):\/\//i.test(value) || value.startsWith("/");
 }
 
+function blankEnv(value: string | undefined): boolean {
+  return value === undefined || value.trim() === "";
+}
+
+/** One DNS label: no empty label, and no leading or trailing hyphen. */
+const HOST_LABEL = /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/i;
+const SCHEME_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
+
 function connectionHosts(hostField: string): string[] {
   return hostField
     .split(",")
     .map((part) => normalizeHost(part))
     .filter((part) => part.length > 0);
+}
+
+function isHostname(value: string): boolean {
+  if (!value || value.length > 253) return false;
+  return value.split(".").every((label) => HOST_LABEL.test(label));
+}
+
+function endpointIdsFromOptions(options: string): string[] {
+  const ids: string[] = [];
+  const pattern = /(?:^|[\s;])(?:endpoint|project)=([a-z0-9_-]+)/gi;
+  for (const match of options.matchAll(pattern)) {
+    const id = match[1]?.toLowerCase().replace(/-pooler$/, "");
+    if (id?.startsWith("ep-")) ids.push(id);
+  }
+  return ids;
 }
 
 /**
@@ -124,12 +147,8 @@ function parseDriverConnection(raw: string): ParsedConnection | null {
   }
   const hostField = typeof config.host === "string" ? config.host : "";
   const database = typeof config.database === "string" ? config.database.toLowerCase() : "";
-  const params: Record<string, string> = {};
-  for (const [key, value] of Object.entries(config)) {
-    if (SKIPPED_CONNECTION_KEYS.has(key)) continue;
-    if (typeof value === "string" && value.trim()) params[key.toLowerCase()] = value.trim();
-  }
-  return { hosts: connectionHosts(hostField), database, params };
+  const options = typeof config.options === "string" ? config.options : "";
+  return { hosts: connectionHosts(hostField), database, endpointIds: endpointIdsFromOptions(options) };
 }
 
 function isTestDatabaseName(name: string): boolean {
@@ -151,25 +170,19 @@ function isNeonHost(host: string): boolean {
   return host === "neon.tech" || host.endsWith(".neon.tech");
 }
 
-function hasAnchoredBranchMarker(parsed: ParsedConnection): boolean {
+function hasAnchoredBranchMarker(parsed: ParsedConnection, host: string): boolean {
   if (BRANCH_ID.test(parsed.database) || parsed.database === "preview" || BRANCH_TOKEN.test(parsed.database)) {
     return true;
   }
-  for (const host of parsed.hosts) {
-    const labels = host.split(".");
-    if (labels.some((label) => BRANCH_ID.test(label))) return true;
-    const endpoint = labels[0] ?? "";
-    if (endpoint.split("-").includes("branch")) return true;
-  }
-  for (const [key, value] of Object.entries(parsed.params)) {
-    if (key === "branch" && value.length > 0) return true;
-    if (BRANCH_ID.test(value)) return true;
-  }
-  return false;
+  const labels = host.split(".");
+  if (labels.some((label) => BRANCH_ID.test(label))) return true;
+  const endpoint = labels[0] ?? "";
+  return endpoint.split("-").includes("branch");
 }
 
-function isNeonBranchDatabase(parsed: ParsedConnection, host: string): boolean {
-  return isNeonHost(host) && hasAnchoredBranchMarker(parsed);
+function isNeonBranchDatabase(parsed: ParsedConnection, host: string, productionHosts: string[]): boolean {
+  if (!isNeonHost(host) || matchesProductionHost(host, productionHosts)) return false;
+  return hasAnchoredBranchMarker(parsed, host);
 }
 
 function neonEndpointKey(host: string): string | null {
@@ -179,42 +192,68 @@ function neonEndpointKey(host: string): string | null {
   return first.replace(/-pooler$/, "");
 }
 
+/**
+ * PRODUCTION_NEON_HOST token: bare hostname, host:port, or any scheme URL.
+ * Returns [] for a blank token, null when a non-empty token has no hostname.
+ */
+function hostsFromToken(token: string): string[] | null {
+  const trimmed = token.trim();
+  if (!trimmed) return [];
+  if (/^(?:postgres|postgresql):\/\//i.test(trimmed)) {
+    const parsed = parseDriverConnection(trimmed);
+    if (!parsed || parsed.hosts.length === 0) return null;
+    return parsed.hosts;
+  }
+  if (SCHEME_URL.test(trimmed)) {
+    try {
+      const host = normalizeHost(new URL(trimmed).hostname);
+      return host && isHostname(host) ? [host] : null;
+    } catch {
+      return null;
+    }
+  }
+  if (/[\s/]/.test(trimmed) || trimmed.includes("://")) return null;
+  const portMatch = /^(.*):(\d+)$/.exec(trimmed);
+  const bare = portMatch ? portMatch[1] : trimmed;
+  const host = normalizeHost(bare ?? "");
+  return host && isHostname(host) ? [host] : null;
+}
+
 function hostsFromListedValue(value: string): string[] | null {
   const hosts: string[] = [];
   for (const part of value.split(",")) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    if (isAbsoluteConnectionString(trimmed)) {
-      const parsed = parseDriverConnection(trimmed);
-      if (!parsed || parsed.hosts.length === 0) return null;
-      hosts.push(...parsed.hosts);
-      continue;
-    }
-    const host = normalizeHost(trimmed.split("/")[0]?.split(":")[0] ?? trimmed);
-    if (host) hosts.push(host);
+    const parsed = hostsFromToken(part);
+    if (!parsed) return null;
+    hosts.push(...parsed);
   }
-  return hosts;
+  return hosts.length > 0 ? hosts : null;
 }
 
 function loadProductionHosts(env: EnvLike): ProductionHosts {
   const hosts: string[] = [];
   const listed = env[PRODUCTION_NEON_HOST_ENV];
-  if (listed !== undefined && listed.trim()) {
-    const parsed = hostsFromListedValue(listed);
+  if (!blankEnv(listed)) {
+    const parsed = hostsFromListedValue(listed ?? "");
     if (!parsed) {
       return { ok: false, detail: `${PRODUCTION_NEON_HOST_ENV} is set but could not be parsed.` };
     }
     hosts.push(...parsed);
   }
   const databaseUrl = env[PRODUCTION_DATABASE_URL_ENV];
-  if (databaseUrl !== undefined) {
-    const parsed = databaseUrl.trim() ? parseDriverConnection(databaseUrl) : null;
+  if (!blankEnv(databaseUrl)) {
+    const parsed = parseDriverConnection(databaseUrl ?? "");
     if (!parsed || parsed.hosts.length === 0) {
       return { ok: false, detail: `${PRODUCTION_DATABASE_URL_ENV} is set but could not be parsed.` };
     }
     hosts.push(...parsed.hosts);
   }
   return { ok: true, hosts };
+}
+
+function matchesProductionEndpointId(endpointId: string, productionHosts: string[]): boolean {
+  const key = endpointId.toLowerCase().replace(/-pooler$/, "");
+  if (!key.startsWith("ep-")) return false;
+  return productionHosts.some((host) => neonEndpointKey(host) === key);
 }
 
 function matchesProductionHost(hostname: string, productionHosts: string[]): boolean {
@@ -227,12 +266,6 @@ function matchesProductionHost(hostname: string, productionHosts: string[]): boo
     if (candidateKey && productionKey && candidateKey === productionKey) return true;
   }
   return false;
-}
-
-export function isProductionNeonHost(hostname: string, env: EnvLike = process.env): boolean {
-  const production = loadProductionHosts(env);
-  if (!production.ok) return false;
-  return matchesProductionHost(hostname, production.hosts);
 }
 
 function refusal(purpose: string | undefined, detail: string): TestDatabaseVerdict {
@@ -248,8 +281,12 @@ function refusal(purpose: string | undefined, detail: string): TestDatabaseVerdi
   };
 }
 
-function hostAllowed(parsed: ParsedConnection, host: string): boolean {
-  return isLocalDatabaseHost(host) || isKnownTestDatabase(parsed.database, host) || isNeonBranchDatabase(parsed, host);
+function hostAllowed(parsed: ParsedConnection, host: string, productionHosts: string[]): boolean {
+  return (
+    isLocalDatabaseHost(host) ||
+    isKnownTestDatabase(parsed.database, host) ||
+    isNeonBranchDatabase(parsed, host, productionHosts)
+  );
 }
 
 export function assessTestDatabase(input: AssessTestDatabaseInput): TestDatabaseVerdict {
@@ -288,7 +325,21 @@ export function assessTestDatabase(input: AssessTestDatabaseInput): TestDatabase
     }
   }
 
-  if (parsed.hosts.every((candidate) => hostAllowed(parsed, candidate))) {
+  for (const endpointId of parsed.endpointIds) {
+    if (matchesProductionEndpointId(endpointId, production.hosts)) {
+      return {
+        allowed: false,
+        host: host || null,
+        message: [
+          `Refusing to run ${purposeLabel(purpose)} against production Neon endpoint "${endpointId}".`,
+          `${TEST_DATABASE_OPT_IN_ENV} does not override this.`,
+          `The connection options endpoint matches ${PRODUCTION_NEON_HOST_ENV} or ${PRODUCTION_DATABASE_URL_ENV}.`,
+        ].join(" "),
+      };
+    }
+  }
+
+  if (parsed.hosts.every((candidate) => hostAllowed(parsed, candidate, production.hosts))) {
     return { allowed: true, host, message: `DATABASE_URL host "${host}" is allowed for tests and seed scripts.` };
   }
 

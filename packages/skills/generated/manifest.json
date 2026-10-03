@@ -1,0 +1,451 @@
+{
+  "snapshotId": "2026-10-03-0720",
+  "snapshotTimestamp": "2026-10-03T07:20:00-04:00",
+  "libraryVersion": "4.1.0",
+  "algorithm": "sha256-sorted-path-v1",
+  "entries": [
+    {
+      "slug": "cerevex-recommendation-format",
+      "kind": "shared-ref",
+      "version": "1.1",
+      "versionSource": "banner",
+      "contentHash": "0b49ce3e3848325382ea2714f8974becddb288a8e061888213ac9a94d39c9e28",
+      "files": [
+        {
+          "path": "cerevex-recommendation-format.md",
+          "sha256": "f45daa1a592cd7810d5175e84e974d91712a6489dfc6e725542cc635b9306477"
+        }
+      ]
+    },
+    {
+      "slug": "clients-roster",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "92631f2af07c87c3fd5b81abca38e26a3ab9463151362b976ce742e45c35c73e",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "15d08383e7abd55ffbe34fb3104a5b1a8a712f870bc0f89c77bd45f940731e39"
+        }
+      ]
+    },
+    {
+      "slug": "clients/_template",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "c16274f9f3c8b18a454c476c034352bb00d5228f6e45d4aca18811a97bc2abdb",
+      "files": [
+        {
+          "path": "profile.md",
+          "sha256": "f205ff343a981b97a64fc42c5ed7dcd266a928d5ff187324013ca6ab81d65e60"
+        }
+      ]
+    },
+    {
+      "slug": "clients/cerevex",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "5180eefe65320edc53beed7d11ec57e9375aaeecb8512a1e6ccd3a4cf355015a",
+      "files": [
+        {
+          "path": "profile.md",
+          "sha256": "4e7b9e00e925f5f15e72046e43ee43bf31e00caf80a0e177015c7ceba8d8757c"
+        }
+      ]
+    },
+    {
+      "slug": "clients/elmar-hvac",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "ee674e64ca668d9e2b2e04af916e1f78b9371dc802936b4ca15829ec34e09acd",
+      "files": [
+        {
+          "path": "profile.md",
+          "sha256": "e12325e1d2fc88d9c2273abba5ecf8da21c0a38d62ba02bea8e48695d9862bf5"
+        }
+      ]
+    },
+    {
+      "slug": "clients/got-ductless",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "e5dd54024d33ff1115cf915b941a56452a5481a2b9e8dea1e1927514a5c73ed9",
+      "files": [
+        {
+          "path": "profile.md",
+          "sha256": "37b5a8641465f6f378077ec88ba5731ae18898266d33fa71d73176406dafd66d"
+        }
+      ]
+    },
+    {
+      "slug": "clients/hvac-usa",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "10ffaeb5824f1b66009cced64d31ecec15a6a6afe0c15b56bb125e6881149552",
+      "files": [
+        {
+          "path": "copy-rules.md",
+          "sha256": "f189243f74f6d9fc312b27b6dc6c8b6e47aace33c80eb873fa24147b8aa31b92"
+        },
+        {
+          "path": "profile.md",
+          "sha256": "f30381a0a46cfc56ef51767237dd85a6441efdf481188efac89be62ba796ee32"
+        },
+        {
+          "path": "voice.md",
+          "sha256": "ee193e2ffdf978b34606c6a6f3b8550b58522af6dd2acf0696809537d4b28c11"
+        }
+      ]
+    },
+    {
+      "slug": "clients/kc-prestige-hvac",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "d8b81fcd1191ef1eebe997903b38fc90f7fbf5da93272582e8d0f3c5d7ef8f6b",
+      "files": [
+        {
+          "path": "profile.md",
+          "sha256": "4e35805b4fcaa5cc55c1238836c0bc4e4eda4f5458aacbbdcbe6c0cc8363bdf6"
+        }
+      ]
+    },
+    {
+      "slug": "clients/tharros-media",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "cee5d88b166fdff7eb6fea39e7626e2be01c5dc207b5ee9200a8b3a2999b65a9",
+      "files": [
+        {
+          "path": "profile.md",
+          "sha256": "629c7e42509f1a54c7c0accde27520666e1bc936d367498283d0808e20c74e52"
+        }
+      ]
+    },
+    {
+      "slug": "lead-classifier",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "f752d26636dfc5bc254de375aa6cc8e787df3beea2e60835610eb10f287b9813",
+      "files": [
+        {
+          "path": "lead-classifier.md",
+          "sha256": "24428a11d2215bdcbe16cf99519c807fa87f947e738a0dc4f4f983ddbddc5c92"
+        }
+      ]
+    },
+    {
+      "slug": "licenses",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "4b864b140afe82a888a031a8a4e9476070c33d13780990597cf2074a19834308",
+      "files": [
+        {
+          "path": "LICENSES.md",
+          "sha256": "382eead973823d0c28496dd671b6aeaf44b79729aa0fd63eebecfaf88b8f5442"
+        }
+      ]
+    },
+    {
+      "slug": "outcome-economics",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "34e475c08d7df56b4f4ad64ace6c4726d620d29baf1bf4694b3e1aab93830bb9",
+      "files": [
+        {
+          "path": "outcome-economics.md",
+          "sha256": "ccc417c99676abb61576e37bb57ee00b80e29f018fe16fd52bd036aebd4c0a49"
+        }
+      ]
+    },
+    {
+      "slug": "prompt-layer",
+      "kind": "shared-ref",
+      "version": "1.0.1",
+      "versionSource": "banner",
+      "contentHash": "698272990e4d55a9c91b83516beeec46fabb047c1b395087cadd9511c69c8de5",
+      "files": [
+        {
+          "path": "prompt-layer.md",
+          "sha256": "69e3d463c490519ad80603125d872ce5aa29cae20580cb3bb19c4108f73097e9"
+        }
+      ]
+    },
+    {
+      "slug": "references/README",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "fb9122da91ec603f68343678edb8c412db54e0f968b092f2f09e9004c9f0630d",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "cfb85d70d424a8a07be8e6ef7bcea3334b607562f9ee7967b1b43a723044b981"
+        }
+      ]
+    },
+    {
+      "slug": "tharros-shared-references",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "3c7b58213cd9b78dc627fa098d146deea47f28078303e92de22ab0eb7caf7092",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "068a2129561e3e3a90479ed517d41af84c9ae28be679a20e4942eb26aa5902d8"
+        }
+      ]
+    },
+    {
+      "slug": "verified-facts",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "07bf0555e3f4a43193b291089603ee740ea8aa462fecb68aa670582bffe9be5a",
+      "files": [
+        {
+          "path": "verified-facts.md",
+          "sha256": "c04eb5089a1422c12d1ec9da2bdef18bc6b53fb57392709d921c416c7e3ed0c2"
+        }
+      ]
+    },
+    {
+      "slug": "verticals/README",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "743a7de9bac7160287d71041fb103a1f508d1c06e04c7efb43a9232dad80587a",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "09169a23af352f673aaf48f6ceda3dbdf5a5500d815d1bf4ebcf89d46e60c3f8"
+        }
+      ]
+    },
+    {
+      "slug": "verticals/ecommerce-dtc",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "4bbb2a41d3db10f887c9547c648e14f4457aabc7116dc6a12ab5804b786514f9",
+      "files": [
+        {
+          "path": "compliance.md",
+          "sha256": "d57a944be1038a376072a7b08f771fab0d464e2418e02a1a24e77977bc7958a2"
+        },
+        {
+          "path": "pack.md",
+          "sha256": "91b99ef2354392b237e0c319b42a72f7ad78fc65c0ba3f1a93940c15a82540e8"
+        }
+      ]
+    },
+    {
+      "slug": "verticals/home-service",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "6f364080a3345b59ec39578c69ef8252cf3f941e5528f12bbc0fa928b8db8962",
+      "files": [
+        {
+          "path": "compliance.md",
+          "sha256": "1f9aa5833d0ce9608e04a741c103d03dd20cdf1937b6fcb611a0d34fdcc28403"
+        },
+        {
+          "path": "pack.md",
+          "sha256": "7cd7726bfb3d1c23e79066f9742f32c5f3c9fbc6fac0f30dfca3b2daabf7db71"
+        }
+      ]
+    },
+    {
+      "slug": "verticals/local-other",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "40bea847ee5f3bcadf0ba0994605e4cedce6ce29420395f8bd75c75e27ab7c6f",
+      "files": [
+        {
+          "path": "pack.md",
+          "sha256": "987c658e394ea78fb5a567ab6c26e5b8a7075ffcbcffb97f570beeee5955b17c"
+        }
+      ]
+    },
+    {
+      "slug": "verticals/saas-b2b",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "58532501a8d3a236dbe052eab0ee36459d2e2482058b22519b771ebdd360b23d",
+      "files": [
+        {
+          "path": "compliance.md",
+          "sha256": "705574999184d01470be03e999a2a48184c0c3444b179bc239f01a69a2043334"
+        },
+        {
+          "path": "pack.md",
+          "sha256": "d245050eb6324da04a5f0cba059e37f88bae586d9eb2f6ef922719997cbc7c86"
+        }
+      ]
+    },
+    {
+      "slug": "account-review-loop",
+      "kind": "skill",
+      "version": "0.4.1-accepted",
+      "versionSource": "banner",
+      "contentHash": "0e670fd96e6bd422c446ebcbaa98cbf558f9b58e884f645a7f6812e066caec8b",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "560d0cc78e8bef493610e265390dd49894b53c0fa93ed54c43d8b70223d7f4de"
+        }
+      ]
+    },
+    {
+      "slug": "claims-check",
+      "kind": "skill",
+      "version": "0.4.1-accepted",
+      "versionSource": "banner",
+      "contentHash": "3f271f91137a560266b9f3acdc7654ca9c7b01d1b4624366eb238afeb7a55848",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "7f7d9620eb78f1141470b170581161b17411efaa485201279e67a11791964b67"
+        },
+        {
+          "path": "references/universal-rules.md",
+          "sha256": "b965f0daf286a134c9dce93c404dcad5a8c7cb8e2d5a47104f4846fd20e9163b"
+        }
+      ]
+    },
+    {
+      "slug": "no-slop-copy",
+      "kind": "skill",
+      "version": "3.0.1-accepted",
+      "versionSource": "banner",
+      "contentHash": "3cafc05eaf97e10b7e9ccc84f9be5544642f40aab1c5dc269040d6aa0f7dfcf6",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1dd7722a7243fe28dbeac7191208f957565844f82b77f4e56bd1cc25320f8275"
+        },
+        {
+          "path": "assets/brief-checklist.md",
+          "sha256": "d51298f3c35eeb3cdffcd8041e489988842577441be711e1ffd7182a9aac7dec"
+        },
+        {
+          "path": "references/eval.md",
+          "sha256": "39955dda8c317fa2ac556c8d90267a55c7bdadb026938f1ac6a70b6553694595"
+        },
+        {
+          "path": "references/house-style.md",
+          "sha256": "3eb8652e19646e0c0dd0dcf73db3a2fb44294f01ec7d53b7215bb57c868cbca5"
+        },
+        {
+          "path": "references/patterns.md",
+          "sha256": "ea8b3b2c9d2ccd7184ba3a6ad2b2d098a4b4ee33da4913f314e8c95e93a58d3e"
+        }
+      ]
+    },
+    {
+      "slug": "paid-media",
+      "kind": "skill",
+      "version": "0.4.1-accepted",
+      "versionSource": "banner",
+      "contentHash": "2c6d51a398ca77849b7a139d0169e786dac9aa9189ddf7d44e56b4fe159dff9d",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "9e4756ef96c2c0f43206ac2fd3b8ce98ef5c7194c1abf6c173a4fc943fdff3d1"
+        },
+        {
+          "path": "references/audit-checklist.md",
+          "sha256": "de612bce0050adc870ee4d0dfd4463564c740069dcfbb33ab92644748fb5fa4a"
+        },
+        {
+          "path": "references/google.md",
+          "sha256": "205095faf20b9c205d8a6abbba8d67979038847c6c75c9a702cac0b59e125385"
+        },
+        {
+          "path": "references/meta.md",
+          "sha256": "f915c9d515d7272c8ad8a2fe717f4a402d4e4966d3c9bcf2b0b7db938c30e146"
+        },
+        {
+          "path": "references/microsoft.md",
+          "sha256": "a20ac42542f304c0c89e404cb80418697a50109a363d98fb2cce46d6ca3f7952"
+        },
+        {
+          "path": "references/offline-conversions.md",
+          "sha256": "4b712147086133ac98084b130ea4b87b30ff778456403d9f7b74d04b02693b22"
+        },
+        {
+          "path": "references/openai-ads.md",
+          "sha256": "66a18679f8d07c49be7d7bf22a6ac41851a7fdc479e435298ee4168a36ea0558"
+        },
+        {
+          "path": "references/tiktok.md",
+          "sha256": "c72db70c652aa196330f3e22bc9a413917d5deea3e5cd3a997ac47686a947ac3"
+        }
+      ]
+    },
+    {
+      "slug": "seo-audit",
+      "kind": "skill",
+      "version": "0.4.1-accepted",
+      "versionSource": "banner",
+      "contentHash": "47882ff06cecb7e25e03f5af8581741fabd3e60d578d7213a4e4815ee49576d6",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "a3f6a69f8eedef6c92163b464b1006abaf722c51e47029d8b3cd5b9df12af5e5"
+        }
+      ]
+    },
+    {
+      "slug": "seo-research",
+      "kind": "skill",
+      "version": "1.0-accepted",
+      "versionSource": "banner",
+      "contentHash": "f9e6308eaf19e87e701a16f60cd201e8e8568d3d7d37f4f6e0dacb6c1340c8c2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "fddf51a154501748fba784441ed9d4bd8f1c3170f3a8a7ae0de2db8e3c0100b3"
+        },
+        {
+          "path": "assets/brief-template.md",
+          "sha256": "bb4ae88523164d9425b3e61bf683a6ea9d2b78c32d6f070d1a9b3959f19b527a"
+        },
+        {
+          "path": "references/internal-links.md",
+          "sha256": "f1ad39806c9c54674d7dae856454d1b502ec04efaf6bc40705caec4fac15cf40"
+        },
+        {
+          "path": "references/page-types.md",
+          "sha256": "6c5516b8888ac88c6cb16373b25f90e9f77ff26dc529c7735a9a6dfc0c5eb215"
+        },
+        {
+          "path": "references/related-terms.md",
+          "sha256": "b5fdcbd585c04ede42c2b487420c693a5aacd7b323bc5c5bcae83d60b2e4391f"
+        },
+        {
+          "path": "references/serp-method.md",
+          "sha256": "e31764ad8db0e3b982f73379760d5b14a8715e0a70de0a65564bb0ea027728fc"
+        },
+        {
+          "path": "scripts/analyze_text.py",
+          "sha256": "adda3de37e01d5e0d66065181d806eabb4c1cfccdafa8803939fdf2e5d50d855"
+        }
+      ]
+    }
+  ]
+}
