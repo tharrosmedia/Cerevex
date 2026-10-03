@@ -16,6 +16,7 @@ const prev = {
   NODE_ENV: env.NODE_ENV,
   RAILWAY_ENVIRONMENT: env.RAILWAY_ENVIRONMENT,
   RAILWAY_ENVIRONMENT_NAME: env.RAILWAY_ENVIRONMENT_NAME,
+  CEREVEX_REQUIRE_SIGNING_SECRETS: env.CEREVEX_REQUIRE_SIGNING_SECRETS,
   ENCRYPTION_KEY: env.ENCRYPTION_KEY,
   ALLOW_PLAINTEXT_SECRETS: env.ALLOW_PLAINTEXT_SECRETS,
 };
@@ -91,6 +92,17 @@ try {
   delete env.RAILWAY_ENVIRONMENT_NAME;
   assert.equal(plaintextSecretsAllowed(), false);
   assert.throws(() => assertEncryptionConfigured(), /ENCRYPTION_KEY is required in production/);
+
+  env.NODE_ENV = 'test';
+  env.RAILWAY_ENVIRONMENT_NAME = 'staging';
+  delete env.ENCRYPTION_KEY;
+  env.ALLOW_PLAINTEXT_SECRETS = '1';
+  assert.equal(plaintextSecretsAllowed(), false);
+  assert.throws(() => assertEncryptionConfigured(), /ENCRYPTION_KEY is required in production/);
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.CEREVEX_REQUIRE_SIGNING_SECRETS = '1';
+  assert.equal(plaintextSecretsAllowed(), false);
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
 
   delete env.RAILWAY_ENVIRONMENT_NAME;
   env.NODE_ENV = 'test';

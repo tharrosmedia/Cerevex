@@ -15,9 +15,11 @@ import {
 const env = process.env as Record<string, string | undefined>;
 const prev = {
   JWT_SECRET: env.JWT_SECRET,
+  TOKEN_ENCRYPTION_KEY: env.TOKEN_ENCRYPTION_KEY,
   NODE_ENV: env.NODE_ENV,
   RAILWAY_ENVIRONMENT: env.RAILWAY_ENVIRONMENT,
   RAILWAY_ENVIRONMENT_NAME: env.RAILWAY_ENVIRONMENT_NAME,
+  CEREVEX_REQUIRE_SIGNING_SECRETS: env.CEREVEX_REQUIRE_SIGNING_SECRETS,
 };
 
 function restore() {
@@ -76,7 +78,9 @@ try {
   env.NODE_ENV = 'test';
   delete env.RAILWAY_ENVIRONMENT;
   delete env.RAILWAY_ENVIRONMENT_NAME;
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
   delete env.JWT_SECRET;
+  env.TOKEN_ENCRYPTION_KEY = 'b'.repeat(32);
   const lines: string[] = [];
   assert.doesNotThrow(() => warnIfJwtSecretUnset((message) => lines.push(message)));
   assert.match(lines[0] || '', /JWT_SECRET is unset/);
@@ -111,6 +115,7 @@ try {
     else delete env.RAILWAY_ENVIRONMENT;
     if (setup.name) env.RAILWAY_ENVIRONMENT_NAME = setup.name;
     else delete env.RAILWAY_ENVIRONMENT_NAME;
+    delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
     applySecret(setup.secret);
     assert.throws(() => assertJwtSecretConfigured(), /Refusing to boot/);
     assert.throws(() => jwtSecretBytes(), /Refusing to sign or verify/);
@@ -162,10 +167,60 @@ try {
   env.NODE_ENV = 'production';
   delete env.RAILWAY_ENVIRONMENT;
   delete env.RAILWAY_ENVIRONMENT_NAME;
-  env.JWT_SECRET = 'real-prod-secret-value';
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
+  env.JWT_SECRET = JWT_LOCAL_FALLBACK.toUpperCase();
+  assert.equal(configuredJwtSecret(), null);
+  assert.throws(() => assertJwtSecretConfigured(), /JWT_SECRET:placeholder/);
+  assert.throws(() => jwtSecretBytes(), /Refusing to sign or verify/);
+  const upper = await app.request('/auth/me', { headers: { authorization: `Bearer ${forged}` } });
+  assert.equal(upper.status, 401);
+  env.JWT_SECRET = `  ${JWT_LOCAL_FALLBACK.toLowerCase()}  `;
+  assert.throws(() => assertJwtSecretConfigured(), /JWT_SECRET:placeholder/);
+
+  env.JWT_SECRET = 'a'.repeat(31);
+  assert.equal(configuredJwtSecret(), null);
+  assert.throws(() => assertJwtSecretConfigured(), /JWT_SECRET:short/);
+  assert.throws(() => jwtSecretBytes(), /Refusing to sign or verify/);
+  env.JWT_SECRET = 'a'.repeat(32);
+  assert.equal(configuredJwtSecret(), 'a'.repeat(32));
   assert.doesNotThrow(() => assertJwtSecretConfigured());
   const real = await app.request('/auth/me', { headers: { authorization: `Bearer ${forged}` } });
   assert.equal(real.status, 401);
+
+  env.NODE_ENV = 'test';
+  delete env.RAILWAY_ENVIRONMENT;
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
+  delete env.JWT_SECRET;
+  for (const name of ['staging', 'production-eu']) {
+    env.RAILWAY_ENVIRONMENT_NAME = name;
+    assert.throws(() => assertJwtSecretConfigured(), /JWT_SECRET:missing/, name);
+    assert.throws(() => jwtSecretBytes(), /Refusing to sign or verify/);
+    const named = await app.request('/auth/me', { headers: { authorization: `Bearer ${forged}` } });
+    assert.equal(named.status, 401, name);
+  }
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.RAILWAY_ENVIRONMENT = 'staging';
+  assert.throws(() => assertJwtSecretConfigured(), /Refusing to boot/);
+  delete env.RAILWAY_ENVIRONMENT;
+  env.CEREVEX_REQUIRE_SIGNING_SECRETS = 'true';
+  assert.throws(() => assertJwtSecretConfigured(), /Refusing to boot/);
+  env.CEREVEX_REQUIRE_SIGNING_SECRETS = 'TRUE';
+  assert.throws(() => jwtSecretBytes(), /Refusing to sign or verify/);
+  env.CEREVEX_REQUIRE_SIGNING_SECRETS = '1';
+  env.JWT_SECRET = 'a'.repeat(31);
+  assert.throws(() => assertJwtSecretConfigured(), /JWT_SECRET:short/);
+
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
+  delete env.RAILWAY_ENVIRONMENT;
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.NODE_ENV = 'staging';
+  delete env.JWT_SECRET;
+  assert.doesNotThrow(() => assertJwtSecretConfigured());
+  assert.equal(new TextDecoder().decode(jwtSecretBytes()), JWT_LOCAL_FALLBACK);
+  env.JWT_SECRET = 'a'.repeat(31);
+  assert.equal(new TextDecoder().decode(jwtSecretBytes()), 'a'.repeat(31));
+  env.JWT_SECRET = JWT_LOCAL_FALLBACK.toUpperCase();
+  assert.equal(new TextDecoder().decode(jwtSecretBytes()), JWT_LOCAL_FALLBACK.toUpperCase());
 
   const boot = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../ads/api/src/index.ts'), 'utf8');
   assert.match(boot, /assertJwtSecretConfigured/);
