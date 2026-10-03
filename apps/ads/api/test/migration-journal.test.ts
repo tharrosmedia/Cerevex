@@ -119,16 +119,20 @@ function runMigrate(env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: str
   return runNode([tsxBin, migrateScript], env);
 }
 
-/** Fixture copies stop at 0005 so a later tag such as 0006 is not part of the skip case. */
-function copyMigrations(): string {
+/**
+ * Fixture copies stop at 0005 unless a caller needs a later tag.
+ * The skip test keeps 0006 and drops 0005. Gap fixtures stay through 0005
+ * because 0006 reads clients.site_id from 0004.
+ */
+function copyMigrations(throughTag = "0005_skill_config"): string {
   const dir = mkdtempSync(join(tmpdir(), "cerevex-journal-"));
   cpSync(realMigrations, dir, { recursive: true });
   const journalPath = join(dir, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
     entries: Array<{ tag: string; idx: number }>;
   };
-  const limit = journal.entries.find((entry) => entry.tag === "0005_skill_config");
-  if (!limit) throw new Error("0005_skill_config missing from the journal fixture");
+  const limit = journal.entries.find((entry) => entry.tag === throughTag);
+  if (!limit) throw new Error(`${throughTag} missing from the journal fixture`);
   const removed = journal.entries.filter((entry) => entry.idx > limit.idx);
   journal.entries = journal.entries.filter((entry) => entry.idx <= limit.idx);
   writeFileSync(journalPath, JSON.stringify(journal));
@@ -242,15 +246,16 @@ describe("migration journal", () => {
   }, 60_000);
 
   it("exits non-zero when a migration is stamped below the last applied one", async () => {
-    const folder = copyMigrations();
+    const folder = copyMigrations("0006_plan_entitlements");
     const journalPath = join(folder, "meta", "_journal.json");
     const original = readFileSync(journalPath, "utf8");
     const journal = JSON.parse(original) as { entries: Array<{ tag: string; idx: number; when: number }> };
-    const skipped = journal.entries.find((entry) => entry.tag === "0004_site_clients");
+    const skipped = journal.entries.find((entry) => entry.tag === "0005_skill_config");
     expect(skipped).toBeTruthy();
-    journal.entries = journal.entries.filter((entry) => entry.tag !== "0004_site_clients");
+    expect(journal.entries.some((entry) => entry.tag === "0006_plan_entitlements")).toBe(true);
+    journal.entries = journal.entries.filter((entry) => entry.tag !== "0005_skill_config");
     writeFileSync(journalPath, JSON.stringify(journal));
-    rmSync(join(folder, "0004_site_clients.sql"));
+    rmSync(join(folder, "0005_skill_config.sql"));
 
     const databaseUrl = await createDatabase(`cerevex_migrate_test_${process.pid}_skip`);
     const first = await runMigrate({
@@ -262,7 +267,7 @@ describe("migration journal", () => {
     expect(first.code, first.stderr).toBe(0);
 
     writeFileSync(journalPath, original);
-    cpSync(join(realMigrations, "0004_site_clients.sql"), join(folder, "0004_site_clients.sql"));
+    cpSync(join(realMigrations, "0005_skill_config.sql"), join(folder, "0005_skill_config.sql"));
     const second = await runMigrate({
       ...process.env,
       NODE_ENV: "test",
@@ -270,7 +275,7 @@ describe("migration journal", () => {
       ADS_MIGRATIONS_FOLDER: folder,
     });
     expect(second.code).not.toBe(0);
-    expect(second.stderr).toContain("0004_site_clients");
+    expect(second.stderr).toContain("0005_skill_config");
     expect(second.stderr).toContain(`${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}`);
     expect(second.stderr).toContain("Refusing to migrate");
     rmSync(folder, { recursive: true, force: true });
