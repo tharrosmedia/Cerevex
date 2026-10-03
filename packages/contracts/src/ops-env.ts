@@ -53,7 +53,7 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "CONSOLE_OPERATOR_EMAIL",
     kind: "identity",
-    help: "Email the Brain console session is checked as for Approve. Default adam@tharrosmedia.com. Not a capability.",
+    help: "Label for the shared Brain console session when checking the Approve allowlist. Not a credential: it cannot deny access on its own and does not widen access beyond APP_PASSWORD. Default adam@tharrosmedia.com.",
   },
   {
     env: "APP_PASSWORD",
@@ -63,7 +63,7 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "JWT_SECRET",
     kind: "secret",
-    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD.",
+    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD. If unset, ads auth still falls back to a hardcoded local string (pre-existing). Startup logs a warning and does not fail closed.",
   },
   {
     env: "ADS_INTERNAL_KEY",

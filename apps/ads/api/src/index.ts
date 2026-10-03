@@ -1,9 +1,11 @@
 import { serve } from "@hono/node-server";
 import { loadEnv } from "@tharros/ads-shared/env";
+import { warnIfJwtSecretUnset } from "./jwt-secret";
 import { createApp, VERSION } from "./app";
 import { logger } from "./logger";
 
 loadEnv();
+warnIfJwtSecretUnset((message) => logger.warn({ msg: message }));
 
 const host = process.env.API_HOST ?? "127.0.0.1";
 const port = Number(process.env.API_PORT ?? 43180);
