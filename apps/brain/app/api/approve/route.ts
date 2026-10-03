@@ -9,7 +9,7 @@ async function defaultSend(data: unknown) {
   await inngest.send({ name: 'approval/decided', data });
 }
 
-export async function POST(request: Request, deps?: ApproveDeps) {
+export async function postApprove(request: Request, deps?: ApproveDeps) {
   const gate = authorizeApprover(credentialsFrom({ headers: request.headers, url: request.url }));
   if (!gate.ok) return gateJson(gate);
   const body = await request.json().catch(() => ({}));
@@ -21,4 +21,8 @@ export async function POST(request: Request, deps?: ApproveDeps) {
     console.error('Failed to send approval via api', e);
   }
   return Response.json({ received: true });
+}
+
+export async function POST(request: Request) {
+  return postApprove(request);
 }

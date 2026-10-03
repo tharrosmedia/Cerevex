@@ -26,10 +26,6 @@ export function credentialsFrom(input: {
   cookies?: CookieReader;
   url?: string;
 }): CredentialSource {
-  if (input.url) {
-    // Touch the URL so callers can pass a query string that must not authenticate.
-    void new URL(input.url, 'http://localhost');
-  }
   const fromJar = input.cookies?.get(AUTH_COOKIE_NAME)?.value ?? null;
   return {
     cookie: fromJar ?? cookieFromHeader(input.headers.get('cookie'), AUTH_COOKIE_NAME),

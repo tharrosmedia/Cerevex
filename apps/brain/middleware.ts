@@ -3,9 +3,8 @@ import type { NextRequest } from 'next/server';
 import { guardApi } from './lib/api-access';
 import { AUTH_COOKIE_NAME, setAuthCookie } from './lib/auth-cookie';
 import { publicLegalDecision } from './lib/public-paths';
+import { isProductionRuntime } from './lib/runtime-env';
 import { credentialsFrom } from './lib/sensitive-auth';
-
-const PASSWORD = process.env.APP_PASSWORD;
 
 function withPathname(request: NextRequest, response: NextResponse) {
   response.headers.set('x-pathname', request.nextUrl.pathname);
@@ -37,13 +36,21 @@ export function middleware(request: NextRequest) {
     return withPathname(request, next);
   }
 
-  if (!PASSWORD) {
+  const password = process.env.APP_PASSWORD;
+  if (!password) {
+    if (
+      isProductionRuntime()
+      && request.nextUrl.pathname !== '/login'
+      && legal.kind !== 'public'
+    ) {
+      return new NextResponse('Console is locked.', { status: 503 });
+    }
     return withPathname(request, next);
   }
 
   const authCookie = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
-  if (authCookie === PASSWORD) {
+  if (authCookie === password) {
     const response = withPathname(request, next);
     setAuthCookie(response.cookies, authCookie);
     return response;

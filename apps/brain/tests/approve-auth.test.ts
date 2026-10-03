@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { POST as approve } from '../app/api/approve/route';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { postApprove as approve } from '../app/api/approve/route';
 import { postDecide } from '../app/api/ads/decide/route';
 
 const env = process.env as Record<string, string | undefined>;
@@ -141,6 +144,15 @@ try {
   assert.equal(forwards, 1);
   const decideBody = await decideOk.json();
   assert.equal(decideBody.writes, false);
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const route = readFileSync(join(here, '../app/api/approve/route.ts'), 'utf8');
+  assert.match(route, /export async function POST\(request: Request\)/);
+  assert.doesNotMatch(route, /export async function POST\(request: Request, deps/);
+  const draft = readFileSync(join(here, '../app/drafts/[id]/page.tsx'), 'utf8');
+  const authAt = draft.indexOf('authorizeApprover');
+  const sendAt = draft.indexOf('inngest.send');
+  assert.ok(authAt > 0 && sendAt > authAt);
 
   console.log('approve-auth: ok');
 } finally {
