@@ -149,9 +149,12 @@ async function ledgerCount(databaseUrl: string): Promise<number> {
 }
 
 function pendingTableName(): string {
-  const match = artifactSql(pending.tag).match(/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+"os"\."([A-Za-z0-9_]+)"/i);
-  if (!match?.[1]) throw new Error(`pending tag ${pending.tag} creates no os table`);
-  return match[1];
+  const sql = artifactSql(pending.tag);
+  const table = sql.match(/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+"os"\."([A-Za-z0-9_]+)"/i);
+  if (table?.[1]) return table[1];
+  const index = sql.match(/CREATE UNIQUE INDEX(?:\s+IF NOT EXISTS)?\s+"([A-Za-z0-9_]+)"\s+ON\s+"os"\./i);
+  if (index?.[1]) return index[1];
+  throw new Error(`pending tag ${pending.tag} creates no os table or unique index`);
 }
 
 async function pendingTable(databaseUrl: string): Promise<string | null> {

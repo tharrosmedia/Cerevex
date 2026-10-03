@@ -24,7 +24,7 @@ export async function createPendingConnection(input: {
   workspaceId: string;
   clientId: string;
   platform: Platform;
-  userId: string;
+  userId: string | null;
   tokens: StoredOAuthTokens;
   accounts: AccessibleAdAccount[];
 }): Promise<string> {

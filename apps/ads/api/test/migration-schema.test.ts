@@ -147,11 +147,11 @@ describe("migration journal schema", () => {
       "0004_site_clients",
       "0005_skill_config",
       "0006_plan_entitlements",
+      "0007_service_actor_constraints",
     ];
-    expect(entries.map((entry) => entry.tag).slice(0, prefix.length)).toEqual(prefix);
+    expect(entries.map((entry) => entry.tag)).toEqual(prefix);
     const applied = entries.slice(0, 6);
-    const pending = entries.find((entry) => entry.tag === "0006_plan_entitlements");
-    if (!pending) throw new Error("0006_plan_entitlements missing");
+    const pending = entries.slice(6);
     const ids = [1, 2, 4, 5, 3, 6];
     expect(applied[4]!.tag).toBe("0004_site_clients");
     expect(applied[5]!.tag).toBe("0005_skill_config");
@@ -201,9 +201,11 @@ describe("migration journal schema", () => {
       const rows = await client.query<{ id: number; hash: string; created_at: string }>(
         `select id, hash, created_at::text from ${migrationsRelation()} order by created_at`,
       );
-      expect(rows.rows).toHaveLength(7);
-      const stamped = rows.rows.find((row) => Number(row.created_at) === pending.when);
-      expect(stamped?.hash).toBe(fileHash(pending.tag));
+      expect(rows.rows).toHaveLength(applied.length + pending.length);
+      for (const entry of pending) {
+        const stamped = rows.rows.find((row) => Number(row.created_at) === entry.when);
+        expect(stamped?.hash).toBe(fileHash(entry.tag));
+      }
       expect(rows.rows.find((row) => row.hash === fileHash("0004_site_clients"))?.id).toBe(3);
       expect((await client.query(`select to_regclass('os.skill_client_configs') as name`)).rows[0]?.name).toBe(
         "skill_client_configs",

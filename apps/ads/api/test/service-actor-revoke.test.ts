@@ -2,23 +2,35 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { loadEnv } from "@tharros/ads-shared/env";
-import { closeDb, getDb } from "@tharros/ads-shared/db";
+import { ADS_POOL_MAX, closeDb, getDb } from "@tharros/ads-shared/db";
 import { runApplyJob } from "@tharros/ads-shared/apply";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import {
+  adAccounts,
   adEntities,
   applyJobs,
   auditLog,
   authorizations,
+  clients,
   decisions,
+  memberships,
+  oauthPendingConnections,
   recommendations,
+  users,
+  workspaces,
 } from "@tharros/ads-shared/schema";
+import { hash } from "bcryptjs";
+import { getAdPlatformConnector } from "@tharros/ads-shared/connectors";
+import { assertServiceWorkspaceConfigured } from "../src/auth";
+import { signOAuthState } from "../src/oauth-state";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
 loadEnv();
 
 const INTERNAL_KEY = "test-internal-service-key";
 const ORIGINAL_KEY = process.env.ADS_INTERNAL_KEY;
+const ORIGINAL_WORKSPACE = process.env.ADS_INTERNAL_WORKSPACE_ID;
+const OTHER_WORKSPACE_ID = "00000000-0000-4000-8000-0000000000aa";
 
 describe("service actor, authorization revoke, and decide/apply oracle", () => {
   let ownerToken = "";
@@ -79,6 +91,7 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       body: JSON.stringify({ applyKillSwitch: false }),
     });
     expect(flip.status).toBe(200);
+    process.env.ADS_INTERNAL_WORKSPACE_ID = workspaceId;
   });
 
   afterAll(async () => {
@@ -89,6 +102,8 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     });
     if (ORIGINAL_KEY === undefined) delete process.env.ADS_INTERNAL_KEY;
     else process.env.ADS_INTERNAL_KEY = ORIGINAL_KEY;
+    if (ORIGINAL_WORKSPACE === undefined) delete process.env.ADS_INTERNAL_WORKSPACE_ID;
+    else process.env.ADS_INTERNAL_WORKSPACE_ID = ORIGINAL_WORKSPACE;
     await closeDb();
   });
 
@@ -347,6 +362,290 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(afterStatus).toBe(beforeStatus);
     const afterAudits = (await getDb().select({ id: auditLog.id }).from(auditLog)).length;
     expect(afterAudits).toBe(beforeAudits);
+  });
+
+  it("returns 409 when approve loses the race to deny, and one job for parallel approves", async () => {
+    for (let trial = 0; trial < 8; trial += 1) {
+      const rec = await insertRec();
+      const [approve, deny] = await Promise.all([
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve" }),
+        }),
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "deny" }),
+        }),
+      ]);
+      expect(approve.status).not.toBe(500);
+      expect(deny.status).not.toBe(500);
+      expect([200, 409]).toContain(approve.status);
+      expect([200, 409]).toContain(deny.status);
+      const stored = await getDb().query.recommendations.findFirst({
+        where: eq(recommendations.id, rec.id),
+      });
+      const auths = await getDb()
+        .select()
+        .from(authorizations)
+        .where(eq(authorizations.recommendationId, rec.id));
+      const live = auths.filter((row) => row.revokedAt == null);
+      if (deny.status === 200) {
+        expect(stored?.status).not.toBe("authorized");
+        expect(live).toHaveLength(0);
+      }
+      if (approve.status === 409) {
+        expect(stored?.status).toBe("denied");
+      }
+    }
+
+    const rec = await insertRec();
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve" }),
+        }),
+      ),
+    );
+    expect(responses.map((res) => res.status).sort()).toEqual([200, 409, 409, 409, 409, 409, 409, 409]);
+    const auths = await getDb()
+      .select()
+      .from(authorizations)
+      .where(eq(authorizations.recommendationId, rec.id));
+    expect(auths).toHaveLength(1);
+    const jobs = await getDb().select().from(applyJobs).where(eq(applyJobs.authorizationId, auths[0]!.id));
+    expect(jobs).toHaveLength(1);
+  });
+
+  it("finishes more apply jobs than the pool size", async () => {
+    const count = ADS_POOL_MAX + 2;
+    const jobIds: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const rec = await insertRec();
+      jobIds.push(await approveQueued(rec.id));
+    }
+    const ran = await Promise.all(jobIds.map((id) => runApplyJob(id)));
+    expect(ran).toHaveLength(count);
+    expect(ran.every((row) => row.applyJob.status === "succeeded" || row.applyJob.status === "failed")).toBe(true);
+    expect(ran.some((row) => row.writes === true)).toBe(true);
+    expect(ran.every((row) => row.blocked == null)).toBe(true);
+  });
+
+  it("stores a null user id when the service principal starts a multi-account connect", async () => {
+    const connector = getAdPlatformConnector("meta");
+    const originalExchange = connector.exchangeCode.bind(connector);
+    const originalList = connector.listAccessibleAccounts.bind(connector);
+    const previousConsole = process.env.CONSOLE_ORIGIN;
+    process.env.CONSOLE_ORIGIN = "http://127.0.0.1:43181";
+    connector.exchangeCode = async () => ({
+      externalId: "act_service_pending",
+      tokens: {
+        accessToken: "service-oauth-test-token",
+        refreshToken: "service-oauth-test-refresh",
+        mock: true,
+        scopes: [],
+      },
+    });
+    connector.listAccessibleAccounts = async () => [
+      { externalId: "act_service_one", name: "Service One" },
+      { externalId: "act_service_two", name: "Service Two" },
+    ];
+    try {
+      const state = await signOAuthState({ userId: "service", clientId, platform: "meta" });
+      const callback = await app.request(
+        `/oauth/meta/callback?code=service-test-code&state=${encodeURIComponent(state)}`,
+      );
+      expect(callback.status).toBe(302);
+      const location = callback.headers.get("location") ?? "";
+      expect(location).not.toMatch(/oauth_error=/);
+      const pendingId = new URL(location).searchParams.get("pending");
+      expect(pendingId).toBeTruthy();
+      const row = await getDb().query.oauthPendingConnections.findFirst({
+        where: eq(oauthPendingConnections.id, pendingId!),
+      });
+      expect(row?.userId).toBeNull();
+      expect(row?.clientId).toBe(clientId);
+    } finally {
+      connector.exchangeCode = originalExchange;
+      connector.listAccessibleAccounts = originalList;
+      if (previousConsole === undefined) delete process.env.CONSOLE_ORIGIN;
+      else process.env.CONSOLE_ORIGIN = previousConsole;
+    }
+  });
+
+  it("cannot read or change another workspace", async () => {
+    const db = getDb();
+    await db
+      .insert(workspaces)
+      .values({
+        id: OTHER_WORKSPACE_ID,
+        name: "Other Tenant",
+        applyKillSwitch: true,
+        settingsJson: { marker: "other-tenant" },
+      })
+      .onConflictDoNothing();
+    const [otherClient] = await db
+      .insert(clients)
+      .values({ workspaceId: OTHER_WORKSPACE_ID, name: "Other Tenant Client" })
+      .onConflictDoNothing()
+      .returning();
+    const otherClientRow =
+      otherClient ??
+      (await db.query.clients.findFirst({
+        where: eq(clients.name, "Other Tenant Client"),
+      }));
+    if (!otherClientRow) throw new Error("other client missing");
+    const [otherAccount] = await db
+      .insert(adAccounts)
+      .values({
+        workspaceId: OTHER_WORKSPACE_ID,
+        clientId: otherClientRow.id,
+        platform: "meta",
+        externalId: "act_other_tenant",
+        displayName: "Other Tenant Ads",
+        connectionStatus: "connected",
+        frozen: false,
+      })
+      .onConflictDoNothing()
+      .returning();
+    const otherAccountRow =
+      otherAccount ??
+      (await db.query.adAccounts.findFirst({
+        where: eq(adAccounts.externalId, "act_other_tenant"),
+      }));
+    if (!otherAccountRow) throw new Error("other account missing");
+    const [otherRec] = await db
+      .insert(recommendations)
+      .values({
+        workspaceId: OTHER_WORKSPACE_ID,
+        clientId: otherClientRow.id,
+        adAccountId: otherAccountRow.id,
+        type: "pause_waste",
+        title: "Other tenant rec",
+        rationale: "Must stay proposed.",
+        risk: "low",
+        evidenceJson: {},
+        proposedMutationsJson: [],
+        status: "proposed",
+        schemaVersion: "1",
+      })
+      .returning();
+
+    const workspaceView = await json(await app.request("/workspace", { headers: internalHeaders() }));
+    expect((workspaceView.workspace as { id: string }).id).toBe(workspaceId);
+    expect((workspaceView.workspace as { id: string }).id).not.toBe(OTHER_WORKSPACE_ID);
+
+    const listed = await json(await app.request("/clients", { headers: internalHeaders() }));
+    const names = (listed.clients as { name: string; workspaceId: string }[]).map((row) => row.workspaceId);
+    expect(names.every((id) => id === workspaceId)).toBe(true);
+    expect(JSON.stringify(listed)).not.toContain("Other Tenant Client");
+
+    const freeze = await app.request(`/ad-accounts/${otherAccountRow.id}`, {
+      method: "PATCH",
+      headers: internalHeaders(true),
+      body: JSON.stringify({ frozen: false }),
+    });
+    expect(freeze.status).toBe(404);
+    const frozen = await db.query.adAccounts.findFirst({ where: eq(adAccounts.id, otherAccountRow.id) });
+    expect(frozen?.frozen).toBe(false);
+
+    const caps = await app.request("/workspace", {
+      method: "PATCH",
+      headers: internalHeaders(true),
+      body: JSON.stringify({ capabilities: { "connect.meta": "hidden" } }),
+    });
+    expect(caps.status).toBe(200);
+    const otherWorkspace = await db.query.workspaces.findFirst({ where: eq(workspaces.id, OTHER_WORKSPACE_ID) });
+    expect(otherWorkspace?.applyKillSwitch).toBe(true);
+    expect(JSON.stringify(otherWorkspace?.settingsJson ?? {})).toBe(JSON.stringify({ marker: "other-tenant" }));
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "connect.meta": "on" } }),
+    });
+
+    const kill = await app.request("/workspace", {
+      method: "PATCH",
+      headers: internalHeaders(true),
+      body: JSON.stringify({ applyKillSwitch: false }),
+    });
+    expect(kill.status).toBe(200);
+    const otherAfterKill = await db.query.workspaces.findFirst({ where: eq(workspaces.id, OTHER_WORKSPACE_ID) });
+    expect(otherAfterKill?.applyKillSwitch).toBe(true);
+    const own = await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+    expect(own?.applyKillSwitch).toBe(false);
+    await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ applyKillSwitch: false }),
+    });
+
+    const deny = await app.request(`/recommendations/${otherRec.id}/decide`, {
+      method: "POST",
+      headers: internalHeaders(true),
+      body: JSON.stringify({ action: "deny" }),
+    });
+    const snooze = await app.request(`/recommendations/${otherRec.id}/decide`, {
+      method: "POST",
+      headers: internalHeaders(true),
+      body: JSON.stringify({ action: "snooze" }),
+    });
+    expect(deny.status).toBe(404);
+    expect(snooze.status).toBe(404);
+    expect(String((await json(deny)).error)).toBe("Recommendation not found");
+    const still = await db.query.recommendations.findFirst({ where: eq(recommendations.id, otherRec.id) });
+    expect(still?.status).toBe("proposed");
+
+    delete process.env.ADS_INTERNAL_WORKSPACE_ID;
+    const refused = await app.request("/workspace", { headers: internalHeaders() });
+    expect(refused.status).toBe(401);
+    process.env.ADS_INTERNAL_WORKSPACE_ID = workspaceId;
+
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    delete process.env.ADS_INTERNAL_WORKSPACE_ID;
+    expect(() => assertServiceWorkspaceConfigured()).toThrow(/ADS_INTERNAL_WORKSPACE_ID/);
+    process.env.NODE_ENV = previousNodeEnv;
+    process.env.ADS_INTERNAL_WORKSPACE_ID = workspaceId;
+  });
+
+  it("uses the same 404 for a read-only user and a workspace-only user on a visible recommendation", async () => {
+    const rec = await insertRec();
+    const email = "workspace.readonly@tharrosmedia.com";
+    const passwordHash = await hash("workspace-readonly-local", 10);
+    const existing = await getDb().query.users.findFirst({ where: eq(users.email, email) });
+    const user =
+      existing ??
+      (await getDb().insert(users).values({ email, name: "Workspace readonly", passwordHash }).returning())[0];
+    if (!user) throw new Error("readonly user missing");
+    if (existing) await getDb().update(users).set({ passwordHash }).where(eq(users.id, user.id));
+    await getDb()
+      .insert(memberships)
+      .values({ userId: user.id, workspaceId, role: "client_readonly" })
+      .onConflictDoNothing();
+    const workspaceOnly = (await login(email, "workspace-readonly-local")).token;
+
+    const cases = [
+      { token: scopedToken, path: `/recommendations/${rec.id}/decide`, body: { action: "deny" } },
+      { token: scopedToken, path: `/recommendations/${rec.id}/apply`, body: {} },
+      { token: workspaceOnly, path: `/recommendations/${rec.id}/decide`, body: { action: "deny" } },
+      { token: workspaceOnly, path: `/recommendations/${rec.id}/apply`, body: {} },
+    ];
+    const results = [];
+    for (const item of cases) {
+      const res = await app.request(item.path, {
+        method: "POST",
+        headers: { authorization: `Bearer ${item.token}`, "content-type": "application/json" },
+        body: JSON.stringify(item.body),
+      });
+      results.push({ status: res.status, error: (await json(res)).error });
+    }
+    expect(results.every((row) => row.status === 404 && row.error === "Recommendation not found")).toBe(true);
+    const stored = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, rec.id) });
+    expect(stored?.status).toBe("proposed");
   });
 });
 

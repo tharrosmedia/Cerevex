@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { compare } from "bcryptjs";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { SignJWT, jwtVerify } from "jose";
 import type { AuthContext, Role } from "@tharros/ads-shared";
 import { SERVICE_ACTOR } from "@tharros/ads-shared/actor";
@@ -122,23 +122,41 @@ export function actorRef(auth: AuthContext): string {
   return auth.user?.id ?? SERVICE_ACTOR;
 }
 
+const WORKSPACE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Configured workspace for the internal key. Never inferred from row order. */
+export function internalWorkspaceId(): string | null {
+  const value = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim() ?? "";
+  return WORKSPACE_UUID.test(value) ? value : null;
+}
+
 /**
- * Internal-key requests run as the service principal.
- * Visibility is every workspace, in id order. This does not look up a user or an owner.
+ * Production refuses to boot when the service key is set and its workspace is not.
+ * Other environments fail closed on the request instead of exiting.
  */
-export async function loadServiceAuth(): Promise<AuthContext> {
-  const db = getDb();
-  const workspaceRows = await db
-    .select({ id: workspaces.id })
-    .from(workspaces)
-    .orderBy(asc(workspaces.id));
+export function assertServiceWorkspaceConfigured(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  if (!process.env.ADS_INTERNAL_KEY?.trim()) return;
+  if (!internalWorkspaceId()) {
+    throw new Error("ADS_INTERNAL_WORKSPACE_ID must be set when ADS_INTERNAL_KEY is set");
+  }
+}
+
+/**
+ * Internal-key requests run as the service principal for one configured workspace.
+ * An unset or unknown workspace id returns null. There is no owner or lowest-id fallback.
+ */
+export async function loadServiceAuth(): Promise<AuthContext | null> {
+  const workspaceId = internalWorkspaceId();
+  if (!workspaceId) return null;
+  const workspace = await getDb().query.workspaces.findFirst({
+    where: eq(workspaces.id, workspaceId),
+  });
+  if (!workspace) return null;
   return {
     principal: "service",
     user: null,
-    memberships: workspaceRows.map((row) => ({
-      workspaceId: row.id,
-      role: "operator" satisfies Role,
-    })),
+    memberships: [{ workspaceId: workspace.id, role: "operator" satisfies Role }],
     clientMemberships: [],
   };
 }

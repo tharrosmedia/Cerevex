@@ -64,7 +64,11 @@ export const VERSION = "0.1.0";
 const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   const internalKey = extractInternalKey(c.req.header("x-cerevex-internal-key"));
   if (internalKeyMatches(internalKey)) {
-    c.set("auth", await loadServiceAuth());
+    const auth = await loadServiceAuth();
+    if (!auth) {
+      throw new HTTPException(401, { message: "Service workspace is not configured" });
+    }
+    c.set("auth", auth);
     await next();
     return;
   }

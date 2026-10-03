@@ -9,6 +9,7 @@ import {
   applyModuleOverrideSettings,
   canApproveApply,
   canMutate,
+  type AuthContext,
   capabilityOnBlockedReason,
   CAPABILITY_IDS,
   EVENTS,
@@ -23,6 +24,7 @@ import { latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shar
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
+  RecommendationNotOpenError,
   createAuditRun,
   decideRecommendation,
   getAuditBundle,
@@ -43,7 +45,6 @@ import { getDb } from "@tharros/ads-shared/db";
 import { sendApplyRequested, sendAuditRequested } from "@tharros/ads-shared/inngest";
 import { adAccounts, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
-import type { AuthContext } from "@tharros/ads-shared";
 import { actorRef, auditActor, isServicePrincipal } from "./auth";
 import { requireMutableClient, requireVisibleAccount } from "./connect";
 import { childLogger } from "./logger";
@@ -74,11 +75,10 @@ async function recommendationForMutation(auth: AuthContext, id: string) {
     throw new HTTPException(404, { message: RECOMMENDATION_NOT_FOUND });
   }
   const visible = await getVisibleClient(auth, row.clientId);
-  if (!visible) {
+  if (!visible || !canMutate(auth, visible.workspaceId)) {
     throw new HTTPException(404, { message: RECOMMENDATION_NOT_FOUND });
   }
-  const client = await requireMutableClient(auth, row.clientId);
-  return { row, client };
+  return { row, client: visible };
 }
 
 export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHandler<AppEnv>) {
@@ -336,13 +336,21 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
 
     const actor = auditActor(auth);
-    const result = await decideRecommendation({
-      recommendationId: row.id,
-      userId: actor.actorId,
-      actorType: actor.actorType,
-      action,
-      note: parsed.data.note,
-    });
+    let result: Awaited<ReturnType<typeof decideRecommendation>>;
+    try {
+      result = await decideRecommendation({
+        recommendationId: row.id,
+        userId: actor.actorId,
+        actorType: actor.actorType,
+        action,
+        note: parsed.data.note,
+      });
+    } catch (error) {
+      if (error instanceof RecommendationNotOpenError) {
+        throw new HTTPException(409, { message: error.message });
+      }
+      throw error;
+    }
 
     if (action !== "authorize") {
       childLogger(c.get("requestId")).info({

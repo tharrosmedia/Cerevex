@@ -211,7 +211,8 @@ describe("M3 audit → findings → recommendations", () => {
       headers: { authorization: `Bearer ${scopedToken}`, "content-type": "application/json" },
       body: JSON.stringify({ action: "deny" }),
     });
-    expect(decide.status).toBe(403);
+    expect(decide.status).toBe(404);
+    expect(String((await json(decide)).error)).toBe("Recommendation not found");
   });
 
   it("exposes kill switch and canApprove for the Adam owner", async () => {
