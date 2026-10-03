@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ADS_PUBLIC_ROUTE_INVENTORY, API_ROUTE_INVENTORY, guardApi } from '../lib/api-access';
 import { middleware } from '../middleware';
+import { passwordMatches, secretsMatch } from '../lib/sensitive-auth';
 
 const env = process.env as Record<string, string | undefined>;
 const prevPassword = env.APP_PASSWORD;
@@ -113,6 +114,11 @@ try {
   );
   const query = await call('/api/approve?x-cerevex-internal-key=internal-secret', 'POST');
   assert.equal(query.status, 401);
+  assert.equal(secretsMatch('console-secret', 'console-secret'), true);
+  assert.equal(secretsMatch('console-secre', 'console-secret'), false);
+  assert.equal(secretsMatch('Console-secret', 'console-secret'), false);
+  assert.equal(passwordMatches('console-secret'), true);
+  assert.equal(passwordMatches('nope'), false);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const repoRoot = join(here, '../../..');

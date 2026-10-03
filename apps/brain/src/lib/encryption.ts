@@ -90,6 +90,20 @@ export function encrypt(text: string, secret?: string | null): string {
   return iv.toString('hex') + ':' + encrypted + ':' + tag.toString('hex');
 }
 
+/**
+ * Read a stored secret.
+ * Dev opt-in (`ALLOW_PLAINTEXT_SECRETS=1`, no production, no ENCRYPTION_KEY) returns the plaintext it stored.
+ * Any other plaintext row is blanked in memory and left unchanged in the database.
+ */
+export function readStoredSecret(value: string, where?: PlaintextAtRestFinding): string {
+  if (!isEncryptedPayload(value)) {
+    notePlaintextAtRest(where ?? { source: 'read', field: 'secret' });
+    if (plaintextSecretsAllowed() && encryptionKeyProblem() === 'missing') return value;
+    return '';
+  }
+  return decrypt(value, undefined, where);
+}
+
 export function decrypt(encryptedText: string, secret?: string | null, where?: PlaintextAtRestFinding): string {
   const key = resolveEncryptionSecret(secret);
   if (!key) {

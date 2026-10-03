@@ -103,6 +103,20 @@ try {
   assert.equal(internal.status, 200);
   assert.equal(sends, 2);
 
+  const failedSend = await approve(
+    request('/api/approve', { jobId: 'job-3', status: 'approved' }, { cookie: 'auth=console-secret' }),
+    {
+      send: async () => {
+        sends += 1;
+        throw new Error('inngest down');
+      },
+    },
+  );
+  assert.equal(failedSend.status, 502);
+  const failedBody = await failedSend.json();
+  assert.equal(failedBody.received, false);
+  assert.equal(sends, 3);
+
   let forwards = 0;
   const decideUnauth = await postDecide(request('/api/ads/decide', { recommendationId: 'rec-1', action: 'approve' }), async () => {
     forwards += 1;

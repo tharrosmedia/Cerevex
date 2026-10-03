@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import 'dotenv/config';
-import { decrypt, encrypt, isEncryptedPayload, notePlaintextAtRest } from '../encryption';
+import { encrypt, readStoredSecret } from '../encryption';
 import { cookies } from 'next/headers';
 import { toSafeJsonb } from './safe-json';
 
@@ -16,12 +16,7 @@ export async function getStore(id: string) {
   if (row && row.shopify_access_token) {
     const where = { source: 'stores.shopify_access_token', field: 'shopify_access_token', storeId: id };
     try {
-      if (!isEncryptedPayload(row.shopify_access_token)) {
-        notePlaintextAtRest(where);
-        row.shopify_access_token = '';
-      } else {
-        row.shopify_access_token = decrypt(row.shopify_access_token, process.env.ENCRYPTION_KEY, where);
-      }
+      row.shopify_access_token = readStoredSecret(row.shopify_access_token, where);
     } catch (e) {
       // Leave the row unchanged in the database. Callers see an empty token until it is re-saved.
       console.warn('Failed to decrypt token for store', id, '— plaintext rows are reported and not migrated');

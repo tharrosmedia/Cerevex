@@ -13,6 +13,12 @@ try {
   const fallback = new TextDecoder().decode(jwtSecretBytes());
   assert.equal(fallback, 'replace-with-a-long-random-local-secret');
 
+  env.JWT_SECRET = '';
+  const emptyLines: string[] = [];
+  warnIfJwtSecretUnset((message) => emptyLines.push(message));
+  assert.match(emptyLines[0] || '', /JWT_SECRET is unset/);
+  assert.equal(new TextDecoder().decode(jwtSecretBytes()), 'replace-with-a-long-random-local-secret');
+
   env.JWT_SECRET = 'ci-jwt-secret-not-for-prod';
   const quiet: string[] = [];
   warnIfJwtSecretUnset((message) => quiet.push(message));

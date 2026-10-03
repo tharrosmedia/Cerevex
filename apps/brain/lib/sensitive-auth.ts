@@ -62,8 +62,7 @@ export function consoleOperatorEmail(): string {
 }
 
 /** Equal-length compare. Length mismatches return false without walking the secret. */
-export function internalKeyMatches(provided: string | null | undefined): boolean {
-  const expected = process.env.ADS_INTERNAL_KEY;
+export function secretsMatch(provided: string | null | undefined, expected: string | null | undefined): boolean {
   if (!expected || !provided) return false;
   const a = new TextEncoder().encode(provided);
   const b = new TextEncoder().encode(expected);
@@ -71,6 +70,14 @@ export function internalKeyMatches(provided: string | null | undefined): boolean
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
   return diff === 0;
+}
+
+export function internalKeyMatches(provided: string | null | undefined): boolean {
+  return secretsMatch(provided, process.env.ADS_INTERNAL_KEY);
+}
+
+export function passwordMatches(provided: string | null | undefined): boolean {
+  return secretsMatch(provided, process.env.APP_PASSWORD);
 }
 
 /** Any console session, or a valid internal key. Dev without APP_PASSWORD stays open. */
@@ -81,7 +88,7 @@ export function authorizeConsole(creds: CredentialSource): AuthGate {
     if (isProductionRuntime()) return { ok: false, status: 401, error: 'Sign in required' };
     return { ok: true, via: 'dev-open' };
   }
-  if (creds.cookie === password) return { ok: true, via: 'session' };
+  if (passwordMatches(creds.cookie)) return { ok: true, via: 'session' };
   return { ok: false, status: 401, error: 'Sign in required' };
 }
 
@@ -92,7 +99,7 @@ export function authorizeConsole(creds: CredentialSource): AuthGate {
 export function authorizeApprover(creds: CredentialSource): AuthGate {
   if (internalKeyMatches(creds.internalKey)) return { ok: true, via: 'internal' };
   const password = process.env.APP_PASSWORD;
-  if (password && creds.cookie === password) {
+  if (password && passwordMatches(creds.cookie)) {
     if (!canApproveApply(consoleOperatorEmail())) {
       return { ok: false, status: 403, error: 'Approve is limited to the agency owner allowlist.' };
     }

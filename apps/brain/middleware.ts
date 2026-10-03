@@ -4,7 +4,7 @@ import { guardApi } from './lib/api-access';
 import { AUTH_COOKIE_NAME, setAuthCookie } from './lib/auth-cookie';
 import { publicLegalDecision } from './lib/public-paths';
 import { isProductionRuntime } from './lib/runtime-env';
-import { credentialsFrom } from './lib/sensitive-auth';
+import { credentialsFrom, passwordMatches } from './lib/sensitive-auth';
 
 function withPathname(request: NextRequest, response: NextResponse) {
   response.headers.set('x-pathname', request.nextUrl.pathname);
@@ -50,7 +50,7 @@ export function middleware(request: NextRequest) {
 
   const authCookie = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
-  if (authCookie === password) {
+  if (authCookie && passwordMatches(authCookie)) {
     const response = withPathname(request, next);
     setAuthCookie(response.cookies, authCookie);
     return response;

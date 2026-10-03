@@ -25,6 +25,7 @@ app.post('/api/approve', async (c) => {
     console.log('[INNGEST] approval hono send completed');
   } catch (e: any) {
     console.error('Failed to send approval via hono', e);
+    return c.json({ received: false, error: 'send failed' }, 502);
   }
   return c.json({ received: true });
 });

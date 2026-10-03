@@ -8,6 +8,7 @@ import {
   notePlaintextAtRest,
   plaintextAtRestFindings,
   plaintextSecretsAllowed,
+  readStoredSecret,
 } from '../src/lib/encryption';
 
 const env = process.env as Record<string, string | undefined>;
@@ -97,6 +98,18 @@ try {
   env.NODE_ENV = 'production';
   assert.throws(() => assertEncryptionConfigured(), /leading or trailing whitespace/);
   assert.throws(() => encrypt('secret-value'), /leading or trailing whitespace/);
+
+  env.NODE_ENV = 'test';
+  delete env.RAILWAY_ENVIRONMENT;
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  delete env.ENCRYPTION_KEY;
+  env.ALLOW_PLAINTEXT_SECRETS = '1';
+  clearPlaintextAtRestFindings();
+  const plain = encrypt('shpat_roundtrip');
+  assert.equal(plain, 'shpat_roundtrip');
+  assert.equal(readStoredSecret(plain, { source: 'stores.shopify_access_token', field: 'shopify_access_token', storeId: 'store-1' }), 'shpat_roundtrip');
+  delete env.ALLOW_PLAINTEXT_SECRETS;
+  assert.equal(readStoredSecret(plain, { source: 'stores.shopify_access_token', field: 'shopify_access_token', storeId: 'store-1' }), '');
 
   console.log('encryption: ok');
 } finally {

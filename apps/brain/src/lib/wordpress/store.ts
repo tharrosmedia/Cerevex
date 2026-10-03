@@ -1,4 +1,4 @@
-import { decrypt, encrypt, isEncryptedPayload, notePlaintextAtRest } from '../encryption';
+import { encrypt, readStoredSecret } from '../encryption';
 import type { StoreConfig } from '../types/store';
 
 export type WordpressStoreConfig = {
@@ -53,12 +53,8 @@ export function decryptWordpressPluginKey(store: { id?: string; shopify_access_t
   const wp = wordpressConfigFromStore(store);
   if (wp.pluginKeyEnc) {
     const where = { source: 'stores.config.wordpress.pluginKeyEnc', field: 'pluginKeyEnc', storeId: store?.id };
-    if (!isEncryptedPayload(wp.pluginKeyEnc)) {
-      notePlaintextAtRest(where);
-      return '';
-    }
     try {
-      return decrypt(wp.pluginKeyEnc, process.env.ENCRYPTION_KEY, where);
+      return readStoredSecret(wp.pluginKeyEnc, where);
     } catch {
       return '';
     }

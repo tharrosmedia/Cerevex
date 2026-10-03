@@ -2,7 +2,8 @@
 export const JWT_LOCAL_FALLBACK = "replace-with-a-long-random-local-secret";
 
 export function jwtSecretBytes(): Uint8Array {
-  return new TextEncoder().encode(process.env.JWT_SECRET ?? JWT_LOCAL_FALLBACK);
+  const configured = process.env.JWT_SECRET;
+  return new TextEncoder().encode(configured ? configured : JWT_LOCAL_FALLBACK);
 }
 
 export function warnIfJwtSecretUnset(log: (message: string) => void = console.warn): void {

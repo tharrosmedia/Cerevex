@@ -19,6 +19,7 @@ export async function postApprove(request: Request, deps?: ApproveDeps) {
     console.log('[INNGEST] approval api send completed');
   } catch (e: any) {
     console.error('Failed to send approval via api', e);
+    return Response.json({ received: false, error: 'send failed' }, { status: 502 });
   }
   return Response.json({ received: true });
 }

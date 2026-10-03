@@ -23,6 +23,11 @@ export class GscOAuthStateError extends Error {
   }
 }
 
+/**
+ * Single-use nonces are stored in this process only.
+ * Another Brain instance can accept a state it has not seen, so replay protection is not shared across replicas.
+ * Google's authorization code is also single-use, which limits that window. A shared store is not part of this change.
+ */
 const usedNonces = new Map<string, number>();
 
 export function resetGscOAuthStateForTests(): void {
