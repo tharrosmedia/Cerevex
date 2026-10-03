@@ -20,6 +20,8 @@ import { registerPlanningRoutes } from "./planning";
 import { registerConnectRoutes } from "./routes";
 import { registerPendingConnectRoutes } from "./pending-connect";
 import { registerSiteRoutes } from "./sites";
+import { registerEntitlementRoutes } from "./entitlements";
+import { EntitlementError } from "@tharros/ads-shared/entitlements";
 import type { AppEnv } from "./types";
 import {
   authenticate,
@@ -124,6 +126,9 @@ export function createApp() {
     if (error instanceof TenancyError) {
       return c.json({ error: error.message, requestId }, 403);
     }
+    if (error instanceof EntitlementError) {
+      return c.json({ error: error.message, requestId }, error.status);
+    }
     if (error instanceof HTTPException) {
       return c.json({ error: error.message, requestId }, error.status);
     }
@@ -215,6 +220,7 @@ export function createApp() {
         name: row.name,
         pilotFlag: row.pilotFlag,
         status: row.status,
+        plan: row.plan,
         siteId: row.siteId ?? null,
         createdAt: row.createdAt.toISOString(),
         connectedPlatforms: summary.connectedPlatforms,
@@ -236,6 +242,8 @@ export function createApp() {
         name: client.name,
         pilotFlag: client.pilotFlag,
         status: client.status,
+        plan: client.plan,
+        siteId: client.siteId ?? null,
         createdAt: client.createdAt.toISOString(),
       },
       adAccounts: await listPublicAdAccounts(client.id),
@@ -247,6 +255,7 @@ export function createApp() {
   registerConnectRoutes(app, requireAuth);
   registerPendingConnectRoutes(app, requireAuth);
   registerSiteRoutes(app, requireAuth);
+  registerEntitlementRoutes(app, requireAuth);
   registerAuditRoutes(app, requireAuth);
   registerM51Routes(app, requireAuth);
   registerOfflineRoutes(app, requireAuth);

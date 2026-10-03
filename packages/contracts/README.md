@@ -9,6 +9,7 @@ Import from `@cerevex/contracts`. Formerly `@shopify-brain/contracts`.
 - **Client 1→N Store** via `store_id` (`ClientStoreLink`).
 - **AdAccounts hang off Client**, not `store_id`.
 - Ads rows also carry `workspaceId`.
+- **Plan** lives on the OS client (`paid` or `scholarship`). See `src/entitlements.ts`. A location is one active `store_id`. Scholarship allows 1 location and 1 active ad account per platform. Monthly creative and SEO limits are declared for the next change and are not counted here.
 
 See `src/tenancy.ts`.
 

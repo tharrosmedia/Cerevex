@@ -5,6 +5,7 @@ import { writeAuditEvent } from "@tharros/ads-shared/audit";
 import { getAdPlatformConnector } from "@tharros/ads-shared/connectors";
 import { loadTokens, publicTokenView, storeTokens } from "@tharros/ads-shared/credentials";
 import { getDb } from "@tharros/ads-shared/db";
+import { rejectAdAccountIfBlocked, withTenantWriteLock } from "@tharros/ads-shared/entitlements";
 import { adAccountSyncEvent, sendAdAccountSync } from "@tharros/ads-shared/inngest";
 import { adAccounts, adEntities, adMetrics, oauthCredentials } from "@tharros/ads-shared/schema";
 import { HTTPException } from "hono/http-exception";
@@ -72,14 +73,6 @@ export async function upsertConnectedAccount(input: {
   tokens: Parameters<typeof storeTokens>[0]["tokens"];
   label: string;
 }) {
-  const db = getDb();
-  const matches = await db.select().from(adAccounts).where(eq(adAccounts.clientId, input.clientId));
-  const samePlatform = matches.filter((row) => row.platform === input.platform);
-  // A client can hold several accounts per platform. Legacy Google connects saved "pending" with no account chosen.
-  const match =
-    samePlatform.find((row) => row.externalId === input.externalId) ??
-    samePlatform.find((row) => row.externalId === "pending");
-
   const values = {
     workspaceId: input.workspaceId,
     clientId: input.clientId,
@@ -91,11 +84,19 @@ export async function upsertConnectedAccount(input: {
     scopesJson: input.scopes,
   };
 
-  const row = match
-    ? (
-        await db.update(adAccounts).set(values).where(eq(adAccounts.id, match.id)).returning()
-      )[0]
-    : (await db.insert(adAccounts).values(values).returning())[0];
+  const row = await withTenantWriteLock(input.clientId, async (tx, tenant) => {
+    const matches = await tx.select().from(adAccounts).where(eq(adAccounts.clientId, input.clientId));
+    const samePlatform = matches.filter((account) => account.platform === input.platform);
+    // A client can hold several accounts per platform. Legacy Google connects saved "pending" with no account chosen.
+    const match =
+      samePlatform.find((account) => account.externalId === input.externalId) ??
+      samePlatform.find((account) => account.externalId === "pending");
+    await rejectAdAccountIfBlocked(tx, tenant, input.platform, input.externalId, match?.externalId);
+    const [saved] = match
+      ? await tx.update(adAccounts).set(values).where(eq(adAccounts.id, match.id)).returning()
+      : await tx.insert(adAccounts).values(values).returning();
+    return saved;
+  });
 
   await storeTokens({
     workspaceId: input.workspaceId,

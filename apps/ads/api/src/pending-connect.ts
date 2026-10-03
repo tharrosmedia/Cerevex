@@ -9,6 +9,7 @@ import { getDb } from "@tharros/ads-shared/db";
 import { sendAdAccountSync } from "@tharros/ads-shared/inngest";
 import { GOOGLE_SCOPES, META_SCOPES } from "@tharros/ads-shared/oauth";
 import { adAccounts, oauthPendingConnections } from "@tharros/ads-shared/schema";
+import { assertCanActivateAdAccounts } from "@tharros/ads-shared/entitlements";
 import { requireMutableClient, upsertConnectedAccount } from "./connect";
 import type { AppEnv } from "./types";
 
@@ -62,6 +63,11 @@ export async function connectChosenAccounts(input: {
   tokens: StoredOAuthTokens;
   accounts: AccessibleAdAccount[];
 }) {
+  await assertCanActivateAdAccounts(
+    input.clientId,
+    input.platform,
+    input.accounts.map((account) => account.externalId),
+  );
   const rows = [];
   for (const account of input.accounts) {
     const row = await upsertConnectedAccount({
