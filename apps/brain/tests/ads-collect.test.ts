@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ADS_COLLECT_MAX_BODY_BYTES,
+  ADS_COLLECT_MAX_BUCKETS,
+  ADS_COLLECT_WINDOW_MS,
+  adsCollectBucketCount,
   adsCollectCorsHeaders,
+  allowAdsCollect,
   inspectAdsCollectRequest,
   resetAdsCollectLimits,
 } from '../lib/ads-collect';
@@ -47,12 +51,38 @@ try {
 
   resetAdsCollectLimits();
   for (let i = 0; i < 30; i += 1) {
-    const allowed = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }));
+    const allowed = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': `spoof-${i}, 203.0.113.9` }));
     assert.equal(allowed.ok, true, String(i));
   }
-  const limited = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': '203.0.113.9' }));
+  const limited = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': 'another-spoof, 203.0.113.9' }));
   assert.equal(limited.ok, false);
   if (!limited.ok) assert.equal(limited.status, 429);
+  const otherHop = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': '203.0.113.9, 198.51.100.4' }));
+  assert.equal(otherHop.ok, true);
+
+  resetAdsCollectLimits();
+  for (let i = 0; i < ADS_COLLECT_MAX_BUCKETS + 20; i += 1) allowAdsCollect(`203.0.113.${i}`);
+  assert.ok(adsCollectBucketCount() <= ADS_COLLECT_MAX_BUCKETS);
+  resetAdsCollectLimits();
+  allowAdsCollect('203.0.113.8', 0);
+  allowAdsCollect('203.0.113.7', ADS_COLLECT_WINDOW_MS + 1);
+  assert.equal(adsCollectBucketCount(), 1);
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const chunk = new Uint8Array(1024);
+      for (let i = 0; i < 40; i += 1) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  const streamed = await inspectAdsCollectRequest(new Request('http://localhost/api/ads/collect', {
+    method: 'POST',
+    headers: { origin: 'https://shop.example' },
+    body: stream,
+    duplex: 'half',
+  } as RequestInit));
+  assert.equal(streamed.ok, false);
+  if (!streamed.ok) assert.equal(streamed.status, 413);
 
   const route = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../app/api/ads/collect/route.ts'), 'utf8');
   assert.doesNotMatch(route, /Access-Control-Allow-Origin': '\*'/);

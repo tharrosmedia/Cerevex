@@ -1,6 +1,7 @@
 export const ADS_COLLECT_MAX_BODY_BYTES = 32 * 1024;
-const WINDOW_MS = 60_000;
+export const ADS_COLLECT_WINDOW_MS = 60_000;
 const MAX_REQUESTS = 30;
+export const ADS_COLLECT_MAX_BUCKETS = 1024;
 
 type Bucket = { count: number; resetAt: number };
 const buckets = new Map<string, Bucket>();
@@ -33,21 +34,81 @@ export function adsCollectCorsHeaders(origin: string | null): Record<string, str
   };
 }
 
+/**
+ * Railway appends the connecting address. The leftmost hop is client-controlled, so the limit uses the rightmost hop.
+ */
 export function adsCollectClientKey(headers: { get(name: string): string | null }): string {
   const forwarded = headers.get('x-forwarded-for');
-  const first = forwarded?.split(',')[0]?.trim();
-  return first || headers.get('x-real-ip')?.trim() || 'unknown';
+  const hops = forwarded?.split(',').map((hop) => hop.trim()).filter(Boolean) ?? [];
+  const trusted = hops.length ? hops[hops.length - 1] : '';
+  return trusted || headers.get('x-real-ip')?.trim() || 'unknown';
+}
+
+function evictBuckets(now: number): void {
+  for (const [ip, row] of buckets) {
+    if (row.resetAt <= now) buckets.delete(ip);
+  }
+  while (buckets.size > ADS_COLLECT_MAX_BUCKETS) {
+    const oldest = buckets.keys().next().value;
+    if (oldest === undefined) break;
+    buckets.delete(oldest);
+  }
+}
+
+export function adsCollectBucketCount(): number {
+  return buckets.size;
 }
 
 export function allowAdsCollect(ip: string, now = Date.now()): boolean {
+  evictBuckets(now);
   const row = buckets.get(ip);
   if (!row || now >= row.resetAt) {
-    buckets.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    if (buckets.size >= ADS_COLLECT_MAX_BUCKETS) {
+      const oldest = buckets.keys().next().value;
+      if (oldest !== undefined) buckets.delete(oldest);
+    }
+    buckets.set(ip, { count: 1, resetAt: now + ADS_COLLECT_WINDOW_MS });
     return true;
   }
   if (row.count >= MAX_REQUESTS) return false;
   row.count += 1;
+  buckets.delete(ip);
+  buckets.set(ip, row);
   return true;
+}
+
+async function readCappedBody(request: Request): Promise<{ ok: true; text: string } | { ok: false }> {
+  const declared = Number(request.headers.get('content-length') || '0');
+  if (Number.isFinite(declared) && declared > ADS_COLLECT_MAX_BODY_BYTES) return { ok: false };
+  if (!request.body) {
+    const text = await request.text();
+    return text.length > ADS_COLLECT_MAX_BODY_BYTES ? { ok: false } : { ok: true, text };
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > ADS_COLLECT_MAX_BODY_BYTES) {
+        await reader.cancel();
+        return { ok: false };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false };
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { ok: true, text: new TextDecoder().decode(merged) };
 }
 
 export type CollectInspection =
@@ -64,14 +125,9 @@ export async function inspectAdsCollectRequest(request: Request, now = Date.now(
   if (!allowAdsCollect(ip, now)) {
     return { ok: false, status: 429, error: 'too many requests', origin: allowed };
   }
-  const declared = Number(request.headers.get('content-length') || '0');
-  if (Number.isFinite(declared) && declared > ADS_COLLECT_MAX_BODY_BYTES) {
-    return { ok: false, status: 413, error: 'payload too large', origin: allowed };
-  }
-  const text = await request.text();
-  if (text.length > ADS_COLLECT_MAX_BODY_BYTES) {
-    return { ok: false, status: 413, error: 'payload too large', origin: allowed };
-  }
+  const body = await readCappedBody(request);
+  if (!body.ok) return { ok: false, status: 413, error: 'payload too large', origin: allowed };
+  const text = body.text;
   if (!text.trim()) return { ok: false, status: 400, error: 'bad request', origin: allowed };
   try {
     return { ok: true, origin: allowed, body: JSON.parse(text) };
