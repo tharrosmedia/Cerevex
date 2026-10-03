@@ -1,1 +1,2 @@
 apps/ads/shared/drizzle/*.sql text eol=lf
+artifacts/*.sql text eol=lf
