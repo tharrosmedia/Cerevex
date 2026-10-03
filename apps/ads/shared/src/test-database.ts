@@ -20,10 +20,18 @@
  * hostname regex cannot tell them apart. If PRODUCTION_NEON_HOST or
  * PRODUCTION_DATABASE_URL is present in the environment, that host (and the
  * matching Neon pooler/direct twin) is refused even when the opt-in is set.
- * PRODUCTION_NEON_HOST may be a bare host, host:port, or any scheme URL
- * (`postgres://`, `https://`, and so on); the hostname is what is denied.
- * Empty or whitespace-only values of either variable are unset. A non-empty
- * value that does not parse fails closed.
+ * PRODUCTION_NEON_HOST may be a bare host, host:port, or any scheme URL.
+ * `postgres://` and `postgresql://` are parsed with the driver, so `?host=`
+ * is the host that is denied. Other schemes use the URL hostname. Trailing
+ * dots are stripped. A Neon `options=endpoint=` or `options=project=` id that
+ * matches a configured production endpoint is denied even when the URL host
+ * is different. Empty or whitespace-only values of either variable are unset.
+ * A non-empty value that does not parse fails closed.
+ *
+ * Without PRODUCTION_NEON_HOST or PRODUCTION_DATABASE_URL, an unmarked Neon
+ * host is only a normal remote host: refused by default, allowed with the
+ * opt-in. The guard cannot tell a production compute from a branch compute
+ * by hostname shape alone.
  *
  * A `branch` query parameter does not mark a Neon branch. Host and database
  * markers still can, but never for a host that matches the production list.
@@ -71,6 +79,7 @@ export type AssessTestDatabaseInput = {
 type ParsedConnection = {
   hosts: string[];
   database: string;
+  endpointIds: string[];
 };
 
 type ProductionHosts = { ok: true; hosts: string[] } | { ok: false; detail: string };
@@ -82,6 +91,7 @@ function purposeLabel(purpose: string | undefined): string {
 function normalizeHost(hostname: string): string {
   let host = hostname.trim().toLowerCase();
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+  if (!host.startsWith("/")) host = host.replace(/\.+$/, "");
   return host;
 }
 
@@ -93,7 +103,8 @@ function blankEnv(value: string | undefined): boolean {
   return value === undefined || value.trim() === "";
 }
 
-const HOSTNAME = /^(?:[a-z0-9_-]|\.)+$/i;
+/** One DNS label: no empty label, and no leading or trailing hyphen. */
+const HOST_LABEL = /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/i;
 const SCHEME_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 function connectionHosts(hostField: string): string[] {
@@ -101,6 +112,21 @@ function connectionHosts(hostField: string): string[] {
     .split(",")
     .map((part) => normalizeHost(part))
     .filter((part) => part.length > 0);
+}
+
+function isHostname(value: string): boolean {
+  if (!value || value.length > 253) return false;
+  return value.split(".").every((label) => HOST_LABEL.test(label));
+}
+
+function endpointIdsFromOptions(options: string): string[] {
+  const ids: string[] = [];
+  const pattern = /(?:^|[\s;])(?:endpoint|project)=([a-z0-9_-]+)/gi;
+  for (const match of options.matchAll(pattern)) {
+    const id = match[1]?.toLowerCase().replace(/-pooler$/, "");
+    if (id?.startsWith("ep-")) ids.push(id);
+  }
+  return ids;
 }
 
 /**
@@ -120,7 +146,8 @@ function parseDriverConnection(raw: string): ParsedConnection | null {
   }
   const hostField = typeof config.host === "string" ? config.host : "";
   const database = typeof config.database === "string" ? config.database.toLowerCase() : "";
-  return { hosts: connectionHosts(hostField), database };
+  const options = typeof config.options === "string" ? config.options : "";
+  return { hosts: connectionHosts(hostField), database, endpointIds: endpointIdsFromOptions(options) };
 }
 
 function isTestDatabaseName(name: string): boolean {
@@ -171,10 +198,15 @@ function neonEndpointKey(host: string): string | null {
 function hostsFromToken(token: string): string[] | null {
   const trimmed = token.trim();
   if (!trimmed) return [];
+  if (/^(?:postgres|postgresql):\/\//i.test(trimmed)) {
+    const parsed = parseDriverConnection(trimmed);
+    if (!parsed || parsed.hosts.length === 0) return null;
+    return parsed.hosts;
+  }
   if (SCHEME_URL.test(trimmed)) {
     try {
       const host = normalizeHost(new URL(trimmed).hostname);
-      return host ? [host] : null;
+      return host && isHostname(host) ? [host] : null;
     } catch {
       return null;
     }
@@ -182,9 +214,8 @@ function hostsFromToken(token: string): string[] | null {
   if (/[\s/]/.test(trimmed) || trimmed.includes("://")) return null;
   const portMatch = /^(.*):(\d+)$/.exec(trimmed);
   const bare = portMatch ? portMatch[1] : trimmed;
-  if (!bare || !HOSTNAME.test(bare)) return null;
-  const host = normalizeHost(bare);
-  return host ? [host] : null;
+  const host = normalizeHost(bare ?? "");
+  return host && isHostname(host) ? [host] : null;
 }
 
 function hostsFromListedValue(value: string): string[] | null {
@@ -216,6 +247,12 @@ function loadProductionHosts(env: EnvLike): ProductionHosts {
     hosts.push(...parsed.hosts);
   }
   return { ok: true, hosts };
+}
+
+function matchesProductionEndpointId(endpointId: string, productionHosts: string[]): boolean {
+  const key = endpointId.toLowerCase().replace(/-pooler$/, "");
+  if (!key.startsWith("ep-")) return false;
+  return productionHosts.some((host) => neonEndpointKey(host) === key);
 }
 
 function matchesProductionHost(hostname: string, productionHosts: string[]): boolean {
@@ -282,6 +319,20 @@ export function assessTestDatabase(input: AssessTestDatabaseInput): TestDatabase
           `Refusing to run ${purposeLabel(purpose)} against production Neon host "${candidate}".`,
           `${TEST_DATABASE_OPT_IN_ENV} does not override this.`,
           `The host matches ${PRODUCTION_NEON_HOST_ENV} or ${PRODUCTION_DATABASE_URL_ENV}.`,
+        ].join(" "),
+      };
+    }
+  }
+
+  for (const endpointId of parsed.endpointIds) {
+    if (matchesProductionEndpointId(endpointId, production.hosts)) {
+      return {
+        allowed: false,
+        host: host || null,
+        message: [
+          `Refusing to run ${purposeLabel(purpose)} against production Neon endpoint "${endpointId}".`,
+          `${TEST_DATABASE_OPT_IN_ENV} does not override this.`,
+          `The connection options endpoint matches ${PRODUCTION_NEON_HOST_ENV} or ${PRODUCTION_DATABASE_URL_ENV}.`,
         ].join(" "),
       };
     }
