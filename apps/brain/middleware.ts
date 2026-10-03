@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { guardApi } from './lib/api-access';
 import { AUTH_COOKIE_NAME, setAuthCookie } from './lib/auth-cookie';
 import { publicLegalDecision } from './lib/public-paths';
+import { credentialsFrom } from './lib/sensitive-auth';
 
 const PASSWORD = process.env.APP_PASSWORD;
 
@@ -20,6 +22,19 @@ export function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = legal.pathname;
     return NextResponse.redirect(url, 301);
+  }
+
+  if (request.nextUrl.pathname.startsWith('/api')) {
+    const creds = credentialsFrom({
+      headers: request.headers,
+      cookies: request.cookies,
+      url: request.url,
+    });
+    const guard = guardApi(request.nextUrl.pathname, request.method, creds);
+    if (guard.kind === 'deny') {
+      return NextResponse.json({ error: guard.error }, { status: guard.status });
+    }
+    return withPathname(request, next);
   }
 
   if (!PASSWORD) {
@@ -43,6 +58,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Exclude the Sentry tunnel route from auth middleware
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|sentry-tunnel).*)'],
+  // /api is included and denied by default. sentry-tunnel stays outside this middleware.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|sentry-tunnel).*)'],
 };

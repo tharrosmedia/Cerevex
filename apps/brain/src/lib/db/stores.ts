@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import 'dotenv/config';
-import { encrypt, decrypt } from '../encryption';
+import { decrypt, encrypt, isEncryptedPayload, notePlaintextAtRest } from '../encryption';
 import { cookies } from 'next/headers';
 import { toSafeJsonb } from './safe-json';
 
@@ -14,11 +14,17 @@ export async function getStore(id: string) {
   const result = await sql`SELECT id, name, shopify_domain, shopify_access_token, platform, connector_type, config FROM stores WHERE id = ${id}`;
   const row = result[0];
   if (row && row.shopify_access_token) {
+    const where = { source: 'stores.shopify_access_token', field: 'shopify_access_token', storeId: id };
     try {
-      row.shopify_access_token = decrypt(row.shopify_access_token, process.env.ENCRYPTION_KEY!);
+      if (!isEncryptedPayload(row.shopify_access_token)) {
+        notePlaintextAtRest(where);
+        row.shopify_access_token = '';
+      } else {
+        row.shopify_access_token = decrypt(row.shopify_access_token, process.env.ENCRYPTION_KEY, where);
+      }
     } catch (e) {
-      // If decryption fails (e.g. old plaintext or bad key), clear it so callers get clear "no token" errors
-      console.warn('Failed to decrypt token for store', id, '— may be plaintext or wrong key');
+      // Leave the row unchanged in the database. Callers see an empty token until it is re-saved.
+      console.warn('Failed to decrypt token for store', id, '— plaintext rows are reported and not migrated');
       row.shopify_access_token = '';
     }
   }
@@ -27,7 +33,7 @@ export async function getStore(id: string) {
 
 export async function createStore({ name, shopify_domain, shopify_access_token, platform = 'shopify', connector_type, config }: { name: string; shopify_domain: string; shopify_access_token: string; platform?: string; connector_type?: string; config?: any }) {
   const sql = neon(process.env.DATABASE_URL!);
-  const encryptedToken = encrypt(shopify_access_token, process.env.ENCRYPTION_KEY!);
+  const encryptedToken = encrypt(shopify_access_token, process.env.ENCRYPTION_KEY);
   const safeConfig = toSafeJsonb(config, 'store.config');
   const connectorType = connector_type || platform || 'shopify';
   const result = await sql`INSERT INTO stores (name, shopify_domain, shopify_access_token, platform, connector_type, config) VALUES (${name}, ${shopify_domain}, ${encryptedToken}, ${platform}, ${connectorType}, ${safeConfig}) RETURNING id, name, shopify_domain, platform, connector_type, config, created_at`;
@@ -43,7 +49,7 @@ export async function updateStore(id: string, { name, shopify_domain, shopify_ac
     return result[0];
   }
   if (shopify_access_token && shopify_access_token.length > 0) {
-    const encrypted = encrypt(shopify_access_token, process.env.ENCRYPTION_KEY!);
+    const encrypted = encrypt(shopify_access_token, process.env.ENCRYPTION_KEY);
     const result = await sql`UPDATE stores SET name = ${name}, shopify_domain = ${shopify_domain}, shopify_access_token = ${encrypted}, platform = ${platform}, connector_type = ${connectorType}, config = ${safeConfig}, updated_at = now() WHERE id = ${id} RETURNING id, name, shopify_domain, platform, connector_type, config, created_at`;
     return result[0];
   } else {

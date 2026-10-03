@@ -1,6 +1,6 @@
 import { getOnlineStorePublicationId, publishResource } from './publications';
 
-export async function createAndPublishCollection(adminClient: any, input: { title: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string; }) {
+export async function createAndPublishCollection(adminClient: any, input: { title: string; handle?: string; bodyHtml?: string; seoTitle?: string; seoDescription?: string; }, storeId?: string) {
   const mutation = `
     mutation createCollection($input: CollectionInput!) {
       collectionCreate(input: $input) {
@@ -31,7 +31,7 @@ export async function createAndPublishCollection(adminClient: any, input: { titl
   if (!collection?.id) {
     throw new Error('Failed to create collection');
   }
-  const pubId = await getOnlineStorePublicationId(adminClient);
+  const pubId = await getOnlineStorePublicationId(adminClient, storeId);
   await publishResource(adminClient, collection.id, pubId);
   return response;
 }

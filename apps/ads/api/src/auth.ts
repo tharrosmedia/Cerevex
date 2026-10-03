@@ -88,6 +88,7 @@ export function extractBearer(header: string | undefined): string | null {
   return token;
 }
 
+/** Header only. A query-string key must not authenticate approve/apply or any other route. */
 export function extractInternalKey(header: string | undefined): string | null {
   const value = header?.trim();
   return value ? value : null;

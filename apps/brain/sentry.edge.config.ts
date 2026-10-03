@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { scrubSentryBreadcrumb, scrubSentryEvent } from "./lib/sentry-scrub";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -6,8 +7,14 @@ Sentry.init({
   // 100% in dev, lower in prod
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.1,
 
+  includeLocalVariables: false,
+
   enableLogs: true,
 
-  // Uncomment to reduce PII
-  // dataCollection: { userInfo: false, httpBodies: [] },
+  beforeSend(event) {
+    return scrubSentryEvent(event);
+  },
+  beforeBreadcrumb(breadcrumb) {
+    return scrubSentryBreadcrumb(breadcrumb);
+  },
 });

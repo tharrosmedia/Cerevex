@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { serve as inngestServe } from 'inngest/hono';
+import { authorizeApprover, credentialsFrom } from '../lib/sensitive-auth';
 import { inngest } from './inngest/client';
 import { functions } from './inngest/index';
 
@@ -15,6 +16,8 @@ app.post('/api/inngest', inngestHandler);
 app.put('/api/inngest', inngestHandler);
 
 app.post('/api/approve', async (c) => {
+  const gate = authorizeApprover(credentialsFrom({ headers: c.req.raw.headers, url: c.req.url }));
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status);
   const body = await c.req.json();
   console.log('[INNGEST] sending approval/decided via hono', { jobId: body?.jobId });
   try {

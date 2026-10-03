@@ -1,7 +1,9 @@
 import * as Sentry from "@sentry/nextjs";
+import { assertEncryptionConfigured } from "./src/lib/encryption";
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    assertEncryptionConfigured();
     await import("./sentry.server.config");
   }
 
