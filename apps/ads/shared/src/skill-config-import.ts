@@ -1,3 +1,4 @@
+import "server-only";
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_APPROVE_OPERATOR_EMAIL } from "@cerevex/contracts";
 import type { ClientSkillConfig, SkillConfigBundle } from "@cerevex/skills";
