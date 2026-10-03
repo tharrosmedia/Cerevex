@@ -24,7 +24,8 @@
  * `postgres://` and `postgresql://` are parsed with the driver, so `?host=`
  * is the host that is denied. Other schemes use the URL hostname. A single
  * trailing dot is stripped (`127.0.0.1.`, `localhost.`). More than one
- * trailing dot is refused. Hostnames go through `domainToASCII`; a non-ASCII host
+ * trailing dot is refused, including an IDNA form whose ASCII result ends in
+ * `..` (`localhost。。`). Hostnames go through `domainToASCII`; a non-ASCII host
  * that does not convert fails closed. A Neon `options=endpoint=` or
  * `options=project=` id, including one inside `PRODUCTION_DATABASE_URL` or
  * `PGOPTIONS`, matches a configured production endpoint even when the URL host
@@ -120,7 +121,7 @@ function isInetAtonForm(host: string): boolean {
   return bare.split(".").every((part) => INET_ATON_PART.test(part));
 }
 
-/** ASCII `.` only. Ideographic and fullwidth dots are not trailing dots. */
+/** ASCII `.` on the raw host. IDNA dots are checked after `domainToASCII`. */
 function trailingDotCount(host: string): number {
   let count = 0;
   for (let i = host.length - 1; i >= 0 && host.charCodeAt(i) === 0x2e; i -= 1) count += 1;
@@ -150,6 +151,9 @@ function normalizeHost(hostname: string): string | null {
   if (HOST_CONTROL.test(host)) return null;
   const ascii = domainToASCII(host);
   if (!ascii || /[^\u0000-\u007f]/.test(ascii)) return null;
+  // `。`, `．`, and `｡` become `.` here. A soft hyphen or zero-width space is
+  // dropped, so `localhost。。` and `localhost.\u200B.` are `localhost..`.
+  if (/\.\.$/.test(ascii)) return null;
   const stripped = ascii.replace(/\.+$/, "").toLowerCase();
   if (!stripped) return null;
   // Fullwidth digits, ideographic dots, a soft hyphen, or a zero-width space
