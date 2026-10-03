@@ -18,7 +18,7 @@ import {
   type PlanId,
   type UsageOutcome,
 } from "@cerevex/contracts";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { clients, locations, usageCounters } from "./schema";
 
@@ -181,41 +181,28 @@ export async function recordUsage(input: UsageRecordInput, tx?: Tx): Promise<Usa
 
 /**
  * SEO and other Brain jobs know a store id, not an OS client id.
- * Site link wins. An active location is the fallback. When more than one
- * client matches, the lowest client id wins, so the choice does not change
- * between calls. No matching client means there is nothing to count, and the
- * caller should still keep the job. The month is stamped on the server.
+ * One matching client is counted: a site link, or one active location.
+ * Two clients for the same store is not a guess. The charge is skipped and
+ * the caller reports it. No matching client means there is nothing to count,
+ * and the caller should still keep the job. The month is stamped on the server.
  */
 export async function recordUsageForStore(input: {
   storeId: string;
   kind: MonthlyCapId;
   itemId: string;
   outcome: UsageOutcome;
-}): Promise<UsageRecordResult | { skipped: true; reason: "no_client" }> {
+}): Promise<UsageRecordResult | { skipped: true; reason: "no_client" | "ambiguous_client" }> {
   const db = getDb();
-  const [bySite] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(eq(clients.siteId, input.storeId))
-    .orderBy(asc(clients.id))
-    .limit(1);
-  if (bySite) {
-    return recordUsage({
-      tenantId: bySite.id,
-      kind: input.kind,
-      itemId: input.itemId,
-      outcome: input.outcome,
-    });
-  }
-  const [byLocation] = await db
+  const bySite = await db.select({ id: clients.id }).from(clients).where(eq(clients.siteId, input.storeId));
+  const byLocation = await db
     .select({ id: locations.clientId })
     .from(locations)
-    .where(and(eq(locations.storeId, input.storeId), eq(locations.status, "active")))
-    .orderBy(asc(locations.clientId))
-    .limit(1);
-  if (!byLocation) return { skipped: true, reason: "no_client" };
+    .where(and(eq(locations.storeId, input.storeId), eq(locations.status, "active")));
+  const tenantIds = [...new Set([...bySite.map((row) => row.id), ...byLocation.map((row) => row.id)])];
+  if (tenantIds.length === 0) return { skipped: true, reason: "no_client" };
+  if (tenantIds.length > 1) return { skipped: true, reason: "ambiguous_client" };
   return recordUsage({
-    tenantId: byLocation.id,
+    tenantId: tenantIds[0]!,
     kind: input.kind,
     itemId: input.itemId,
     outcome: input.outcome,
@@ -243,8 +230,14 @@ export async function getUsage(tenantId: string, at: Date = new Date()): Promise
 
 /**
  * Reports whether another countable item would still be inside the limit.
- * Does not record anything. Paid always passes. Scholarship passes while
- * `used` is below the limit.
+ * Does not record anything and does not lock. Paid always passes. Scholarship
+ * passes while `used` is below the limit.
+ *
+ * This is not a safe concurrent gate. Callers that all read the same `used`
+ * can each pass and then each record: 10 creates at used=19 can all pass and
+ * the counter stores 29. A future gate has to check and increment inside the
+ * locked writeUsage. This helper does not refuse the 21st. Creation still
+ * counts and reports.
  */
 export async function assertWithinCap(
   tenantId: string,

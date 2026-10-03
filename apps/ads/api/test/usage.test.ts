@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
-import { monthlyLimitMessage, usagePeriodKey } from "@cerevex/contracts";
+import { SCHOLARSHIP_LOCATION_MESSAGE, monthlyLimitMessage, usagePeriodKey } from "@cerevex/contracts";
+import { mockPull } from "@tharros/ads-shared";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { clients, locations, usageEvents, workspaces } from "@tharros/ads-shared/schema";
-import { getEntitlements } from "@tharros/ads-shared/entitlements";
+import { activateStore, assignClientSite, getEntitlements } from "@tharros/ads-shared/entitlements";
 import { saveGrokIdea } from "@tharros/ads-shared/grok-creatives";
+import { runAdAccountSync } from "@tharros/ads-shared/sync";
+import { upsertConnectedAccount } from "../src/connect";
 import {
   UsageLimitError,
   assertWithinCap,
@@ -24,6 +27,10 @@ const NAMES = [
   "Usage Outcome",
   "Usage Path",
   "Usage Saves",
+  "Usage Mixed Paid",
+  "Usage Mixed Scholarship",
+  "Usage Reconnect Paid",
+  "Usage Reconnect Scholarship",
 ];
 
 describe("usage month in America/New_York", () => {
@@ -319,13 +326,14 @@ describe("monthly usage counters", () => {
     })).toEqual({ skipped: true, reason: "no_client" });
   });
 
-  it("picks the same client when two active locations share a store id", async () => {
-    const left = ids["Usage Saves"];
-    const right = ids["Usage Race"];
-    const expected = [left, right].sort()[0];
+  it("skips the charge when two clients share a store id", async () => {
+    const paid = ids["Usage Paid"];
+    const scholarship = ids["Usage Saves"];
+    const paidBefore = (await getUsage(paid)).seoJobs.used;
+    const scholarshipBefore = (await getUsage(scholarship)).seoJobs.used;
     await getDb().insert(locations).values([
-      { workspaceId, clientId: left, storeId: "usage-store-shared", status: "active" },
-      { workspaceId, clientId: right, storeId: "usage-store-shared", status: "active" },
+      { workspaceId, clientId: paid, storeId: "usage-store-shared", status: "active" },
+      { workspaceId, clientId: scholarship, storeId: "usage-store-shared", status: "active" },
     ]);
     const recorded = await recordUsageForStore({
       storeId: "usage-store-shared",
@@ -333,18 +341,19 @@ describe("monthly usage counters", () => {
       itemId: "shared-store-job",
       outcome: "created",
     });
-    expect(recorded).toMatchObject({ counted: true });
-    const again = await recordUsageForStore({
-      storeId: "usage-store-shared",
-      kind: "seo_jobs",
-      itemId: "shared-store-job-2",
-      outcome: "created",
-    });
-    expect(again).toMatchObject({ counted: true });
-    const usage = await getUsage(expected);
-    expect(usage.seoJobs.used).toBe(2);
-    const other = expected === left ? right : left;
-    expect((await getUsage(other)).seoJobs.used).toBe(0);
+    expect(recorded).toEqual({ skipped: true, reason: "ambiguous_client" });
+
+    await getDb().update(clients).set({ siteId: "usage-store-shared" }).where(eq(clients.id, paid));
+    expect(
+      await recordUsageForStore({
+        storeId: "usage-store-shared",
+        kind: "seo_jobs",
+        itemId: "shared-site-job",
+        outcome: "created",
+      }),
+    ).toEqual({ skipped: true, reason: "ambiguous_client" });
+    expect((await getUsage(paid)).seoJobs.used).toBe(paidBefore);
+    expect((await getUsage(scholarship)).seoJobs.used).toBe(scholarshipBefore);
   });
 
   it("saves 12 creative variations at once with no deadlocks and an exact count", async () => {
@@ -371,4 +380,147 @@ describe("monthly usage counters", () => {
     expect(new Set(saved.map((row) => row.ideaId)).size).toBe(12);
     expect((await getUsage(tenantId)).creativeVariations.used).toBe(12);
   });
+
+  function messageOf(error: unknown): string {
+    if (error instanceof Error && error.cause instanceof Error) return error.cause.message;
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  async function outcome(run: () => Promise<unknown>): Promise<string | null> {
+    try {
+      const value = await run();
+      if (value && typeof value === "object" && "status" in value && (value as { status?: string }).status === "error") {
+        return String((value as { lastError?: string | null }).lastError ?? "sync error");
+      }
+      return null;
+    } catch (error) {
+      return messageOf(error);
+    }
+  }
+
+  const alternative = {
+    headline: "Same-week visit",
+    body: "Factory-trained techs.",
+    offer: "",
+    videoScript: "Open on the home.",
+    assets: [],
+    targetPlatform: "meta" as const,
+    writes: false as const,
+  };
+
+  it("finishes 175 mixed writes with no deadlocks on a paid client and on a Scholarship client", async () => {
+    for (const plan of ["paid", "scholarship"] as const) {
+      const name = plan === "paid" ? "Usage Mixed Paid" : "Usage Mixed Scholarship";
+      const [client] = await getDb()
+        .insert(clients)
+        .values({ workspaceId, name, status: "active", plan })
+        .returning();
+      const externalId = mockPull("meta", name).externalAccountId;
+      const meta = await upsertConnectedAccount({
+        workspaceId,
+        clientId: client.id,
+        platform: "meta",
+        externalId,
+        scopes: [],
+        tokens: { accessToken: "usage-mixed-token", mock: true },
+        label: "mock",
+      });
+      const storeId = `usage-mixed-store-${plan}`;
+      await activateStore(client.id, storeId);
+
+      const failures: string[] = [];
+      let locationRefusals = 0;
+      const rounds = 25;
+      for (let round = 0; round < rounds; round += 1) {
+        const results = await Promise.all([
+          outcome(() => saveGrokIdea({ workspaceId, clientId: client.id, title: `${name} ${round} a`, alternative })),
+          outcome(() => saveGrokIdea({ workspaceId, clientId: client.id, title: `${name} ${round} b`, alternative })),
+          outcome(() =>
+            recordUsage({
+              tenantId: client.id,
+              kind: "seo_jobs",
+              itemId: `mixed-seo-${plan}`,
+              outcome: "created",
+            }),
+          ),
+          outcome(() =>
+            upsertConnectedAccount({
+              workspaceId,
+              clientId: client.id,
+              platform: "meta",
+              externalId,
+              scopes: [],
+              tokens: { accessToken: "usage-mixed-token", mock: true },
+              label: "mock",
+            }),
+          ),
+          outcome(() => runAdAccountSync(meta.id)),
+          outcome(() => activateStore(client.id, storeId)),
+          outcome(() => assignClientSite(client.id, `usage-mixed-site-${plan}`)),
+        ]);
+        for (const result of results) {
+          if (!result) continue;
+          if (plan === "scholarship" && result === SCHOLARSHIP_LOCATION_MESSAGE) {
+            locationRefusals += 1;
+            continue;
+          }
+          failures.push(result);
+        }
+      }
+
+      expect(failures.filter((failure) => /deadlock/i.test(failure)), plan).toEqual([]);
+      expect(failures, plan).toEqual([]);
+      expect(locationRefusals, plan).toBe(plan === "scholarship" ? rounds : 0);
+      const usage = await getUsage(client.id);
+      expect(usage.creativeVariations.used, plan).toBe(rounds * 2);
+      expect(usage.seoJobs.used, plan).toBe(1);
+    }
+  }, 180_000);
+
+  it("reconnects the account being synced while a creative save runs, with no deadlocks", async () => {
+    for (const plan of ["paid", "scholarship"] as const) {
+      const name = plan === "paid" ? "Usage Reconnect Paid" : "Usage Reconnect Scholarship";
+      const [client] = await getDb()
+        .insert(clients)
+        .values({ workspaceId, name, status: "active", plan })
+        .returning();
+      const externalId = mockPull("meta", name).externalAccountId;
+      const meta = await upsertConnectedAccount({
+        workspaceId,
+        clientId: client.id,
+        platform: "meta",
+        externalId,
+        scopes: [],
+        tokens: { accessToken: "usage-reconnect-token", mock: true },
+        label: "mock",
+      });
+      const failures: string[] = [];
+      for (let round = 0; round < 25; round += 1) {
+        const results = await Promise.all([
+          outcome(() => runAdAccountSync(meta.id)),
+          outcome(() => runAdAccountSync(meta.id)),
+          outcome(() =>
+            upsertConnectedAccount({
+              workspaceId,
+              clientId: client.id,
+              platform: "meta",
+              externalId,
+              scopes: [],
+              tokens: { accessToken: "usage-reconnect-token", mock: true },
+              label: "mock",
+            }),
+          ),
+          outcome(() =>
+            saveGrokIdea({ workspaceId, clientId: client.id, title: `${name} ${round}`, alternative }),
+          ),
+        ]);
+        for (const result of results) {
+          if (result) failures.push(result);
+        }
+      }
+      expect(failures.filter((failure) => /deadlock/i.test(failure)), plan).toEqual([]);
+      expect(failures, plan).toEqual([]);
+      expect((await getUsage(client.id)).creativeVariations.used, plan).toBe(25);
+    }
+  }, 180_000);
 });

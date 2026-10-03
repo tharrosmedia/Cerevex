@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { countsAsSeoUsage, stableUsageJobId } from '../src/lib/db/jobs';
+import {
+  AMBIGUOUS_STORE_USAGE_MESSAGE,
+  USAGE_COUNT_FAILED_MESSAGE,
+  countsAsSeoUsage,
+  stableUsageJobId,
+  usageErrorCode,
+} from '../src/lib/db/jobs';
 import { jobInputDetails, jobInputLabel, jobStatusLabel, jobStatusTone, jobSubject, jobTypeLabel } from '../lib/job-labels';
 
 assert.equal(countsAsSeoUsage('seo', 'collection'), true);
@@ -8,6 +14,16 @@ assert.equal(countsAsSeoUsage('ads', 'collection'), false);
 assert.equal(stableUsageJobId('evt-1'), stableUsageJobId('evt-1'));
 assert.notEqual(stableUsageJobId('evt-1'), stableUsageJobId('evt-2'));
 assert.match(stableUsageJobId('evt-1'), /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+const leaked = 'postgres://user:secret-pass@ep-example.neon.tech/db Bearer eyJabc password="has spaces"';
+assert.equal(usageErrorCode(Object.assign(new Error(leaked), { cause: { code: 'ECONNREFUSED' } })), 'ECONNREFUSED');
+assert.equal(usageErrorCode({ cause: { code: '23514' } }), '23514');
+assert.equal(usageErrorCode(new Error(leaked)), 'unknown');
+assert.equal(usageErrorCode({ code: 'ep-example.neon.tech' }), 'unknown');
+assert.equal(usageErrorCode({ code: 'Bearer eyJabc' }), 'unknown');
+assert.equal(usageErrorCode(new Error(leaked)).includes('secret'), false);
+assert.equal(AMBIGUOUS_STORE_USAGE_MESSAGE.includes('more than one client'), true);
+assert.equal(USAGE_COUNT_FAILED_MESSAGE.includes('postgres'), false);
 
 assert.equal(jobTypeLabel('seo.generate'), 'SEO create');
 assert.equal(jobTypeLabel('seo.wordpress'), 'WordPress change');
