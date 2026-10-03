@@ -1,6 +1,6 @@
-import { authorizeApprover, authorizeConsole, type AuthGate, type CredentialSource } from './sensitive-auth';
+import { authorizeApproveSession, authorizeApprover, authorizeConsole, type AuthGate, type CredentialSource } from './sensitive-auth';
 
-export type ApiAuthClass = 'public' | 'session' | 'approver';
+export type ApiAuthClass = 'public' | 'session' | 'approver' | 'approve-session';
 
 export type ApiSurface = 'brain' | 'ads-api' | 'ads-worker';
 
@@ -29,11 +29,11 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
     surface: 'brain',
     path: '/api/approve',
     methods: ['POST'],
-    auth: 'approver',
+    auth: 'approve-session',
     p0: 'B1',
     currentAuth: 'none — Next route and legacy Hono route both accept any caller',
     intendedAuth:
-      'Console session for an allowlisted approver (default Adam) OR x-cerevex-internal-key. Header only. Deny by default.',
+      'Console session for an allowlisted approver (default Adam). The internal service key is not an approval. Header-only keys and anonymous callers are 401 and write nothing.',
     notes: 'Sends approval/decided. Does not call an ads platform mutation.',
   },
   {
@@ -314,7 +314,11 @@ export type ApiGuard =
 export function guardApi(pathname: string, method: string, creds: CredentialSource): ApiGuard {
   const auth = classifyApiRoute(pathname, method);
   if (auth === 'public') return { kind: 'public' };
-  const gate: AuthGate = auth === 'approver' ? authorizeApprover(creds) : authorizeConsole(creds);
+  const gate: AuthGate = auth === 'approve-session'
+    ? authorizeApproveSession(creds)
+    : auth === 'approver'
+      ? authorizeApprover(creds)
+      : authorizeConsole(creds);
   if (!gate.ok) return { kind: 'deny', status: gate.status, error: gate.error };
   return { kind: 'allow', via: gate.via };
 }

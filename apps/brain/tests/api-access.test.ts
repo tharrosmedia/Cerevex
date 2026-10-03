@@ -80,7 +80,11 @@ try {
   if (wrongKey.kind === 'deny') assert.equal(wrongKey.status, 401);
 
   const internal = guardApi('/api/approve', 'POST', { cookie: null, internalKey: 'internal-secret' });
-  assert.equal(internal.kind, 'allow');
+  assert.equal(internal.kind, 'deny');
+  if (internal.kind === 'deny') assert.equal(internal.status, 401);
+
+  const decideInternal = guardApi('/api/ads/decide', 'POST', { cookie: null, internalKey: 'internal-secret' });
+  assert.equal(decideInternal.kind, 'allow');
 
   const approver = guardApi('/api/approve', 'POST', { cookie: 'console-secret', internalKey: null });
   assert.equal(approver.kind, 'allow');
@@ -106,6 +110,10 @@ try {
   assert.equal((await call('/api/webhooks/shopify', 'POST')).status, 401);
   assert.equal(
     (await call('/api/approve', 'POST', { 'x-cerevex-internal-key': 'nope' })).status,
+    401,
+  );
+  assert.equal(
+    (await call('/api/approve', 'POST', { 'x-cerevex-internal-key': 'internal-secret' })).status,
     401,
   );
   assert.notEqual(

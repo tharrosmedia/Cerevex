@@ -93,11 +93,20 @@ export function authorizeConsole(creds: CredentialSource): AuthGate {
 }
 
 /**
- * Approve / apply. Requires the Adam allowlist on a console session, or ADS_INTERNAL_KEY.
+ * Approve / apply for routes that still accept the service key (decide, drafts).
+ * Requires the Adam allowlist on a console session, or ADS_INTERNAL_KEY.
  * No dev-open bypass. Query-string keys are not credentials.
  */
 export function authorizeApprover(creds: CredentialSource): AuthGate {
   if (internalKeyMatches(creds.internalKey)) return { ok: true, via: 'internal' };
+  return authorizeApproveSession(creds);
+}
+
+/**
+ * Brain POST /api/approve. A real console session only.
+ * The internal service key is not an approval, even when it is valid.
+ */
+export function authorizeApproveSession(creds: CredentialSource): AuthGate {
   const password = process.env.APP_PASSWORD;
   if (password && passwordMatches(creds.cookie)) {
     if (!canApproveApply(consoleOperatorEmail())) {

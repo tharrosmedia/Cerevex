@@ -100,8 +100,8 @@ try {
       },
     },
   );
-  assert.equal(internal.status, 200);
-  assert.equal(sends, 2);
+  assert.equal(internal.status, 401);
+  assert.equal(sends, 1);
 
   const failedSend = await approve(
     request('/api/approve', { jobId: 'job-3', status: 'approved' }, { cookie: 'auth=console-secret' }),
@@ -115,7 +115,7 @@ try {
   assert.equal(failedSend.status, 502);
   const failedBody = await failedSend.json();
   assert.equal(failedBody.received, false);
-  assert.equal(sends, 3);
+  assert.equal(sends, 2);
 
   let forwards = 0;
   const decideUnauth = await postDecide(request('/api/ads/decide', { recommendationId: 'rec-1', action: 'approve' }), async () => {
@@ -156,6 +156,16 @@ try {
   );
   assert.equal(decideOk.status, 200);
   assert.equal(forwards, 1);
+
+  const decideInternal = await postDecide(
+    request('/api/ads/decide', { recommendationId: 'rec-2', action: 'deny' }, { 'x-cerevex-internal-key': 'internal-secret' }),
+    async () => {
+      forwards += 1;
+      return Response.json({ ok: true });
+    },
+  );
+  assert.equal(decideInternal.status, 200);
+  assert.equal(forwards, 2);
   const decideBody = await decideOk.json();
   assert.equal(decideBody.writes, false);
 
