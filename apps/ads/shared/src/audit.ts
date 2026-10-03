@@ -507,7 +507,14 @@ export async function decideRecommendation(input: {
     if (!row) {
       throw new Error("Recommendation not found");
     }
-    if (input.action === "authorize" && row.status !== "proposed") {
+    // Approve, deny, and snooze share this row lock. The first committed
+    // decision wins. Deny or snooze may still revoke an authorization that
+    // is already approved. A deny or snooze that already committed is not
+    // overwritten.
+    const canDecide =
+      row.status === "proposed" ||
+      (input.action !== "authorize" && row.status === "authorized");
+    if (!canDecide) {
       throw new RecommendationNotOpenError();
     }
 

@@ -392,7 +392,7 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
         .where(eq(authorizations.recommendationId, rec.id));
       const live = auths.filter((row) => row.revokedAt == null);
       if (deny.status === 200) {
-        expect(stored?.status).not.toBe("authorized");
+        expect(stored?.status).toBe("denied");
         expect(live).toHaveLength(0);
       }
       if (approve.status === 409) {
@@ -418,6 +418,65 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(auths).toHaveLength(1);
     const jobs = await getDb().select().from(applyJobs).where(eq(applyJobs.authorizationId, auths[0]!.id));
     expect(jobs).toHaveLength(1);
+  });
+
+  it("serializes deny and snooze so a deny that returned 200 stays denied", async () => {
+    for (let trial = 0; trial < 8; trial += 1) {
+      const rec = await insertRec();
+      const [deny, snooze] = await Promise.all([
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "deny" }),
+        }),
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "snooze" }),
+        }),
+      ]);
+      expect([deny.status, snooze.status].sort()).toEqual([200, 409]);
+      const stored = await getDb().query.recommendations.findFirst({
+        where: eq(recommendations.id, rec.id),
+      });
+      if (deny.status === 200) {
+        expect(stored?.status).toBe("denied");
+      } else {
+        expect(stored?.status).toBe("snoozed");
+      }
+    }
+
+    for (let trial = 0; trial < 4; trial += 1) {
+      const rec = await insertRec();
+      const [approve, deny, snooze] = await Promise.all([
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve" }),
+        }),
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "deny" }),
+        }),
+        app.request(`/recommendations/${rec.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "snooze" }),
+        }),
+      ]);
+      for (const res of [approve, deny, snooze]) expect(res.status).not.toBe(500);
+      const stored = await getDb().query.recommendations.findFirst({
+        where: eq(recommendations.id, rec.id),
+      });
+      const live = (
+        await getDb().select().from(authorizations).where(eq(authorizations.recommendationId, rec.id))
+      ).filter((row) => row.revokedAt == null);
+      if (deny.status === 200) {
+        expect(stored?.status).toBe("denied");
+        expect(live).toHaveLength(0);
+      }
+    }
   });
 
   it("finishes more apply jobs than the pool size", async () => {
