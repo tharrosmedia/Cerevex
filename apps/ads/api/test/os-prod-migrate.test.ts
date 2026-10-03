@@ -7,12 +7,16 @@ import { spawn } from "node:child_process";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  assertOsOnly,
   assertProdTarget,
+  loadBundledMigrations,
   parseProdMigrateArgs,
   ProdMigrateError,
   redactDatabaseUrl,
   runOsProdMigrate,
 } from "@tharros/ads-shared/prod-migrate";
+
+process.env.OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK = "1";
 import { assertSafeTestDatabase } from "@tharros/ads-shared/test-database";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -414,7 +418,22 @@ describe("os production migrate", () => {
     expect(parseProdMigrateArgs(["--host", "ep-prod.example", "--dry-run"])).toEqual({
       host: "ep-prod.example",
       mode: "dry-run",
+      statementTimeout: "120s",
     });
+    expect(parseProdMigrateArgs(["--host", "ep-prod.example", "--confirm", "--statement-timeout", "5min"])).toEqual({
+      host: "ep-prod.example",
+      mode: "apply",
+      statementTimeout: "5min",
+    });
+    expect(() => parseProdMigrateArgs(["--host", "ep-prod.example", "--statement-timeout"])).toThrow(
+      /--statement-timeout needs a duration/,
+    );
+    expect(() => parseProdMigrateArgs(["--host", "ep-prod.example", "--statement-timeout", "0s"])).toThrow(
+      /duration such as 120s/,
+    );
+    expect(() => parseProdMigrateArgs(["--host", "ep-prod.example", "--statement-timeout", "120s;select 1"])).toThrow(
+      /duration such as 120s/,
+    );
   });
 
   it("redacts database URLs from error text", () => {
@@ -489,6 +508,7 @@ describe("os production migrate", () => {
   });
 
   it("two overlapping confirms leave exactly one ledger row per tag", async () => {
+    process.env.OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK = "1";
     const databaseUrl = await cloneBase("race");
     const dir = slowedArtifactDir();
     const run = () =>
@@ -567,6 +587,95 @@ describe("os production migrate", () => {
     );
     expect(assertProdTarget({ ...target, databaseUrl: `${base}?sslmode=require` })).toBe(named);
     expect(assertProdTarget({ ...target, databaseUrl: `${base}?sslmode=verify-full` })).toBe(named);
+  });
+
+  it("requires sslmode on loopback unless the test-only flag is set", () => {
+    const previous = process.env.OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK;
+    delete process.env.OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK;
+    try {
+      expect(() =>
+        assertProdTarget({
+          databaseUrl: "postgres://tharros:tharros@127.0.0.1:5432/tharros",
+          productionNeonHost: "127.0.0.1",
+          host: "127.0.0.1",
+        }),
+      ).toThrow(/sslmode=require or stricter/);
+      expect(() =>
+        assertProdTarget({
+          databaseUrl: "postgres://tharros:tharros@127.0.0.1:5432/tharros?sslmode=disable",
+          productionNeonHost: "127.0.0.1",
+          host: "127.0.0.1",
+        }),
+      ).toThrow(/sslmode=disable is not allowed/);
+    } finally {
+      process.env.OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK = previous ?? "1";
+    }
+    expect(
+      assertProdTarget({
+        databaseUrl: "postgres://tharros:tharros@127.0.0.1:5432/tharros",
+        productionNeonHost: "127.0.0.1",
+        host: "127.0.0.1",
+      }),
+    ).toBe("127.0.0.1");
+  });
+
+  it("accepts every bundled artifact as os-only SQL", () => {
+    const loaded = loadBundledMigrations();
+    expect(loaded.map((migration) => migration.tag)).toEqual(journal.migrations.map((migration) => migration.tag));
+    for (const migration of loaded) {
+      expect(() => assertOsOnly(migration.sql, migration.tag)).not.toThrow();
+    }
+  });
+
+  it("allows public. only inside a comment or string literal", () => {
+    const sql = [
+      "-- mentions public.users in a comment",
+      "/* also public.secrets and SET SCHEMA public */",
+      "CREATE TABLE \"os\".\"comment_ok\" (note text);",
+      "INSERT INTO \"os\".\"comment_ok\" (note) VALUES ('public.users');",
+      "INSERT INTO \"os\".\"comment_ok\" (note) VALUES ($$SET search_path TO public$$);",
+    ].join("\n");
+    expect(() => assertOsOnly(sql, "0000_comment")).not.toThrow();
+  });
+
+  it("refuses a public. qualified identifier", () => {
+    expect(() =>
+      assertOsOnly('CREATE TABLE public.leak (id integer);\nCREATE TABLE "os"."ok" (id integer);\n', "0000_qual"),
+    ).toThrow(/0000_qual targets the public schema/);
+    expect(() => assertOsOnly('CREATE TABLE "public"."leak" (id integer);\n', "0000_quoted")).toThrow(
+      /0000_quoted targets the public schema/,
+    );
+  });
+
+  it("refuses SET search_path to anything other than os", () => {
+    const qualified = 'CREATE TABLE "os"."ok" (id integer);\n';
+    expect(() => assertOsOnly(`SET search_path TO public;\n${qualified}`, "0000_path")).toThrow(
+      /0000_path sets search_path to something other than os/,
+    );
+    expect(() => assertOsOnly(`SET LOCAL search_path TO os, public;\n${qualified}`, "0000_local")).toThrow(
+      /0000_local sets search_path to something other than os/,
+    );
+    expect(() => assertOsOnly(`SET search_path TO os;\n${qualified}`, "0000_os_path")).not.toThrow();
+  });
+
+  it("refuses SET SCHEMA public and ALTER ... SET SCHEMA public", () => {
+    expect(() => assertOsOnly('SET SCHEMA public;\nCREATE TABLE "os"."ok" (id integer);\n', "0000_set")).toThrow(
+      /0000_set sets the schema to public/,
+    );
+    expect(() => assertOsOnly('ALTER TABLE "os"."ok" SET SCHEMA public;\n', "0000_alter")).toThrow(
+      /0000_alter sets the schema to public/,
+    );
+  });
+
+  it("takes this command's advisory lock before the DDL lock timeout", () => {
+    const source = readFileSync(join(repoRoot, "apps/ads/shared/src/prod-migrate.ts"), "utf8");
+    const lock = source.indexOf("pg_advisory_xact_lock(hashtext($1)::bigint)");
+    const ddl = source.indexOf("SET LOCAL lock_timeout = '${DDL_LOCK_TIMEOUT}'");
+    expect(source).toContain('const DDL_LOCK_TIMEOUT = "5s"');
+    expect(lock).toBeGreaterThan(-1);
+    expect(ddl).toBeGreaterThan(lock);
+    expect(source).toContain('PROD_MIGRATE_LOCK_NAME = "cerevex.os-prod-migrate"');
+    expect(source).toContain("Another migrate run holds the lock");
   });
 
   it("refuses bundled SQL that targets the public schema", async () => {

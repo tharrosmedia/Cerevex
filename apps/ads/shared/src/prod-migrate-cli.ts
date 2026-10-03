@@ -37,6 +37,7 @@ async function main(): Promise<void> {
       productionNeonHost,
       host: args.host,
       mode: args.mode,
+      statementTimeout: args.statementTimeout,
     });
     printResult(report);
   } catch (error) {

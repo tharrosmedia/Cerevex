@@ -9,10 +9,19 @@ import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultArtifactsDir = resolve(here, "../../../../artifacts");
 const TAG_NAME = /^[A-Za-z0-9_-]+$/;
-/** Held for one apply transaction so two --confirm runs cannot insert the same tag. */
-const LEDGER_ADVISORY_LOCK = 814675001;
+/**
+ * Advisory lock owned by this production migrate command.
+ * The key is hashtext of this name, cast to bigint. It is not a shared app lock.
+ */
+export const PROD_MIGRATE_LOCK_NAME = "cerevex.os-prod-migrate";
+/** Wait for another run of this command. Distinct from the DDL lock timeout. */
+const ADVISORY_LOCK_WAIT = "30s";
+const DDL_LOCK_TIMEOUT = "5s";
+export const DEFAULT_STATEMENT_TIMEOUT = "120s";
+const STATEMENT_TIMEOUT = /^[1-9]\d*(?:ms|s|min)$/;
 const STRICT_SSLMODE = new Set(["require", "verify-ca", "verify-full"]);
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+const INSECURE_LOOPBACK_FLAG = "OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK";
 
 export class ProdMigrateError extends Error {
   readonly plan: ProdMigratePlan | null;
@@ -53,6 +62,8 @@ export type ProdMigrateRequest = {
   host: string;
   mode: ProdMigrateMode;
   artifactsDir?: string;
+  /** Validated duration such as 120s. Defaults to 120s. */
+  statementTimeout?: string;
 };
 
 type BundleFile = {
@@ -152,7 +163,9 @@ export function connectionHost(databaseUrl: string, label = "DATABASE_URL"): str
     throw new ProdMigrateError("Refusing to migrate. sslmode=disable is not allowed.");
   }
   const strictSsl = STRICT_SSLMODE.has(sslmode);
-  if (!strictSsl && !(LOCAL_HOSTS.has(host) && sslmode === "")) {
+  const loopbackTest =
+    LOCAL_HOSTS.has(host) && process.env[INSECURE_LOOPBACK_FLAG] === "1" && sslmode === "";
+  if (!strictSsl && !loopbackTest) {
     throw new ProdMigrateError("Refusing to migrate. DATABASE_URL must set sslmode=require or stricter.");
   }
   return host;
@@ -210,10 +223,15 @@ export function assertProdTarget(input: {
   return named;
 }
 
-export function parseProdMigrateArgs(argv: string[]): { host: string; mode: ProdMigrateMode } {
+export function parseProdMigrateArgs(argv: string[]): {
+  host: string;
+  mode: ProdMigrateMode;
+  statementTimeout: string;
+} {
   let host: string | undefined;
   let dryRun = false;
   let confirm = false;
+  let statementTimeout = DEFAULT_STATEMENT_TIMEOUT;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--host") {
@@ -222,6 +240,15 @@ export function parseProdMigrateArgs(argv: string[]): { host: string; mode: Prod
       if (!host || host.startsWith("--")) {
         throw new ProdMigrateError("Refusing to migrate. Name the prod host with --host <hostname>.");
       }
+      continue;
+    }
+    if (arg === "--statement-timeout") {
+      const value = argv[index + 1];
+      index += 1;
+      if (!value || value.startsWith("--")) {
+        throw new ProdMigrateError("Refusing to migrate. --statement-timeout needs a duration such as 120s.");
+      }
+      statementTimeout = parseStatementTimeout(value);
       continue;
     }
     if (arg === "--dry-run") {
@@ -240,9 +267,17 @@ export function parseProdMigrateArgs(argv: string[]): { host: string; mode: Prod
   if (dryRun && confirm) {
     throw new ProdMigrateError("Refusing to migrate. Pass only one of --dry-run or --confirm.");
   }
-  if (dryRun) return { host, mode: "dry-run" };
-  if (confirm) return { host, mode: "apply" };
-  return { host, mode: "unconfirmed" };
+  if (dryRun) return { host, mode: "dry-run", statementTimeout };
+  if (confirm) return { host, mode: "apply", statementTimeout };
+  return { host, mode: "unconfirmed", statementTimeout };
+}
+
+function parseStatementTimeout(value: string): string {
+  const timeout = value.trim();
+  if (!STATEMENT_TIMEOUT.test(timeout)) {
+    throw new ProdMigrateError("Refusing to migrate. --statement-timeout must be a duration such as 120s.");
+  }
+  return timeout;
 }
 
 function splitStatements(sqlText: string): string[] {
@@ -252,13 +287,92 @@ function splitStatements(sqlText: string): string[] {
     .filter((part) => part.length > 0);
 }
 
-function assertOsOnly(sql: string, tag: string): void {
-  if (/"public"\s*\./i.test(sql) || /\bpublic\s*\./i.test(sql)) {
+/** Comments and string literals removed, so a mention of public. in either does not count. */
+export function sqlOutsideCommentsAndLiterals(sql: string): string {
+  let out = "";
+  let index = 0;
+  while (index < sql.length) {
+    if (sql.startsWith("--", index)) {
+      const newline = sql.indexOf("\n", index);
+      index = newline === -1 ? sql.length : newline + 1;
+      out += " ";
+      continue;
+    }
+    if (sql.startsWith("/*", index)) {
+      const end = sql.indexOf("*/", index + 2);
+      index = end === -1 ? sql.length : end + 2;
+      out += " ";
+      continue;
+    }
+    if (sql[index] === "$") {
+      const match = /^\$([A-Za-z0-9_]*)\$/.exec(sql.slice(index));
+      if (match) {
+        const closer = match[0];
+        const end = sql.indexOf(closer, index + closer.length);
+        index = end === -1 ? sql.length : end + closer.length;
+        out += "''";
+        continue;
+      }
+    }
+    if (sql[index] === "'") {
+      index += 1;
+      while (index < sql.length) {
+        if (sql[index] === "'" && sql[index + 1] === "'") {
+          index += 2;
+          continue;
+        }
+        if (sql[index] === "'") {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      out += "''";
+      continue;
+    }
+    out += sql[index];
+    index += 1;
+  }
+  return out;
+}
+
+function searchPathIsOsOnly(target: string): boolean {
+  const parts = target
+    .split(",")
+    .map((part) => part.trim().replace(/^"|"$/g, "").toLowerCase())
+    .filter((part) => part.length > 0);
+  return parts.length === 1 && parts[0] === "os";
+}
+
+export function assertOsOnly(sql: string, tag: string): void {
+  const visible = sqlOutsideCommentsAndLiterals(sql);
+  if (/"public"\s*\./i.test(visible) || /\bpublic\s*\./i.test(visible)) {
     throw new ProdMigrateError(`Refusing to migrate. ${tag} targets the public schema.`);
   }
-  if (!/"os"\s*\./i.test(sql)) {
+  if (/\bset\s+schema\s+(?:"public"|public)\b/i.test(visible)) {
+    throw new ProdMigrateError(`Refusing to migrate. ${tag} sets the schema to public.`);
+  }
+  const searchPath = /\bset\s+(?:local\s+|session\s+)?search_path\s*(?:=|to)\s*([^;]+)/gi;
+  for (const match of visible.matchAll(searchPath)) {
+    if (!searchPathIsOsOnly(match[1] ?? "")) {
+      throw new ProdMigrateError(`Refusing to migrate. ${tag} sets search_path to something other than os.`);
+    }
+  }
+  if (!/"os"\s*\./i.test(visible) && !/\bos\s*\./i.test(visible)) {
     throw new ProdMigrateError(`Refusing to migrate. ${tag} is not schema-qualified to os.`);
   }
+}
+
+function isLockTimeout(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if ("code" in current && (current as { code: unknown }).code === "55P03") return true;
+    current = "cause" in current ? (current as { cause: unknown }).cause : undefined;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /lock timeout/i.test(message);
 }
 
 export function loadBundledMigrations(artifactsDir = defaultArtifactsDir): BundledMigration[] {
@@ -431,15 +545,25 @@ export async function runOsProdMigrate(request: ProdMigrateRequest): Promise<Pro
       );
     }
 
+    const statementTimeout = parseStatementTimeout(request.statementTimeout ?? DEFAULT_STATEMENT_TIMEOUT);
     let reportPlan = plan;
     const migrationsApplied: string[] = [];
     for (const migration of bundled.filter((entry) => plan.pending.includes(entry.tag))) {
       try {
         await client.query("BEGIN");
-        await client.query("SET LOCAL lock_timeout = '5s'");
-        await client.query("SET LOCAL statement_timeout = '120s'");
+        await client.query(`SET LOCAL lock_timeout = '${ADVISORY_LOCK_WAIT}'`);
+        try {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [PROD_MIGRATE_LOCK_NAME]);
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          if (isLockTimeout(error)) {
+            throw new ProdMigrateError("Refusing to migrate. Another migrate run holds the lock.", reportPlan);
+          }
+          throw error;
+        }
+        await client.query(`SET LOCAL lock_timeout = '${DDL_LOCK_TIMEOUT}'`);
+        await client.query(`SET LOCAL statement_timeout = '${statementTimeout}'`);
         await client.query(`SET LOCAL search_path TO ${MIGRATIONS_SCHEMA}, public`);
-        await client.query("SELECT pg_advisory_xact_lock($1)", [LEDGER_ADVISORY_LOCK]);
         const lockedRows = await client.query(
           `SELECT hash, created_at FROM ${ledgerRelation()} ORDER BY id`,
         );
