@@ -242,6 +242,7 @@ export const applyJobs = osSchema.table(
   (table) => [
     index("apply_jobs_client_idx").on(table.clientId),
     index("apply_jobs_authorization_idx").on(table.authorizationId),
+    uniqueIndex("apply_jobs_authorization_uidx").on(table.authorizationId),
     uniqueIndex("apply_jobs_idempotency_idx").on(table.idempotencyKey),
   ],
 );
@@ -400,7 +401,7 @@ export const oauthPendingConnections = osSchema.table(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
     platform: platformEnum("platform").notNull(),
-    userId: uuid("user_id").notNull(),
+    userId: uuid("user_id"),
     encryptedPayload: text("encrypted_payload").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

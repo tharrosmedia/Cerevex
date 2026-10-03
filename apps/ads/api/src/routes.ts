@@ -43,6 +43,10 @@ const mockConnectSchema = z.object({
   platform: platformSchema,
 });
 
+function storedOAuthUserId(actor: string): string | null {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actor) ? actor : null;
+}
+
 function consoleOrigin(): string {
   return (process.env.CONSOLE_ORIGIN ?? process.env.NEXT_PUBLIC_CONSOLE_ORIGIN ?? "").replace(/\/$/, "");
 }
@@ -150,7 +154,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
         workspaceId: visible.workspaceId,
         clientId: visible.id,
         platform,
-        userId: parsed.userId,
+        userId: storedOAuthUserId(parsed.userId),
         tokens: exchanged.tokens,
         accounts,
       });

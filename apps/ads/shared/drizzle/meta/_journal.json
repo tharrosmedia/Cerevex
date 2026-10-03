@@ -43,6 +43,13 @@
       "when": 1790800000000,
       "tag": "0005_skill_config",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790900000000,
+      "tag": "0006_service_actor_constraints",
+      "breakpoints": true
     }
   ]
 }

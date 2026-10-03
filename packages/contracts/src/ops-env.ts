@@ -63,7 +63,12 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "ADS_INTERNAL_KEY",
     kind: "secret",
-    help: "Server-side Brain BFF → ads API service key (x-cerevex-internal-key). Acts as the service principal, never a user. Cannot approve or apply. Never expose to the browser.",
+    help: "Server-side Brain BFF → ads API service key (x-cerevex-internal-key). Acts as the service principal, never a user. Cannot approve or apply. Requires ADS_INTERNAL_WORKSPACE_ID. Never expose to the browser.",
+  },
+  {
+    env: "ADS_INTERNAL_WORKSPACE_ID",
+    kind: "identity",
+    help: "Workspace UUID the internal service key is allowed to act in. Required when ADS_INTERNAL_KEY is set. One workspace only; unset or unknown refuses the request (production also exits at boot). Never inferred from the lowest workspace id. Not a secret. Do not point it at another tenant.",
   },
   {
     env: "ADS_API_TOKEN",

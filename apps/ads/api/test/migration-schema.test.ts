@@ -146,9 +146,10 @@ describe("migration journal schema", () => {
       "0003_m51",
       "0004_site_clients",
       "0005_skill_config",
+      "0006_service_actor_constraints",
     ]);
     const applied = entries.slice(0, 5);
-    const pending = entries[5]!;
+    const pending = entries.slice(5);
     const ids = [1, 2, 4, 5, 3];
     expect(applied[4]!.tag).toBe("0004_site_clients");
     expect(ids[4]).toBe(3);
@@ -197,9 +198,11 @@ describe("migration journal schema", () => {
       const rows = await client.query<{ id: number; hash: string; created_at: string }>(
         `select id, hash, created_at::text from ${migrationsRelation()} order by created_at`,
       );
-      expect(rows.rows).toHaveLength(6);
-      const stamped = rows.rows.find((row) => Number(row.created_at) === pending.when);
-      expect(stamped?.hash).toBe(fileHash(pending.tag));
+      expect(rows.rows).toHaveLength(applied.length + pending.length);
+      for (const entry of pending) {
+        const stamped = rows.rows.find((row) => Number(row.created_at) === entry.when);
+        expect(stamped?.hash).toBe(fileHash(entry.tag));
+      }
       expect(rows.rows.find((row) => row.hash === fileHash("0004_site_clients"))?.id).toBe(3);
       expect((await client.query(`select to_regclass('os.skill_client_configs') as name`)).rows[0]?.name).toBe(
         "skill_client_configs",

@@ -473,6 +473,13 @@ export async function getFinding(id: string) {
   });
 }
 
+export class RecommendationNotOpenError extends Error {
+  constructor() {
+    super("This recommendation is no longer open.");
+    this.name = "RecommendationNotOpenError";
+  }
+}
+
 export async function decideRecommendation(input: {
   recommendationId: string;
   userId: string | null;
@@ -493,6 +500,9 @@ export async function decideRecommendation(input: {
       .for("update");
     if (!row) {
       throw new Error("Recommendation not found");
+    }
+    if (input.action === "authorize" && row.status !== "proposed") {
+      throw new RecommendationNotOpenError();
     }
 
     await tx
@@ -608,14 +618,8 @@ export async function createApplyJobForAuthorization(input: {
 }): Promise<ApplyJobPublic> {
   const db = getDb();
   const key = applyJobIdempotencyKey(input.recommendationId);
-  const existing = await db.query.applyJobs.findFirst({
-    where: eq(applyJobs.idempotencyKey, key),
-  });
-  if (existing) {
-    return toApplyJobPublic(existing);
-  }
   const jobType = input.jobType ?? inferApplyJobType(input.proposedMutations);
-  const [job] = await db
+  const inserted = await db
     .insert(applyJobs)
     .values({
       workspaceId: input.workspaceId,
@@ -629,8 +633,14 @@ export async function createApplyJobForAuthorization(input: {
         jobType,
       },
     })
+    .onConflictDoNothing()
     .returning();
-  return toApplyJobPublic(job);
+  if (inserted[0]) return toApplyJobPublic(inserted[0]);
+  const existing =
+    (await db.query.applyJobs.findFirst({ where: eq(applyJobs.idempotencyKey, key) })) ??
+    (await db.query.applyJobs.findFirst({ where: eq(applyJobs.authorizationId, input.authorizationId) }));
+  if (!existing) throw new Error("Apply job conflict but row missing");
+  return toApplyJobPublic(existing);
 }
 
 export async function getWorkspaceKillSwitch(workspaceId: string): Promise<boolean> {

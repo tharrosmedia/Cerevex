@@ -144,6 +144,7 @@ describe("migration journal", () => {
       "0003_m51",
       "0004_site_clients",
       "0005_skill_config",
+      "0006_service_actor_constraints",
     ]);
     for (let index = 1; index < entries.length; index += 1) {
       expect(entries[index]!.idx).toBeGreaterThan(entries[index - 1]!.idx);
