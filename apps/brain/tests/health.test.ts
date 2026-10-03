@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GET } from '../app/api/health/route';
-import { assertProductionSecrets } from '../lib/prod-secrets';
+import { assertProductionSecrets, shouldCheckProductionSecrets } from '../lib/prod-secrets';
 
 const env = process.env as Record<string, string | undefined>;
 const keys = ['NODE_ENV', 'RAILWAY_ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'ENCRYPTION_KEY', 'GSC_OAUTH_STATE_SECRET', 'APP_PASSWORD', 'ADS_INTERNAL_KEY'] as const;
@@ -52,12 +52,30 @@ try {
   assert.equal(ready.status, 200);
   assert.doesNotThrow(() => assertProductionSecrets());
 
-  const instrumentation = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../instrumentation.ts'), 'utf8');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const instrumentation = readFileSync(join(here, '../instrumentation.ts'), 'utf8');
+  const secrets = readFileSync(join(here, '../lib/prod-secrets.ts'), 'utf8');
   assert.match(instrumentation, /NEXT_RUNTIME === "nodejs"/);
   assert.match(instrumentation, /import\("\.\/lib\/prod-secrets"\)/);
-  assert.match(instrumentation, /phase-production-build/);
   assert.match(instrumentation, /process\.exit\(1\)/);
+  assert.match(instrumentation, /npm run start/);
   assert.doesNotMatch(instrumentation, /from ["']\.\/src\/lib\/encryption["']/);
+  assert.match(secrets, /phase-production-build/);
+  assert.match(secrets, /npm_lifecycle_event === 'build'/);
+  const prevPhase = env.NEXT_PHASE;
+  const prevLifecycle = env.npm_lifecycle_event;
+  env.NEXT_PHASE = 'phase-production-build';
+  env.npm_lifecycle_event = 'start';
+  assert.equal(shouldCheckProductionSecrets(), false);
+  delete env.NEXT_PHASE;
+  env.npm_lifecycle_event = 'build';
+  assert.equal(shouldCheckProductionSecrets(), false);
+  env.npm_lifecycle_event = 'start';
+  assert.equal(shouldCheckProductionSecrets(), true);
+  if (prevPhase === undefined) delete env.NEXT_PHASE;
+  else env.NEXT_PHASE = prevPhase;
+  if (prevLifecycle === undefined) delete env.npm_lifecycle_event;
+  else env.npm_lifecycle_event = prevLifecycle;
 
   console.log('health: ok');
 } finally {

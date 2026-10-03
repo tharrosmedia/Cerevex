@@ -22,6 +22,16 @@ export function productionSecretProblems(): ProductionSecretProblem[] {
   return problems;
 }
 
+/**
+ * Run on server start (`npm run start --workspace=@cerevex/brain`, lifecycle event `start`).
+ * Skipped only while `next build` is running, so the production build can compile without the runtime secrets.
+ */
+export function shouldCheckProductionSecrets(): boolean {
+  if (process.env.NEXT_PHASE === 'phase-production-build') return false;
+  if (process.env.npm_lifecycle_event === 'build') return false;
+  return true;
+}
+
 export function assertProductionSecrets(): void {
   const problems = productionSecretProblems();
   if (!problems.length) return;

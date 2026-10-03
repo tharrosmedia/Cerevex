@@ -1,15 +1,10 @@
 import * as Sentry from "@sentry/nextjs";
 
-function shouldCheckProductionSecrets(): boolean {
-  if (process.env.NEXT_PHASE === "phase-production-build") return false;
-  if (process.env.npm_lifecycle_event === "build") return false;
-  return true;
-}
-
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { assertProductionSecrets, shouldCheckProductionSecrets } = await import("./lib/prod-secrets");
+    // `npm run start` sets npm_lifecycle_event=start, so the check runs. `next build` skips it.
     if (shouldCheckProductionSecrets()) {
-      const { assertProductionSecrets } = await import("./lib/prod-secrets");
       try {
         assertProductionSecrets();
       } catch (error) {
