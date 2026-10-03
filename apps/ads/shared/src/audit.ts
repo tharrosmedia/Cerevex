@@ -490,6 +490,16 @@ export class RecommendationNotOpenError extends Error {
   }
 }
 
+export class RecommendationGateError extends Error {
+  readonly reason: "apply_kill_switch" | "account_frozen";
+
+  constructor(reason: "apply_kill_switch" | "account_frozen") {
+    super(reason);
+    this.name = "RecommendationGateError";
+    this.reason = reason;
+  }
+}
+
 export async function decideRecommendation(input: {
   recommendationId: string;
   userId: string;
@@ -519,6 +529,16 @@ async function decideRecommendationOn(
   }
   if (input.action === "authorize" && row.status !== "proposed") {
     throw new RecommendationNotOpenError();
+  }
+  if (input.action === "authorize") {
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.id, row.workspaceId),
+    });
+    const account = await db.query.adAccounts.findFirst({
+      where: eq(adAccounts.id, row.adAccountId),
+    });
+    if (workspace?.applyKillSwitch) throw new RecommendationGateError("apply_kill_switch");
+    if (account?.frozen) throw new RecommendationGateError("account_frozen");
   }
 
   const status =

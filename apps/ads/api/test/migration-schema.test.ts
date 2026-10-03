@@ -137,7 +137,7 @@ describe("migration journal schema", () => {
     expect(migrationsRelation()).toBe('"os"."__drizzle_migrations"');
   });
 
-  it("applies only the missing migration on a prod-shaped ledger and does not create drizzle", async () => {
+  it("applies the migrations missing from a prod-shaped ledger and does not create drizzle", async () => {
     const entries = journal();
     const prefix = [
       "0000_m1_spine",
@@ -147,8 +147,9 @@ describe("migration journal schema", () => {
       "0004_site_clients",
       "0005_skill_config",
       "0006_plan_entitlements",
+      "0007_client_audit_log",
     ];
-    expect(entries.map((entry) => entry.tag).slice(0, prefix.length)).toEqual(prefix);
+    expect(entries.map((entry) => entry.tag)).toEqual(prefix);
     const applied = entries.slice(0, 6);
     const pending = entries.find((entry) => entry.tag === "0006_plan_entitlements");
     if (!pending) throw new Error("0006_plan_entitlements missing");
@@ -201,9 +202,12 @@ describe("migration journal schema", () => {
       const rows = await client.query<{ id: number; hash: string; created_at: string }>(
         `select id, hash, created_at::text from ${migrationsRelation()} order by created_at`,
       );
-      expect(rows.rows).toHaveLength(7);
+      expect(rows.rows).toHaveLength(entries.length);
       const stamped = rows.rows.find((row) => Number(row.created_at) === pending.when);
       expect(stamped?.hash).toBe(fileHash(pending.tag));
+      expect((await client.query(`select to_regclass('os.client_audit_log') as name`)).rows[0]?.name).toBe(
+        "client_audit_log",
+      );
       expect(rows.rows.find((row) => row.hash === fileHash("0004_site_clients"))?.id).toBe(3);
       expect((await client.query(`select to_regclass('os.skill_client_configs') as name`)).rows[0]?.name).toBe(
         "skill_client_configs",

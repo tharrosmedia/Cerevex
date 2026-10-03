@@ -7,6 +7,7 @@ import { getDb } from "@tharros/ads-shared/db";
 import {
   exportClientAuditLog,
   listClientAuditLog,
+  LifecycleRepeatError,
   readApproval,
   recordRecLifecycle,
   servicePrincipalRefused,
@@ -154,22 +155,33 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
     if (parsed.data.kind === "mark_done" && approval.status !== "approved") {
       throw new HTTPException(409, { message: "Approve this recommendation before marking it done." });
     }
+    if (parsed.data.kind === "rolled_back" && approval.rolled_back_at) {
+      throw new HTTPException(409, { message: "This recommendation is already rolled back." });
+    }
     if (parsed.data.kind === "rolled_back" && !approval.executed_at) {
       throw new HTTPException(409, { message: "Nothing has been applied yet, so there is nothing to roll back." });
     }
-    const row = await recordRecLifecycle({
-      kind: parsed.data.kind,
-      recommendationId: rec.id,
-      workspaceId: rec.workspaceId,
-      clientId: rec.clientId,
-      storeId: parsed.data.storeId,
-      module: parsed.data.module ?? "ads",
-      actorType: "user",
-      actorId: auth.user.id,
-      entityType: "recommendation",
-      entityId: rec.id,
-      payload: parsed.data.note ? { note: parsed.data.note } : {},
-    });
+    let row;
+    try {
+      row = await recordRecLifecycle({
+        kind: parsed.data.kind,
+        recommendationId: rec.id,
+        workspaceId: rec.workspaceId,
+        clientId: rec.clientId,
+        storeId: parsed.data.storeId,
+        module: parsed.data.module ?? "ads",
+        actorType: "user",
+        actorId: auth.user.id,
+        entityType: "recommendation",
+        entityId: rec.id,
+        payload: parsed.data.note ? { note: parsed.data.note } : {},
+      });
+    } catch (error) {
+      if (error instanceof LifecycleRepeatError) {
+        throw new HTTPException(409, { message: error.message });
+      }
+      throw error;
+    }
     return c.json({ event: row, writes: false });
   });
 

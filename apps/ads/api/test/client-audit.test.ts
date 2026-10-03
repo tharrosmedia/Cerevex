@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hash } from "bcryptjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { SkillJobApprovalError } from "@cerevex/skills";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb, getPool } from "@tharros/ads-shared/db";
@@ -17,6 +17,7 @@ import {
   recordRecLifecycle,
   redactAuditValue,
 } from "@tharros/ads-shared/rec-lifecycle";
+import { activateStore, deactivateStore, EntitlementError, setClientPlan } from "@tharros/ads-shared/entitlements";
 import { applyJobs, authorizations, clientAuditLog, clients, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
@@ -136,11 +137,17 @@ describe("client audit log", () => {
     const unauth = await app.request(`/clients/${clientId}/audit-log`);
     expect(unauth.status).toBe(401);
 
-    const approved = await decideRecommendation({
-      recommendationId: created.id,
-      userId: ownerId,
-      action: "authorize",
-    });
+    await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+    let approved: Awaited<ReturnType<typeof decideRecommendation>>;
+    try {
+      approved = await decideRecommendation({
+        recommendationId: created.id,
+        userId: ownerId,
+        action: "authorize",
+      });
+    } finally {
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
     expect(approved.recommendation.approval.status).toBe("approved");
     expect(approved.recommendation.approval.approved_by).toBeTruthy();
     expect(approved.recommendation.approval.executed_by).toBeNull();
@@ -198,7 +205,12 @@ describe("client audit log", () => {
       source: "native:paid-media",
       module: "paid-media",
     });
-    await decideRecommendation({ recommendationId: manual.id, userId: ownerId, action: "authorize" });
+    await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+    try {
+      await decideRecommendation({ recommendationId: manual.id, userId: ownerId, action: "authorize" });
+    } finally {
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
     const marked = await app.request(`/recommendations/${manual.id}/decide`, {
       method: "POST",
       headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
@@ -390,6 +402,33 @@ describe("client audit log", () => {
       module: "paid-media",
     });
     const before = await countClientAuditLog(clientId);
+    const db = getDb();
+    const extraEmail = "service-key-extra-owner@example.com";
+    const extraHash = await hash("service-key-extra-only", 10);
+    const extraExisting = await db.query.users.findFirst({ where: eq(users.email, extraEmail) });
+    const extraUser =
+      extraExisting ??
+      (await db.insert(users).values({ email: extraEmail, name: "Service Key Extra", passwordHash: extraHash }).returning())[0];
+    const extraWorkspace =
+      (await db.query.workspaces.findFirst({ where: eq(workspaces.name, "Service Key Extra Workspace") })) ??
+      (await db.insert(workspaces).values({ name: "Service Key Extra Workspace" }).returning())[0];
+    await db
+      .insert(memberships)
+      .values({ userId: extraUser.id, workspaceId: extraWorkspace.id, role: "owner" })
+      .onConflictDoUpdate({
+        target: [memberships.userId, memberships.workspaceId],
+        set: { role: "owner" },
+      });
+    const displaced = await db
+      .select({ userId: memberships.userId, workspaceId: memberships.workspaceId })
+      .from(memberships)
+      .where(and(eq(memberships.role, "owner"), ne(memberships.userId, ownerId)));
+    if (displaced.length > 0) {
+      await db
+        .update(memberships)
+        .set({ role: "operator" })
+        .where(and(eq(memberships.role, "owner"), ne(memberships.userId, ownerId)));
+    }
     const previousKey = process.env.ADS_INTERNAL_KEY;
     process.env.ADS_INTERNAL_KEY = "audit-service-key";
     try {
@@ -413,6 +452,12 @@ describe("client audit log", () => {
     } finally {
       if (previousKey === undefined) delete process.env.ADS_INTERNAL_KEY;
       else process.env.ADS_INTERNAL_KEY = previousKey;
+      for (const row of displaced) {
+        await db
+          .update(memberships)
+          .set({ role: "owner" })
+          .where(and(eq(memberships.userId, row.userId), eq(memberships.workspaceId, row.workspaceId)));
+      }
     }
     expect(await countClientAuditLog(clientId)).toBe(before);
     const rec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
@@ -551,6 +596,104 @@ describe("client audit log", () => {
     expect(scrubbed.campaignId).toBe("2345678901");
   });
 
+  it("redacts bare, international, dashed, and obfuscated phones and emails without eating ids", () => {
+    const arabic = "\u0665\u0665\u0665\u0661\u0662\u0663\u0664\u0665\u0666\u0667";
+    const eastern = "\u06F5\u06F5\u06F5\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7";
+    const fullWidthId = "\uFF19\uFF18\uFF17\uFF16\uFF15\uFF14\uFF13\uFF12\uFF11\uFF10";
+    const uuid = "aaaaaaaa-bbbb-4ccc-8ddd-2234567890ab";
+    const scrubbed = redactAuditValue({
+      note: [
+        "15551234567",
+        "555-1234",
+        "+44 (0)20 7946 0958",
+        "0044 20 7946 0958",
+        "020 7946 0958",
+        "07700 900123",
+        "+49 30/1234567",
+        "555\u2013123\u20134567",
+        "555\u2014123\u20144567",
+        arabic,
+        eastern,
+        "ada [at] example.com",
+        "ada {at} example.com",
+        "ada at example dot com",
+        "ADA AT EXAMPLE DOT COM",
+        "ada @ x.com",
+        "ada\uFF20x.com",
+        "ada\uFE6Bx.com",
+        `keep ${uuid}`,
+        "keep 1760000000",
+        "keep 1234567890",
+        "keep customers/9876543210",
+      ].join(" | "),
+      customerId: "223-456-7890",
+      externalId: fullWidthId,
+      amountMicros: "5551234567",
+      budgetMicros: "15551234567",
+      customerIds: ["5551234567", "223-456-7890"],
+      id: "555-123-4567",
+      before: [
+        {
+          payload: {
+            amountMicros: "5551234567",
+            budgetMicros: "223456789012345",
+            customerId: "223-456-7890",
+            note: "call 5551234567",
+          },
+        },
+      ],
+    }) as {
+      note: string;
+      customerId: string;
+      externalId: string;
+      amountMicros: string;
+      budgetMicros: string;
+      customerIds: string[];
+      id: string;
+      before: Array<{ payload: { amountMicros: string; budgetMicros: string; customerId: string; note: string } }>;
+    };
+
+    for (const leaked of [
+      "15551234567",
+      "555-1234",
+      "+44",
+      "0044",
+      "020 7946",
+      "07700",
+      "+49",
+      "555\u2013123",
+      "555\u2014123",
+      arabic,
+      eastern,
+      "[at]",
+      "{at}",
+      " at ",
+      " AT ",
+      "@",
+      "\uFF20",
+      "\uFE6B",
+      "5551234567",
+    ]) {
+      expect(scrubbed.note, leaked).not.toContain(leaked);
+    }
+    expect(scrubbed.note).toContain("[redacted]");
+    expect(scrubbed.note).toContain(uuid);
+    expect(scrubbed.note).toContain("1760000000");
+    expect(scrubbed.note).toContain("1234567890");
+    expect(scrubbed.note).toContain("customers/9876543210");
+    expect(scrubbed.customerId).toBe("223-456-7890");
+    expect(scrubbed.externalId).toBe(fullWidthId);
+    expect(scrubbed.amountMicros).toBe("5551234567");
+    expect(scrubbed.budgetMicros).toBe("15551234567");
+    expect(scrubbed.customerIds).toEqual(["5551234567", "223-456-7890"]);
+    expect(scrubbed.id).toBe("555-123-4567");
+    expect(scrubbed.before[0]?.payload.amountMicros).toBe("5551234567");
+    expect(scrubbed.before[0]?.payload.budgetMicros).toBe("223456789012345");
+    expect(scrubbed.before[0]?.payload.customerId).toBe("223-456-7890");
+    expect(scrubbed.before[0]?.payload.note).not.toContain("5551234567");
+    expect(scrubbed.before[0]?.payload.note).toContain("[redacted]");
+  });
+
   it("redacts a 40KB string quickly", () => {
     const blob = "a".repeat(40_000);
     const started = performance.now();
@@ -664,6 +807,147 @@ describe("client audit log", () => {
     expect((await json(hiddenRes)).error).toBe("Not found");
   });
 
+  it("lets one parallel mark_done win on decide and on lifecycle", async () => {
+    await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+    try {
+      for (const path of ["decide", "lifecycle"] as const) {
+        const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+          source: "native:paid-media",
+          module: "paid-media",
+        });
+        const approved = await app.request(`/recommendations/${created.id}/decide`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve" }),
+        });
+        expect(approved.status).toBe(200);
+        const results = await Promise.all(
+          Array.from({ length: 8 }, () =>
+            path === "decide"
+              ? app.request(`/recommendations/${created.id}/decide`, {
+                  method: "POST",
+                  headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+                  body: JSON.stringify({ action: "mark_done" }),
+                })
+              : app.request("/recommendations/lifecycle", {
+                  method: "POST",
+                  headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+                  body: JSON.stringify({ kind: "mark_done", clientId, recommendationId: created.id }),
+                }),
+          ),
+        );
+        const statuses = results.map((res) => res.status);
+        expect(statuses.filter((status) => status === 200), path).toHaveLength(1);
+        expect(statuses.every((status) => status === 200 || status === 409), `${path} ${statuses.join(",")}`).toBe(true);
+        const marked = await listClientAuditLog({ clientId, action: "mark_done", limit: 100 });
+        expect(marked.rows.filter((row) => row.entityId === created.id), path).toHaveLength(1);
+        const rec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
+        expect(rec?.status).toBe("authorized");
+        expect(readApproval(rec?.approvalJson).executed_by).toBe("human");
+      }
+    } finally {
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
+  it("refuses a second rollback from decide and from lifecycle", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+    try {
+      const approved = await app.request(`/recommendations/${created.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      });
+      expect(approved.status).toBe(200);
+      const marked = await app.request(`/recommendations/${created.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "mark_done" }),
+      });
+      expect(marked.status).toBe(200);
+      const first = await app.request(`/recommendations/${created.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "rollback" }),
+      });
+      expect(first.status).toBe(200);
+      const before = await countClientAuditLog(clientId);
+      const second = await app.request(`/recommendations/${created.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "rollback" }),
+      });
+      expect(second.status).toBe(409);
+      const viaLifecycle = await app.request("/recommendations/lifecycle", {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ kind: "rolled_back", clientId, recommendationId: created.id }),
+      });
+      expect(viaLifecycle.status).toBe(409);
+      expect(await countClientAuditLog(clientId)).toBe(before);
+      const rolled = await listClientAuditLog({ clientId, action: "rolled_back", limit: 100 });
+      expect(rolled.rows.filter((row) => row.entityId === created.id)).toHaveLength(1);
+      const refusals = await listClientAuditLog({ clientId, action: "approve_refused", limit: 100 });
+      expect(refusals.rows.some((row) => row.entityId === created.id && JSON.stringify(row.payload).includes("rollback"))).toBe(false);
+    } finally {
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
+  it("mixes decide, plan changes, store activation, and mock connect without deadlocks", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    const storeId = "audit-deadlock-store";
+    const failures: string[] = [];
+    try {
+      for (let round = 0; round < 8; round += 1) {
+        const results = await Promise.all([
+          stressCall(async () =>
+            app.request(`/recommendations/${created.id}/decide`, {
+              method: "POST",
+              headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+              body: JSON.stringify({ action: round % 2 === 0 ? "deny" : "snooze" }),
+            }),
+          ),
+          stressCall(async () =>
+            app.request(`/recommendations/${created.id}/decide`, {
+              method: "POST",
+              headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+              body: JSON.stringify({ action: "snooze" }),
+            }),
+          ),
+          stressCall(() => setClientPlan(clientId, "paid")),
+          stressCall(() => setClientPlan(clientId, "scholarship")),
+          stressCall(() => activateStore(clientId, storeId)),
+          stressCall(() => deactivateStore(clientId, storeId)),
+          stressCall(async () =>
+            app.request("/oauth/mock/connect", {
+              method: "POST",
+              headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+              body: JSON.stringify({ clientId, platform: "google" }),
+            }),
+          ),
+        ]);
+        for (const result of results) {
+          if (result) failures.push(result);
+        }
+      }
+      expect(failures.filter((failure) => /deadlock|40P01/i.test(failure))).toEqual([]);
+      expect(failures.filter((failure) => /HTTP 5\d\d/.test(failure))).toEqual([]);
+      expect(failures).toEqual([]);
+    } finally {
+      await setClientPlan(clientId, "paid").catch(() => undefined);
+      await deactivateStore(clientId, storeId).catch(() => undefined);
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
+  }, 60_000);
+
   it("rolls back the recommendation change when the audit insert fails", async () => {
     const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
       source: "native:paid-media",
@@ -701,6 +985,31 @@ describe("client audit log", () => {
     }
   });
 });
+
+async function stressCall(run: () => Promise<unknown>): Promise<string | null> {
+  try {
+    const value = await run();
+    if (value instanceof Response && value.status >= 500) {
+      const text = await value.text();
+      return `HTTP ${value.status} ${text}`;
+    }
+    return null;
+  } catch (error) {
+    if (error instanceof EntitlementError) return null;
+    const parts: string[] = [];
+    let current: unknown = error;
+    for (let depth = 0; depth < 4 && current; depth += 1) {
+      if (current instanceof Error) {
+        parts.push(current.message);
+        current = current.cause;
+      } else {
+        parts.push(String(current));
+        break;
+      }
+    }
+    return parts.join(" ");
+  }
+}
 
 async function authorizationCount(recommendationId: string) {
   const rows = await getDb()

@@ -55,15 +55,36 @@ export const AUDIT_EXPORT_CAP = 2000;
 
 const SECRET_KEY = /token|secret|password|authorization|api[_-]?key|credential/i;
 const SECRET_TEXT = /(?:bearer\s+\S+|ya29\.[A-Za-z0-9._-]+|EAA[A-Za-z0-9]{20,})/i;
-const EMAIL_TEXT = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/gi;
+const EMAIL_TEXT = /[A-Za-z0-9._%+-]{1,64}\s*[@＠﹫]\s*[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/gi;
 const OBFUSCATED_EMAIL =
   /[A-Za-z0-9._%+-]{1,64}\s*[\[({]\s*at\s*[\])}]\s*[A-Za-z0-9.-]{1,255}\s*[\[({]\s*dot\s*[\])}]\s*[A-Za-z]{2,24}/gi;
+const BRACKET_AT_EMAIL =
+  /[A-Za-z0-9._%+-]{1,64}\s*[\[({]\s*at\s*[\])}]\s*[A-Za-z0-9-]{1,64}(?:\.[A-Za-z0-9-]{1,64})*\.[A-Za-z]{2,24}/gi;
+const WORD_AT_EMAIL =
+  /[A-Za-z0-9._%+-]{1,64}\s+\bat\b\s+[A-Za-z0-9-]{1,64}(?:\.[A-Za-z0-9-]{1,64})*\s+\bdot\b\s+[A-Za-z]{2,24}/gi;
 const PERCENT_EMAIL = /[A-Za-z0-9._+-]{1,64}%40[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/gi;
-const INTL_PHONE = /\+\d{1,3}(?:[\s.-]{0,3}\d){8,14}/g;
-const US_PHONE = /(?<!\d)(?:\+?1[\s.-]?)?(?:\(\d{3}\)[\s.-]?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?!\d)/g;
-const COMPACT_PHONE = /(?<!\d)[2-9]\d{9}(?!\d)/g;
-const ID_KEY = /(^id$|Id$|_id$|^externalId$|^customerId$|^campaignId$)/;
+const PHONE_SEP = "[\\s./\\u2013\\u2014-]";
+const INTL_PHONE = new RegExp(String.raw`(?<!\d)(?:\+|00)\d{1,3}(?:${PHONE_SEP}{0,3}\(?\d\)?){8,14}(?!\d)`, "g");
+const US_PHONE = new RegExp(
+  String.raw`(?<!\d)(?:\+?1${PHONE_SEP}?)?(?:\(\d{3}\)${PHONE_SEP}?|\d{3}${PHONE_SEP})\d{3}${PHONE_SEP}\d{4}(?!\d)`,
+  "g",
+);
+const UK_NATIONAL = new RegExp(String.raw`(?<!\d)0\d{1,4}(?:${PHONE_SEP}\d{3,6}){1,3}(?!\d)`, "g");
+const LOCAL_PHONE = new RegExp(String.raw`(?<!\d)\d{3}${PHONE_SEP}\d{4}(?!\d)`, "g");
+const NANP_LEADING_1 = /(?<![\dA-Fa-f])1[2-9]\d{9}(?![\dA-Fa-f])/g;
+const COMPACT_PHONE = /(?<![\dA-Fa-f])[2-9]\d{9}(?![\dA-Fa-f])/g;
+const PHONE_SKIP_KEY = /(^id$|Id$|Ids$|_id$|^externalId$|^customerId$|^campaignId$|Micros$)/;
 const RESOURCE_ID_PREFIX = /(?:customers|campaigns|adgroups|ads)\/$/i;
+
+export class LifecycleRepeatError extends Error {
+  readonly kind: "mark_done" | "rolled_back";
+
+  constructor(kind: "mark_done" | "rolled_back") {
+    super(kind === "mark_done" ? "This recommendation is already marked done." : "This recommendation is already rolled back.");
+    this.name = "LifecycleRepeatError";
+    this.kind = kind;
+  }
+}
 
 export type ClientAuditRow = {
   id: string;
@@ -148,7 +169,7 @@ export function redactAuditValue<T>(value: T): T {
 }
 
 function stripSecrets(value: unknown, key?: string): unknown {
-  if (Array.isArray(value)) return value.map((item) => stripSecrets(item));
+  if (Array.isArray(value)) return value.map((item) => stripSecrets(item, key));
   if (isRecord(value)) {
     const out: Record<string, unknown> = {};
     for (const [innerKey, inner] of Object.entries(value)) {
@@ -160,28 +181,52 @@ function stripSecrets(value: unknown, key?: string): unknown {
   return value;
 }
 
-function foldFullWidthDigits(value: string): string {
-  return value.replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xff10 + 0x30));
+function foldConfusableDigits(value: string): string {
+  return value.replace(/[\uFF10-\uFF19\u0660-\u0669\u06F0-\u06F9]/g, (ch) => {
+    const code = ch.charCodeAt(0);
+    if (code >= 0xff10) return String.fromCharCode(code - 0xff10 + 0x30);
+    if (code >= 0x06f0) return String.fromCharCode(code - 0x06f0 + 0x30);
+    return String.fromCharCode(code - 0x0660 + 0x30);
+  });
 }
 
 /** Secret-shaped strings, then emails and phone numbers in free text such as notes. */
 function scrubFreeText(value: string, key?: string): string {
   if (SECRET_TEXT.test(value)) return "[redacted]";
-  const folded = foldFullWidthDigits(value);
-  for (const pattern of [OBFUSCATED_EMAIL, PERCENT_EMAIL, EMAIL_TEXT, INTL_PHONE, US_PHONE, COMPACT_PHONE]) {
+  const skipPhones = Boolean(key && PHONE_SKIP_KEY.test(key));
+  const folded = skipPhones ? value : foldConfusableDigits(value);
+  for (const pattern of [
+    OBFUSCATED_EMAIL,
+    BRACKET_AT_EMAIL,
+    WORD_AT_EMAIL,
+    PERCENT_EMAIL,
+    EMAIL_TEXT,
+    INTL_PHONE,
+    US_PHONE,
+    UK_NATIONAL,
+    LOCAL_PHONE,
+    NANP_LEADING_1,
+    COMPACT_PHONE,
+  ]) {
     pattern.lastIndex = 0;
   }
   const scrubbed = folded
     .replace(OBFUSCATED_EMAIL, "[redacted]")
+    .replace(BRACKET_AT_EMAIL, "[redacted]")
+    .replace(WORD_AT_EMAIL, "[redacted]")
     .replace(PERCENT_EMAIL, "[redacted]")
-    .replace(EMAIL_TEXT, "[redacted]")
+    .replace(EMAIL_TEXT, "[redacted]");
+  if (skipPhones) return scrubbed;
+  return scrubbed
     .replace(INTL_PHONE, "[redacted]")
-    .replace(US_PHONE, "[redacted]");
-  if (key && ID_KEY.test(key)) return scrubbed;
-  return scrubbed.replace(COMPACT_PHONE, (match, offset, whole) => {
-    const prefix = whole.slice(Math.max(0, offset - 32), offset);
-    return RESOURCE_ID_PREFIX.test(prefix) ? match : "[redacted]";
-  });
+    .replace(US_PHONE, "[redacted]")
+    .replace(UK_NATIONAL, "[redacted]")
+    .replace(LOCAL_PHONE, "[redacted]")
+    .replace(NANP_LEADING_1, "[redacted]")
+    .replace(COMPACT_PHONE, (match, offset, whole) => {
+      const prefix = whole.slice(Math.max(0, offset - 32), offset);
+      return RESOURCE_ID_PREFIX.test(prefix) ? match : "[redacted]";
+    });
 }
 
 export function readApproval(value: unknown): RecommendationApproval {
@@ -241,11 +286,15 @@ async function recordRecLifecycleOn(input: RecLifecycleInput, db: Database): Pro
 
   const recommendationId = recommendationIdOf(input);
   if (recommendationId && touchesApproval(input.kind)) {
-    const rec = await db.query.recommendations.findFirst({
-      where: eq(recommendations.id, recommendationId),
-    });
+    const [rec] = await db
+      .select()
+      .from(recommendations)
+      .where(eq(recommendations.id, recommendationId))
+      .for("update");
     if (!rec) throw new Error("Recommendation not found");
     const approval = readApproval(rec.approvalJson);
+    if (input.kind === "mark_done" && approval.executed_at) throw new LifecycleRepeatError("mark_done");
+    if (input.kind === "rolled_back" && approval.rolled_back_at) throw new LifecycleRepeatError("rolled_back");
     if (input.kind === "approved" || input.kind === "rejected") {
       approval.status = input.kind === "approved" ? "approved" : "rejected";
       approval.approved_by = approver;
