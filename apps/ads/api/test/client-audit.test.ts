@@ -15,8 +15,9 @@ import {
   listClientAuditLog,
   readApproval,
   recordRecLifecycle,
+  redactAuditValue,
 } from "@tharros/ads-shared/rec-lifecycle";
-import { applyJobs, clientAuditLog, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
+import { applyJobs, clientAuditLog, clients, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
 loadEnv();
@@ -89,6 +90,17 @@ describe("client audit log", () => {
 
   afterAll(async () => {
     await closeDb();
+  });
+
+  it("scrubs compact phones, international numbers, and obfuscated emails", () => {
+    const scrubbed = redactAuditValue({
+      note: "call 5551234567 or +44 20 7946 0958, write ada [at] example [dot] com",
+    }) as { note: string };
+    expect(scrubbed.note).not.toContain("5551234567");
+    expect(scrubbed.note).not.toContain("+44");
+    expect(scrubbed.note).not.toContain("[at]");
+    expect(scrubbed.note).not.toContain("example");
+    expect(scrubbed.note).toContain("[redacted]");
   });
 
   it("escapes CSV formula prefixes", () => {
@@ -408,6 +420,74 @@ describe("client audit log", () => {
     expect(rec?.status).toBe("proposed");
     const forged = await listClientAuditLog({ clientId, action: "prompt_layer_approved", limit: 100 });
     expect(JSON.stringify(forged.rows)).not.toContain("forged@v99");
+  });
+
+  it("returns 404 and writes no audit row for another workspace", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    const email = "other-workspace-audit@example.com";
+    const password = "other-workspace-only";
+    const passwordHash = await hash(password, 10);
+    const db = getDb();
+    const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
+    const outsider =
+      existing ??
+      (await db.insert(users).values({ email, name: "Other Workspace", passwordHash }).returning())[0];
+    if (existing) {
+      await db.update(users).set({ passwordHash }).where(eq(users.id, outsider.id));
+    }
+    const workspace =
+      (await db.query.workspaces.findFirst({ where: eq(workspaces.name, "Other Audit Workspace") })) ??
+      (await db.insert(workspaces).values({ name: "Other Audit Workspace" }).returning())[0];
+    await db
+      .insert(memberships)
+      .values({ userId: outsider.id, workspaceId: workspace.id, role: "owner" })
+      .onConflictDoNothing();
+    const ownClient =
+      (await db.query.clients.findFirst({ where: eq(clients.workspaceId, workspace.id) })) ??
+      (await db.insert(clients).values({ workspaceId: workspace.id, name: "Other Audit Client" }).returning())[0];
+    expect(ownClient.workspaceId).not.toBe(workspaceId);
+    const outsiderToken = (await login(email, password)).token;
+    const before = await countClientAuditLog(clientId);
+    const missing = "11111111-1111-4111-8111-111111111111";
+    for (const [path, body] of [
+      [`/recommendations/${created.id}/decide`, { action: "mark_done" }],
+      [`/recommendations/${created.id}/decide`, { action: "rollback" }],
+      [`/recommendations/${created.id}/decide`, { action: "deny" }],
+      [`/recommendations/${created.id}/apply`, {}],
+      [`/recommendations/${missing}/decide`, { action: "mark_done" }],
+    ] as const) {
+      const res = await app.request(path, {
+        method: "POST",
+        headers: { authorization: `Bearer ${outsiderToken}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(404);
+    }
+    expect(await countClientAuditLog(clientId)).toBe(before);
+    const rec = await db.query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
+    expect(rec?.status).toBe("proposed");
+  });
+
+  it("refuses to approve a snoozed recommendation through the lifecycle route", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    await decideRecommendation({ recommendationId: created.id, userId: ownerId, action: "snooze" });
+    const before = await countClientAuditLog(clientId);
+    const res = await app.request("/recommendations/lifecycle", {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ kind: "approved", clientId, recommendationId: created.id }),
+    });
+    expect(res.status).toBe(409);
+    const rec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
+    expect(rec?.status).toBe("snoozed");
+    expect(readApproval(rec?.approvalJson).status).toBe("PENDING_APPROVAL");
+    expect(await countClientAuditLog(clientId)).toBe(before);
   });
 
   it("rolls back the recommendation change when the audit insert fails", async () => {

@@ -55,8 +55,11 @@ export const AUDIT_EXPORT_CAP = 2000;
 
 const SECRET_KEY = /token|secret|password|authorization|api[_-]?key|credential/i;
 const SECRET_TEXT = /(?:bearer\s+\S+|ya29\.[A-Za-z0-9._-]+|EAA[A-Za-z0-9]{20,})/i;
-const EMAIL_TEXT = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const PHONE_TEXT = /(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}/g;
+const EMAIL_TEXT = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/gi;
+const OBFUSCATED_EMAIL = /[A-Za-z0-9._%+-]+\s*\[at\]\s*[A-Za-z0-9.-]+\s*\[dot\]\s*[A-Za-z]{2,}/gi;
+const INTL_PHONE = /\+\d{1,3}(?:[\s.-]*\d){8,14}/g;
+const US_PHONE = /(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}/g;
+const COMPACT_PHONE = /(?<!\d)\d{10}(?!\d)/g;
 
 export type ClientAuditRow = {
   id: string;
@@ -156,9 +159,15 @@ function stripSecrets(value: unknown): unknown {
 /** Secret-shaped strings, then emails and phone numbers in free text such as notes. */
 function scrubFreeText(value: string): string {
   if (SECRET_TEXT.test(value)) return "[redacted]";
-  EMAIL_TEXT.lastIndex = 0;
-  PHONE_TEXT.lastIndex = 0;
-  return value.replace(EMAIL_TEXT, "[redacted]").replace(PHONE_TEXT, "[redacted]");
+  for (const pattern of [OBFUSCATED_EMAIL, EMAIL_TEXT, INTL_PHONE, US_PHONE, COMPACT_PHONE]) {
+    pattern.lastIndex = 0;
+  }
+  return value
+    .replace(OBFUSCATED_EMAIL, "[redacted]")
+    .replace(EMAIL_TEXT, "[redacted]")
+    .replace(INTL_PHONE, "[redacted]")
+    .replace(US_PHONE, "[redacted]")
+    .replace(COMPACT_PHONE, "[redacted]");
 }
 
 export function readApproval(value: unknown): RecommendationApproval {

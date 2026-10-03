@@ -145,6 +145,9 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
     const rec = await getRecommendation(parsed.data.recommendationId);
     if (!rec || rec.clientId !== client.id) throw new HTTPException(404, { message: "Recommendation not found" });
     const approval = readApproval(rec.approvalJson);
+    if (parsed.data.kind === "approved" && rec.status !== "proposed") {
+      throw new HTTPException(409, { message: "This recommendation is no longer open." });
+    }
     if ((parsed.data.kind === "approved" || parsed.data.kind === "rejected") && approval.status !== "PENDING_APPROVAL") {
       throw new HTTPException(409, { message: "This recommendation is no longer open." });
     }

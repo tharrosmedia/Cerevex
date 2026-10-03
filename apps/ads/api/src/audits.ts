@@ -307,13 +307,13 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       const auth = c.get("auth");
       const row = await getRecommendation(c.req.param("id"));
       if (!row) throw new HTTPException(404, { message: "Recommendation not found" });
+      const client = await requireMutableClient(auth, row.clientId);
       if (!canApproveApply(auth.user.email)) {
         await recordApproveRefusal(row, auth.user.id, "allowlist");
         throw new HTTPException(403, {
           message: "Approve is limited to the Adam allowlist during soft-launch.",
         });
       }
-      const client = await requireMutableClient(auth, row.clientId);
       const approval = readApproval(row.approvalJson);
       if (parsed.data.action === "mark_done" && approval.status !== "approved") {
         await recordApproveRefusal(row, auth.user.id, "mark_done_before_approve");
@@ -500,13 +500,13 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       throw new HTTPException(404, { message: "Recommendation not found" });
     }
     const auth = c.get("auth");
+    const client = await requireMutableClient(auth, row.clientId);
     if (!canApproveApply(auth.user.email)) {
       await recordApproveRefusal(row, auth.user.id, "allowlist");
       throw new HTTPException(403, {
         message: "Apply is limited to the Adam allowlist during soft-launch.",
       });
     }
-    const client = await requireMutableClient(auth, row.clientId);
     const db = getDb();
     const workspace = await db.query.workspaces.findFirst({
       where: eq(workspaces.id, client.workspaceId),
