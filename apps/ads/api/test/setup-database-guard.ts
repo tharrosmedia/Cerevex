@@ -1,5 +1,5 @@
 import { loadEnv } from "@tharros/ads-shared/env";
-import { assertSafeTestDatabase } from "@tharros/ads-shared/test-database";
+import { assertSafeTestDatabase } from "@tharros/ads-shared/server";
 
 loadEnv();
 

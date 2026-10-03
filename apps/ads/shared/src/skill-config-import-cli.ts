@@ -1,7 +1,7 @@
 import { importProfiles } from "@cerevex/skills";
 import { closeDb, getDb } from "./db";
 import { loadEnv, requiredEnv } from "./env";
-import { assertLocalDatabase, importSkillConfigBundle } from "./skill-config-import";
+import { assertLocalDatabase, importSkillConfigBundle } from "./server";
 
 async function main(): Promise<void> {
   loadEnv();
