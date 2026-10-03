@@ -58,7 +58,7 @@ Or from this directory: `npm run db:up && npm run db:migrate && npm run db:seed 
 
 ## Migration ledger
 
-`ads:db:migrate` records applied files in `drizzle.__drizzle_migrations` (schema `drizzle`). The Neon smoke migrator writes `os.__drizzle_migrations`, which is a different table. Before the first production run of this check, list the ledger. The script only reads:
+`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. Before the first production run of this check, list the ledger. The script only reads:
 
 ```bash
 npm run ledger --workspace=@tharros/ads-shared
@@ -68,7 +68,7 @@ SQL in `apps/ads/shared/drizzle/*.sql` is immutable once applied or merged to `m
 
 If migrate refuses a tag whose `when` is at or below the latest applied `created_at`, changing that `when` in place will not apply it. Either:
 
-1. Apply `<tag>.sql` by hand with `search_path` set to `os, public`. Insert one row into `drizzle.__drizzle_migrations`: `hash` is the sha256 hex of the file text, and `created_at` is the journal `when`. Then run migrate again.
+1. Apply `<tag>.sql` by hand with `search_path` set to `os, public`. Insert one row into `os.__drizzle_migrations`: `hash` is the sha256 hex of the file text, and `created_at` is the journal `when`. Then run migrate again.
 2. Re-tag it. Remove the skipped tag from the journal and delete that `.sql` from `apps/ads/shared/drizzle/`. Add a new tag whose `when` is after every journal `when` and after the latest applied `created_at`. Do not change the `when` of a tag that is already applied.
 
 Sign in at http://127.0.0.1:43181 as the seeded owner:

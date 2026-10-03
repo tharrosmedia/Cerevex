@@ -210,7 +210,7 @@ describe("migration journal", () => {
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-      const rows = await client.query<{ hash: string }>(`select hash from "drizzle"."__drizzle_migrations"`);
+      const rows = await client.query<{ hash: string }>(`select hash from "os"."__drizzle_migrations"`);
       expect(rows.rows).toHaveLength(assertMigrationJournal(realMigrations).length);
       const table = await client.query(`select to_regclass('os.skill_client_configs') as name`);
       expect(table.rows[0]?.name).toBe("skill_client_configs");
@@ -249,7 +249,7 @@ describe("migration journal", () => {
     });
     expect(second.code).not.toBe(0);
     expect(second.stderr).toContain("0004_site_clients");
-    expect(second.stderr).toContain("drizzle.__drizzle_migrations");
+    expect(second.stderr).toContain("os.__drizzle_migrations");
     expect(second.stderr).toContain("Refusing to migrate");
     rmSync(folder, { recursive: true, force: true });
   }, 60_000);
@@ -366,8 +366,7 @@ describe("migration journal", () => {
       DATABASE_URL: databaseUrl,
     });
     expect(missing.code).not.toBe(0);
-    expect(missing.stderr).toContain("drizzle.__drizzle_migrations does not exist");
-    expect(missing.stderr).toContain("os.__drizzle_migrations");
+    expect(missing.stderr).toContain("os.__drizzle_migrations does not exist");
 
     const migrated = await runMigrate({
       ...process.env,
@@ -378,15 +377,15 @@ describe("migration journal", () => {
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-      const before = await client.query(`select count(*)::int as n from "drizzle"."__drizzle_migrations"`);
+      const before = await client.query(`select count(*)::int as n from "os"."__drizzle_migrations"`);
       const listed = await runNode([tsxBin, ledgerScript], {
         ...process.env,
         NODE_ENV: "test",
         DATABASE_URL: databaseUrl,
       });
       expect(listed.code, listed.stderr).toBe(0);
-      expect(listed.stdout).toContain(`drizzle.__drizzle_migrations rows: ${before.rows[0]?.n}`);
-      const after = await client.query(`select count(*)::int as n from "drizzle"."__drizzle_migrations"`);
+      expect(listed.stdout).toContain(`os.__drizzle_migrations rows: ${before.rows[0]?.n}`);
+      const after = await client.query(`select count(*)::int as n from "os"."__drizzle_migrations"`);
       expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
     } finally {
       await client.end();

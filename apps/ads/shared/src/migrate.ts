@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { closeDb, getPool } from "./db";
 import { loadEnv } from "./env";
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE, migrationsRelation } from "./migration-ledger";
 import {
   assertMigrationJournal,
   assertMigrationsApplied,
@@ -29,7 +30,7 @@ async function readApplied(client: {
   query: (sql: string) => Promise<{ rows: Array<{ hash: string | null; created_at: string | number }> }>;
 }): Promise<AppliedMigration[]> {
   try {
-    const applied = await client.query(`select hash, created_at from "drizzle"."__drizzle_migrations"`);
+    const applied = await client.query(`select hash, created_at from ${migrationsRelation()}`);
     return applied.rows.map((row) => ({ hash: row.hash, createdAt: Number(row.created_at) }));
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
@@ -51,7 +52,11 @@ async function main(): Promise<void> {
     await client.query("SET search_path TO os, public");
     const db = drizzle(client);
     assertNoSkippedBeforeMigrate(folder, entries, await readApplied(client));
-    await migrate(db, { migrationsFolder: folder });
+    await migrate(db, {
+      migrationsFolder: folder,
+      migrationsSchema: MIGRATIONS_SCHEMA,
+      migrationsTable: MIGRATIONS_TABLE,
+    });
     assertMigrationsApplied(folder, entries, await readApplied(client));
     console.log(`Applied OS migrations from ${folder} into schema os`);
   } finally {

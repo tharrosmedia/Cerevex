@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
 
 export type JournalEntry = {
   idx: number;
@@ -134,7 +135,7 @@ export function assertNoSkippedBeforeMigrate(
     const match = applied.some((row) => row.hash === entry.hash && row.createdAt === entry.when);
     if (!match) {
       problems.push(
-        `Refusing to migrate. ${entry.tag} (when ${entry.when}) is at or below the latest applied created_at ${maxCreated} and has no matching row in drizzle.__drizzle_migrations. Expected hash ${entry.hash}. Found hash ${foundHash(applied, entry.when)}.`,
+        `Refusing to migrate. ${entry.tag} (when ${entry.when}) is at or below the latest applied created_at ${maxCreated} and has no matching row in ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}. Expected hash ${entry.hash}. Found hash ${foundHash(applied, entry.when)}.`,
       );
     }
   }
@@ -156,7 +157,7 @@ export function assertMigrationsApplied(
     const match = applied.some((row) => row.hash === entry.hash && row.createdAt === entry.when);
     if (!match) {
       problems.push(
-        `Unapplied or out-of-order migration ${entry.tag} (when ${entry.when}) has no matching row in drizzle.__drizzle_migrations. Expected hash ${entry.hash}. Found hash ${foundHash(applied, entry.when)}.`,
+        `Unapplied or out-of-order migration ${entry.tag} (when ${entry.when}) has no matching row in ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}. Expected hash ${entry.hash}. Found hash ${foundHash(applied, entry.when)}.`,
       );
     }
   }
