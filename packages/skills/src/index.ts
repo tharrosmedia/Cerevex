@@ -13,7 +13,10 @@ export {
   REC_FORMAT_CURRENT,
   REC_FORMATS,
   RecommendationValidationError,
+  SkillJobApprovalError,
   normalizeRecommendation,
+  pendingApprovalRecord,
+  sealSkillJobApproval,
   validateRecommendation,
 } from "./recommendation";
 

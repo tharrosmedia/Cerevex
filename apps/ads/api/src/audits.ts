@@ -40,6 +40,7 @@ import {
   writeAuditEvent,
 } from "@tharros/ads-shared/audit";
 import { getDb } from "@tharros/ads-shared/db";
+import { readApproval, recordRecLifecycle } from "@tharros/ads-shared/rec-lifecycle";
 import { sendApplyRequested, sendAuditRequested } from "@tharros/ads-shared/inngest";
 import { adAccounts, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
@@ -54,7 +55,7 @@ const startAuditSchema = z.object({
 });
 
 const decideSchema = z.object({
-  action: z.enum(["authorize", "approve", "deny", "snooze"]),
+  action: z.enum(["authorize", "approve", "deny", "snooze", "mark_done", "rollback"]),
   note: z.string().max(1000).optional(),
   inline: z.boolean().optional(),
 });
@@ -281,7 +282,45 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
   app.post("/recommendations/:id/decide", requireAuth, async (c) => {
     const parsed = decideSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      throw new HTTPException(400, { message: "action must be approve, deny, or snooze" });
+      throw new HTTPException(400, { message: "action must be approve, deny, snooze, mark_done, or rollback" });
+    }
+    if (parsed.data.action === "mark_done" || parsed.data.action === "rollback") {
+      const auth = c.get("auth");
+      if (!canApproveApply(auth.user.email)) {
+        throw new HTTPException(403, {
+          message: "Approve is limited to the Adam allowlist during soft-launch.",
+        });
+      }
+      const row = await getRecommendation(c.req.param("id"));
+      if (!row) throw new HTTPException(404, { message: "Recommendation not found" });
+      const client = await requireMutableClient(auth, row.clientId);
+      const approval = readApproval(row.approvalJson);
+      if (parsed.data.action === "mark_done" && approval.status !== "approved") {
+        throw new HTTPException(409, { message: "Approve this recommendation before marking it done." });
+      }
+      if (parsed.data.action === "rollback" && !approval.executed_at) {
+        throw new HTTPException(409, { message: "Nothing has been applied yet, so there is nothing to roll back." });
+      }
+      await recordRecLifecycle({
+        kind: parsed.data.action === "mark_done" ? "mark_done" : "rolled_back",
+        recommendationId: row.id,
+        workspaceId: row.workspaceId,
+        clientId: row.clientId,
+        module: "ads",
+        actorType: "user",
+        actorId: auth.user.id,
+        entityType: "recommendation",
+        entityId: row.id,
+        payload: parsed.data.note ? { note: parsed.data.note } : {},
+      });
+      const updated = await getRecommendation(row.id);
+      return c.json({
+        recommendation: updated ? toRecommendationPublic(updated) : toRecommendationPublic(row),
+        client: { id: client.id, name: client.name },
+        writes: false,
+        applied: false,
+        note: parsed.data.action === "mark_done" ? "Marked done. Nothing new was sent to Meta or Google." : "Rollback recorded. Nothing new was sent to Meta or Google.",
+      });
     }
     const action = normalizeDecisionAction(parsed.data.action);
     const row = await getRecommendation(c.req.param("id"));

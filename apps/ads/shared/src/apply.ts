@@ -32,6 +32,7 @@ import {
   recommendations,
   workspaces,
 } from "./schema";
+import { recordRecLifecycle } from "./rec-lifecycle";
 import type { ApplyJobPublic } from "./types";
 
 export function applyJobIdempotencyKey(recommendationId: string): string {
@@ -88,9 +89,60 @@ export type ApplyRunResult = {
   outcomes: MutationOutcome[];
   writes: boolean;
   blocked: string | null;
+  /** False when this call returned an already-finished job and must not write another audit row. */
+  fresh?: boolean;
 };
 
 export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
+  const result = await runApplyJobUnlogged(applyJobId);
+  if (result.fresh !== false) {
+    await recordApplyLifecycle(applyJobId, result);
+  }
+  return result;
+}
+
+async function recordApplyLifecycle(applyJobId: string, result: ApplyRunResult): Promise<void> {
+  const db = getDb();
+  const job = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
+  if (!job) return;
+  const authorization = await db.query.authorizations.findFirst({
+    where: eq(authorizations.id, job.authorizationId),
+  });
+  if (!authorization) return;
+  const recommendation = await db.query.recommendations.findFirst({
+    where: eq(recommendations.id, authorization.recommendationId),
+  });
+  if (!recommendation) return;
+  const applyResult = result.blocked
+    ? `error:${result.blocked}`
+    : result.applyJob.error
+      ? `error:${result.applyJob.error}`
+      : result.applyJob.status === "succeeded"
+        ? `success:${result.applyJob.id}`
+        : `error:${result.applyJob.status}`;
+  await recordRecLifecycle({
+    kind: "applied",
+    recommendationId: recommendation.id,
+    workspaceId: recommendation.workspaceId,
+    clientId: recommendation.clientId,
+    module: "ads",
+    actorType: "worker",
+    actorId: null,
+    entityType: "recommendation",
+    entityId: recommendation.id,
+    applyResult,
+    before: recommendation.proposedMutationsJson,
+    after: {
+      status: result.applyJob.status,
+      writes: result.writes,
+      blocked: result.blocked,
+      outcomes: result.outcomes,
+      response: result.applyJob.response,
+    },
+  });
+}
+
+async function runApplyJobUnlogged(applyJobId: string): Promise<ApplyRunResult> {
   const db = getDb();
   const job = await db.query.applyJobs.findFirst({
     where: eq(applyJobs.id, applyJobId),
@@ -105,6 +157,7 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
       outcomes: ((job.responseJson as { outcomes?: MutationOutcome[] } | null)?.outcomes ?? []),
       writes: Boolean((job.responseJson as { writes?: boolean } | null)?.writes),
       blocked: null,
+      fresh: false,
     };
   }
 

@@ -81,6 +81,60 @@ export interface NormalizedRecommendation extends RecommendationRecord {
   versions: { skill: string; pack: string; layer: string };
 }
 
+export class SkillJobApprovalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SkillJobApprovalError";
+  }
+}
+
+/** The approval block a job or skill is allowed to write. */
+export function pendingApprovalRecord(): RecommendationApproval {
+  return {
+    status: "PENDING_APPROVAL",
+    approved_by: null,
+    approved_at: null,
+    executed_by: null,
+    executed_at: null,
+    apply_result: null,
+    rolled_back_by: null,
+    rolled_back_at: null,
+  };
+}
+
+/**
+ * Job and skill writers may only open a rec at PENDING_APPROVAL.
+ * Ingestion of an already-approved record is a separate path (PR 3).
+ */
+export function sealSkillJobApproval(approval: unknown): RecommendationApproval {
+  if (approval == null) return pendingApprovalRecord();
+  if (typeof approval !== "object" || Array.isArray(approval)) {
+    throw new SkillJobApprovalError("Jobs and skills must pass an approval object or omit it");
+  }
+  const row = approval as Record<string, unknown>;
+  const status = row.status ?? "PENDING_APPROVAL";
+  if (status !== "PENDING_APPROVAL") {
+    throw new SkillJobApprovalError(
+      "Jobs and skills cannot set approval.status. Only a person in Cerevex can approve or reject.",
+    );
+  }
+  const filled = [
+    "approved_by",
+    "approved_at",
+    "executed_by",
+    "executed_at",
+    "apply_result",
+    "rolled_back_by",
+    "rolled_back_at",
+  ] as const;
+  for (const key of filled) {
+    if (row[key] != null) {
+      throw new SkillJobApprovalError(`Jobs and skills cannot set approval.${key}`);
+    }
+  }
+  return pendingApprovalRecord();
+}
+
 export class RecommendationValidationError extends Error {
   readonly issues: string[];
 

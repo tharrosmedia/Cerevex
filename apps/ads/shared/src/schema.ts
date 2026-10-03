@@ -182,6 +182,22 @@ export const recommendations = osSchema.table(
     evidenceJson: jsonb("evidence_json").notNull().default({}),
     proposedMutationsJson: jsonb("proposed_mutations_json").notNull().default([]),
     status: text("status").notNull().default("proposed"),
+    /**
+     * Format 1.1 approval block. Jobs and skills leave status PENDING_APPROVAL.
+     * Only a person in Cerevex sets approved or rejected.
+     */
+    approvalJson: jsonb("approval_json")
+      .notNull()
+      .default({
+        status: "PENDING_APPROVAL",
+        approved_by: null,
+        approved_at: null,
+        executed_by: null,
+        executed_at: null,
+        apply_result: null,
+        rolled_back_by: null,
+        rolled_back_at: null,
+      }),
     schemaVersion: text("schema_version").notNull().default("1"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -270,6 +286,40 @@ export const applyJobs = osSchema.table(
     index("apply_jobs_client_idx").on(table.clientId),
     index("apply_jobs_authorization_idx").on(table.authorizationId),
     uniqueIndex("apply_jobs_idempotency_idx").on(table.idempotencyKey),
+  ],
+);
+
+/**
+ * Append-only client audit log (Brief 1.0 §4.3).
+ * UPDATE and DELETE are rejected by a trigger. Admins included.
+ */
+export const clientAuditLog = osSchema.table(
+  "client_audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "restrict" }),
+    storeId: text("store_id"),
+    actorType: text("actor_type").notNull(),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    approver: text("approver"),
+    module: text("module").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id"),
+    payloadJson: jsonb("payload_json").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("client_audit_log_client_created_idx").on(table.clientId, table.createdAt),
+    index("client_audit_log_store_idx").on(table.storeId),
+    index("client_audit_log_approver_idx").on(table.approver),
+    index("client_audit_log_module_idx").on(table.module),
+    index("client_audit_log_action_idx").on(table.action),
   ],
 );
 
