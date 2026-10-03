@@ -35,7 +35,7 @@ const homeItems = adsSub('https://app.cerevex.store', defaultModulesFor('home_se
 assert.ok(homeItems.every((item) => item.href.startsWith('/')));
 assert.deepEqual(
   homeItems.filter((item) => item.rail).map((item) => item.rail),
-  ['Audits', 'Suggestions'],
+  ['Audits', 'Suggestions', 'Audit log'],
 );
 assert.ok(!homeItems.some((item) => item.label === 'Workflows'), 'Workflows is not built yet');
 assert.ok(!homeItems.some((item) => item.label === 'Leads'));

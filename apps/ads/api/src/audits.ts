@@ -33,6 +33,8 @@ import {
   listAuditRunsForClients,
   listRecommendations,
   listRecommendationsForClients,
+  RecommendationGateError,
+  RecommendationNotOpenError,
   runAuditRun,
   toAuthorizationPublic,
   toFindingPublic,
@@ -40,6 +42,7 @@ import {
   writeAuditEvent,
 } from "@tharros/ads-shared/audit";
 import { getDb } from "@tharros/ads-shared/db";
+import { LifecycleRepeatError, readApproval, recordRecLifecycle } from "@tharros/ads-shared/rec-lifecycle";
 import { sendApplyRequested, sendAuditRequested } from "@tharros/ads-shared/inngest";
 import { adAccounts, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
@@ -48,19 +51,46 @@ import { childLogger } from "./logger";
 import { getVisibleClient, listVisibleClients } from "./tenancy";
 import type { AppEnv } from "./types";
 
+const REC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertRecommendationId(id: string) {
+  if (!REC_UUID.test(id)) {
+    throw new HTTPException(400, { message: "Invalid recommendation id" });
+  }
+}
+
 const startAuditSchema = z.object({
   adAccountId: z.string().uuid().optional(),
   inline: z.boolean().optional(),
 });
 
 const decideSchema = z.object({
-  action: z.enum(["authorize", "approve", "deny", "snooze"]),
+  action: z.enum(["authorize", "approve", "deny", "snooze", "mark_done", "rollback"]),
   note: z.string().max(1000).optional(),
   inline: z.boolean().optional(),
 });
 
 function normalizeDecisionAction(action: "authorize" | "approve" | "deny" | "snooze") {
   return action === "approve" ? "authorize" : action;
+}
+
+async function recordApproveRefusal(
+  row: { id: string; workspaceId: string; clientId: string },
+  actorId: string,
+  reason: string,
+): Promise<void> {
+  await recordRecLifecycle({
+    kind: "approve_refused",
+    recommendationId: row.id,
+    workspaceId: row.workspaceId,
+    clientId: row.clientId,
+    module: "ads",
+    actorType: "user",
+    actorId,
+    entityType: "recommendation",
+    entityId: row.id,
+    payload: { reason },
+  });
 }
 
 export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHandler<AppEnv>) {
@@ -279,9 +309,64 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
   });
 
   app.post("/recommendations/:id/decide", requireAuth, async (c) => {
+    assertRecommendationId(c.req.param("id"));
     const parsed = decideSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      throw new HTTPException(400, { message: "action must be approve, deny, or snooze" });
+      throw new HTTPException(400, { message: "action must be approve, deny, snooze, mark_done, or rollback" });
+    }
+    if (parsed.data.action === "mark_done" || parsed.data.action === "rollback") {
+      const auth = c.get("auth");
+      const row = await getRecommendation(c.req.param("id"));
+      if (!row) throw new HTTPException(404, { message: "Recommendation not found" });
+      const client = await requireMutableClient(auth, row.clientId);
+      if (!canApproveApply(auth.user.email)) {
+        await recordApproveRefusal(row, auth.user.id, "allowlist");
+        throw new HTTPException(403, {
+          message: "Approve is limited to the Adam allowlist during soft-launch.",
+        });
+      }
+      const approval = readApproval(row.approvalJson);
+      if (parsed.data.action === "mark_done" && approval.executed_at) {
+        throw new HTTPException(409, { message: "This recommendation is already marked done." });
+      }
+      if (parsed.data.action === "mark_done" && approval.status !== "approved") {
+        await recordApproveRefusal(row, auth.user.id, "mark_done_before_approve");
+        throw new HTTPException(409, { message: "Approve this recommendation before marking it done." });
+      }
+      if (parsed.data.action === "rollback" && approval.rolled_back_at) {
+        throw new HTTPException(409, { message: "This recommendation is already rolled back." });
+      }
+      if (parsed.data.action === "rollback" && !approval.executed_at) {
+        await recordApproveRefusal(row, auth.user.id, "rollback_before_execute");
+        throw new HTTPException(409, { message: "Nothing has been applied yet, so there is nothing to roll back." });
+      }
+      try {
+        await recordRecLifecycle({
+          kind: parsed.data.action === "mark_done" ? "mark_done" : "rolled_back",
+          recommendationId: row.id,
+          workspaceId: row.workspaceId,
+          clientId: row.clientId,
+          module: "ads",
+          actorType: "user",
+          actorId: auth.user.id,
+          entityType: "recommendation",
+          entityId: row.id,
+          payload: parsed.data.note ? { note: parsed.data.note } : {},
+        });
+      } catch (error) {
+        if (error instanceof LifecycleRepeatError) {
+          throw new HTTPException(409, { message: error.message });
+        }
+        throw error;
+      }
+      const updated = await getRecommendation(row.id);
+      return c.json({
+        recommendation: updated ? toRecommendationPublic(updated) : toRecommendationPublic(row),
+        client: { id: client.id, name: client.name },
+        writes: false,
+        applied: false,
+        note: parsed.data.action === "mark_done" ? "Marked done. Nothing new was sent to Meta or Google." : "Rollback recorded. Nothing new was sent to Meta or Google.",
+      });
     }
     const action = normalizeDecisionAction(parsed.data.action);
     const row = await getRecommendation(c.req.param("id"));
@@ -290,37 +375,38 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
     const auth = c.get("auth");
     const client = await requireMutableClient(auth, row.clientId);
-    const db = getDb();
 
     if (action === "authorize") {
       if (!canApproveApply(auth.user.email)) {
+        await recordApproveRefusal(row, auth.user.id, "allowlist");
         throw new HTTPException(403, {
           message: "Approve is limited to the Adam allowlist during soft-launch.",
         });
       }
       if (row.status !== "proposed") {
+        await recordApproveRefusal(row, auth.user.id, "not_open");
         throw new HTTPException(409, { message: "This recommendation is no longer open." });
-      }
-      const workspace = await db.query.workspaces.findFirst({
-        where: eq(workspaces.id, client.workspaceId),
-      });
-      const account = await db.query.adAccounts.findFirst({
-        where: eq(adAccounts.id, row.adAccountId),
-      });
-      if (workspace?.applyKillSwitch) {
-        throw new HTTPException(409, { message: applyBlockMessage("apply_kill_switch") });
-      }
-      if (account?.frozen) {
-        throw new HTTPException(409, { message: applyBlockMessage("account_frozen") });
       }
     }
 
-    const result = await decideRecommendation({
-      recommendationId: row.id,
-      userId: auth.user.id,
-      action,
-      note: parsed.data.note,
-    });
+    let result: Awaited<ReturnType<typeof decideRecommendation>>;
+    try {
+      result = await decideRecommendation({
+        recommendationId: row.id,
+        userId: auth.user.id,
+        action,
+        note: parsed.data.note,
+      });
+    } catch (error) {
+      if (error instanceof RecommendationNotOpenError) {
+        throw new HTTPException(409, { message: "This recommendation is no longer open." });
+      }
+      if (error instanceof RecommendationGateError) {
+        await recordApproveRefusal(row, auth.user.id, error.reason);
+        throw new HTTPException(409, { message: applyBlockMessage(error.reason) });
+      }
+      throw error;
+    }
 
     if (action !== "authorize") {
       childLogger(c.get("requestId")).info({
@@ -429,18 +515,20 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
   });
 
   app.post("/recommendations/:id/apply", requireAuth, async (c) => {
+    assertRecommendationId(c.req.param("id"));
     const parsed = z.object({ inline: z.boolean().optional() }).safeParse(await c.req.json().catch(() => ({})));
     const row = await getRecommendation(c.req.param("id"));
     if (!row) {
       throw new HTTPException(404, { message: "Recommendation not found" });
     }
     const auth = c.get("auth");
+    const client = await requireMutableClient(auth, row.clientId);
     if (!canApproveApply(auth.user.email)) {
+      await recordApproveRefusal(row, auth.user.id, "allowlist");
       throw new HTTPException(403, {
         message: "Apply is limited to the Adam allowlist during soft-launch.",
       });
     }
-    const client = await requireMutableClient(auth, row.clientId);
     const db = getDb();
     const workspace = await db.query.workspaces.findFirst({
       where: eq(workspaces.id, client.workspaceId),
@@ -457,6 +545,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     });
 
     if (!gate.allowed) {
+      await recordApproveRefusal(row, auth.user.id, gate.blocked ?? "apply_blocked");
       throw new HTTPException(409, {
         message: applyBlockMessage(gate.blocked),
       });

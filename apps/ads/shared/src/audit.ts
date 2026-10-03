@@ -4,11 +4,12 @@ import { loadFunnelSignal } from "./analytics";
 import { evaluateAccount } from "./audit-engine";
 import { evaluateClientM51 } from "./m51-engine";
 import { auditRunSummarySchema, parseFindingDraft, parseRecommendationDraft } from "./audit-schemas";
+import { insertJobRecommendation, readApproval, recordRecLifecycle } from "./rec-lifecycle";
 import { readWorkspaceCapabilities } from "./capabilities";
 import type { CallRecord } from "./attribution";
 import { readConnectorSettings, resolveCallTrackingForClient } from "./connector-settings";
 import { seasonalityFromSettings } from "./seasonality-calendar";
-import { getDb } from "./db";
+import { getDb, type Database } from "./db";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
 import { inferApplyJobType } from "./mutation-families";
 import {
@@ -82,6 +83,7 @@ export function toRecommendationPublic(row: typeof recommendations.$inferSelect)
     evidence: (row.evidenceJson as Record<string, unknown>) ?? {},
     proposedMutations: (row.proposedMutationsJson as unknown[]) ?? [],
     status: row.status,
+    approval: readApproval(row.approvalJson),
     schemaVersion: row.schemaVersion,
     createdAt: row.createdAt.toISOString(),
   };
@@ -272,7 +274,10 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
       for (const draft of evaluated.recommendations) {
         const parsed = parseRecommendationDraft(draft);
         ruleIds.add(String(parsed.evidenceJson.ruleId));
-        const [inserted] = await db.insert(recommendations).values(parsed).returning();
+        const inserted = await insertJobRecommendation(parsed, {
+          source: "native:audit",
+          module: "paid-media",
+        });
         allRecommendations.push(inserted);
       }
     }
@@ -295,7 +300,10 @@ export async function runAuditRun(auditRunId: string): Promise<AuditBundle> {
     for (const draft of m51.recommendations) {
       const parsed = parseRecommendationDraft(draft);
       ruleIds.add(String(parsed.evidenceJson.ruleId));
-      const [inserted] = await db.insert(recommendations).values(parsed).returning();
+      const inserted = await insertJobRecommendation(parsed, {
+        source: "native:audit",
+        module: "paid-media",
+      });
       allRecommendations.push(inserted);
     }
 
@@ -475,6 +483,23 @@ export async function getFinding(id: string) {
   });
 }
 
+export class RecommendationNotOpenError extends Error {
+  constructor() {
+    super("This recommendation is no longer open.");
+    this.name = "RecommendationNotOpenError";
+  }
+}
+
+export class RecommendationGateError extends Error {
+  readonly reason: "apply_kill_switch" | "account_frozen";
+
+  constructor(reason: "apply_kill_switch" | "account_frozen") {
+    super(reason);
+    this.name = "RecommendationGateError";
+    this.reason = reason;
+  }
+}
+
 export async function decideRecommendation(input: {
   recommendationId: string;
   userId: string;
@@ -482,11 +507,38 @@ export async function decideRecommendation(input: {
   note?: string;
 }): Promise<{ recommendation: RecommendationPublic; authorization: AuthorizationPublic | null }> {
   const db = getDb();
-  const row = await db.query.recommendations.findFirst({
-    where: eq(recommendations.id, input.recommendationId),
-  });
+  return db.transaction(async (tx) => decideRecommendationOn(input, tx as unknown as Database));
+}
+
+async function decideRecommendationOn(
+  input: {
+    recommendationId: string;
+    userId: string;
+    action: DecisionAction;
+    note?: string;
+  },
+  db: Database,
+): Promise<{ recommendation: RecommendationPublic; authorization: AuthorizationPublic | null }> {
+  const [row] = await db
+    .select()
+    .from(recommendations)
+    .where(eq(recommendations.id, input.recommendationId))
+    .for("update");
   if (!row) {
     throw new Error("Recommendation not found");
+  }
+  if (input.action === "authorize" && row.status !== "proposed") {
+    throw new RecommendationNotOpenError();
+  }
+  if (input.action === "authorize") {
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.id, row.workspaceId),
+    });
+    const account = await db.query.adAccounts.findFirst({
+      where: eq(adAccounts.id, row.adAccountId),
+    });
+    if (workspace?.applyKillSwitch) throw new RecommendationGateError("apply_kill_switch");
+    if (account?.frozen) throw new RecommendationGateError("account_frozen");
   }
 
   const status =
@@ -545,8 +597,26 @@ export async function decideRecommendation(input: {
     },
   });
 
+  if (input.action === "authorize" || input.action === "deny") {
+    await recordRecLifecycle(
+      {
+        kind: input.action === "authorize" ? "approved" : "rejected",
+        recommendationId: row.id,
+        workspaceId: row.workspaceId,
+        clientId: row.clientId,
+        module: "ads",
+        actorType: "user",
+        actorId: input.userId,
+        entityType: "recommendation",
+        entityId: row.id,
+      },
+      db,
+    );
+  }
+
+  const fresh = await db.query.recommendations.findFirst({ where: eq(recommendations.id, row.id) });
   return {
-    recommendation: toRecommendationPublic(updated),
+    recommendation: toRecommendationPublic(fresh ?? updated),
     authorization: authorization ? toAuthorizationPublic(authorization) : null,
   };
 }

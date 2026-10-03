@@ -24,6 +24,8 @@ for (const page of LEGAL_PAGES) {
 
 assert.equal(isPublicLegalPath('/login'), false);
 assert.equal(isPublicLegalPath('/settings'), false);
+assert.equal(isPublicLegalPath('/ads/audit-log'), false);
+assert.equal(publicLegalDecision('/ads/audit-log').kind, 'auth');
 assert.equal(publicLegalDecision('/').kind, 'auth');
 assert.equal(publicLegalDecision('/terms-of-service/extra').kind, 'auth');
 

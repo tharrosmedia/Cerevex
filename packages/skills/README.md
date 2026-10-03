@@ -6,18 +6,17 @@ Cerevex does not read the box or Drive at runtime. Jobs load `template@version` 
 
 ## Re-sync
 
-One command replaces the vendored trees, rebuilds `generated/manifest.json`, and rebuilds `generated/client-configs.json`.
+One command replaces the vendored trees, runs `manifest` to rebuild `generated/manifest.json`, and runs `import` to rebuild `generated/client-configs.json`. It refuses symlinks in the source tree instead of copying them into `vendor/`.
 
 ```bash
-npm run resync --workspace=@cerevex/skills -- \
-  --references path/to/tharros-shared-references-YYYY-MM-DD-HHMM.tar.gz \
-  --skills path/to/skills-six-YYYY-MM-DD-HHMM-accepted.tar.gz \
-  --overlay no-slop-copy=path/to/no-slop-copy-YYYY-MM-DD-HHMM.tar.gz
+npm run resync --workspace=@cerevex/skills -- --source /home/box/agent-data/workflows
 ```
 
-The two main archives must share a `YYYY-MM-DD-HHMM` stamp, read as America/New_York. `--overlay` replaces one skill folder after the skills archive is extracted. The current pin uses the 2026-10-03 07:20 ET accepted snapshot, with `no-slop-copy` replaced from `no-slop-copy-2026-10-03-0718.tar.gz`.
+`--source` is the live workflows directory. It defaults to `/home/box/agent-data/workflows`. The script copies `tharros-shared-references` and each skill folder from that directory. It does not read an old snapshot archive.
 
-`vendor/SNAPSHOT.json` records the archive names, the upstream path `/home/box/agent-data/workflows/`, and the stamp.
+Pinned shared references live in `pins/shared-references.json`. The accepted bytes for those paths also live under `overlays/shared-references/`. Today that pin is `references/prompt-layer.md` at sha256 `69e3d463c490519ad80603125d872ce5aa29cae20580cb3bb19c4108f73097e9` (prompt-layer 1.0.1). Re-sync hashes the overlay and the file in `--source`. If either digest differs, the script throws and leaves `vendor/` as it is, so 1.0.1 survives. Optional `--overlay name=/path/to/skill-dir` replaces one skill folder after the source copy. Optional `--stamp YYYY-MM-DD-HHMM` sets the snapshot id, read as America/New_York.
+
+`vendor/SNAPSHOT.json` records the source directory, the America/New_York stamp, and the shared-reference pins that passed the check.
 
 ## Loader
 
@@ -48,7 +47,7 @@ The layer paths are canonical:
 npm run import --workspace=@cerevex/skills
 ```
 
-Parses `vendor/tharros-shared-references/references/clients/<slug>/profile.md` into typed client and store config. Every fact is `known`, `tbd`, `inference`, or `assumption`. `approval_owner: TBD` and `agency owner` resolve to the identity `agency owner (Adam Leech)`. The fact stays TBD on the Missing facts checklist. The identity is not an email. The ads import binds it to `os.users` with `APPROVAL_OWNER_USER_ID` or the workspace membership whose role is `owner`. `APPROVAL_OWNER_NAME` in `apps/ads/.env.example` documents that name. Each client gets a Missing facts checklist from its TBD fields and open questions.
+Parses `vendor/tharros-shared-references/references/clients/<slug>/profile.md` into typed client and store config. Every fact is `known`, `tbd`, `inference`, or `assumption`. `approval_owner: TBD` and `agency owner` resolve to the identity `agency owner (Adam Leech)`. The fact stays TBD on the Missing facts checklist. The identity is not an email. The ads import binds it to `os.users` with `APPROVAL_OWNER_USER_ID` only when that user is an owner of every workspace that holds a linked client. Otherwise it binds the workspace membership whose role is `owner`. An id that is only an owner of a different workspace is refused. The import writes only to a local database, or to a non-local host when `PRODUCTION_NEON_HOST` or `PRODUCTION_DATABASE_URL` is set and does not match that host. `ALLOW_NONLOCAL_TEST_DB` alone does not open the write path. The whole bundle is one transaction, and a successful upsert sets `imported_at`. `APPROVAL_OWNER_NAME` in `apps/ads/.env.example` documents that name. Each client gets a Missing facts checklist from its TBD fields and open questions.
 
 Scope gate: only HVAC USA, Got Ductless, KC Prestige HVAC, Elmar HVAC, Tharros Media, and Cerevex. Level Agency tenants (Edge NYC, Vessel NYC, Kiavi, Perfect Lens World, Perfect Lens CA, Lenspure) cannot be imported and cannot run a skill or job.
 

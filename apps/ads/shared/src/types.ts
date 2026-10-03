@@ -31,6 +31,11 @@ export type AuthContext = {
   user: SessionUser;
   memberships: Membership[];
   clientMemberships: ClientMembership[];
+  /**
+   * Set only for the ads internal service key. Session auth leaves this unset,
+   * which is a person. Person lifecycle events refuse `service`.
+   */
+  principal?: "user" | "service";
 };
 
 export type ClientSummary = {
@@ -343,6 +348,16 @@ export type RecommendationPublic = {
   evidence: Record<string, unknown>;
   proposedMutations: unknown[];
   status: string;
+  approval: {
+    status: "PENDING_APPROVAL" | "approved" | "rejected";
+    approved_by?: string | null;
+    approved_at?: string | null;
+    executed_by?: "cerevex_apply" | "human" | null;
+    executed_at?: string | null;
+    apply_result?: string | null;
+    rolled_back_by?: string | null;
+    rolled_back_at?: string | null;
+  };
   schemaVersion: string;
   createdAt: string;
 };

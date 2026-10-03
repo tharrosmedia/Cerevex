@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import {
   RecommendationValidationError,
+  SkillJobApprovalError,
   normalizeRecommendation,
+  pendingApprovalRecord,
+  sealSkillJobApproval,
   validateRecommendation,
 } from "../src/recommendation";
 
@@ -70,5 +73,17 @@ assert.throws(
     }),
   RecommendationValidationError,
 );
+
+assert.equal(sealSkillJobApproval(undefined).status, "PENDING_APPROVAL");
+assert.equal(sealSkillJobApproval({ status: "PENDING_APPROVAL" }).executed_by, null);
+assert.throws(
+  () => sealSkillJobApproval({ status: "approved", approved_by: "a skill" }),
+  SkillJobApprovalError,
+);
+assert.throws(
+  () => sealSkillJobApproval({ status: "PENDING_APPROVAL", executed_by: "cerevex_apply" }),
+  SkillJobApprovalError,
+);
+assert.equal(pendingApprovalRecord().status, "PENDING_APPROVAL");
 
 console.log("recommendation tests ok");

@@ -16,8 +16,8 @@ export async function POST(request: Request) {
   if (!body?.recommendationId || !body.action) {
     return NextResponse.json({ error: 'recommendationId and action are required' }, { status: 400 });
   }
-  if (!['approve', 'authorize', 'deny', 'snooze'].includes(body.action)) {
-    return NextResponse.json({ error: 'action must be approve, deny, or snooze' }, { status: 400 });
+  if (!['approve', 'authorize', 'deny', 'snooze', 'mark_done', 'rollback'].includes(body.action)) {
+    return NextResponse.json({ error: 'action must be approve, deny, snooze, mark_done, or rollback' }, { status: 400 });
   }
 
   const result = await adsApi<{
