@@ -7,11 +7,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const approve = readFileSync(join(here, '../app/api/approve/route.ts'), 'utf8');
 const decide = readFileSync(join(here, '../app/api/ads/decide/route.ts'), 'utf8');
 assert.equal(approve.includes('relayApproveToAuditLog'), false);
-<<<<<<< HEAD
 assert.equal(approve.includes('/recommendations/lifecycle'), false);
-=======
 assert.equal(approve.includes('rec-lifecycle-relay'), false);
->>>>>>> 7a657ee (Close the audit-log forgery and immutability gaps in skills PR 2.)
 assert.ok(decide.includes('consoleAuthorized'));
 assert.ok(decide.includes('mark_done'));
 assert.ok(decide.includes('rollback'));
