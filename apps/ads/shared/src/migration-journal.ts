@@ -82,7 +82,9 @@ export function assertMigrationJournal(migrationsFolder: string): JournalEntry[]
   }
   for (const tag of sqlFiles) {
     if (!tags.has(tag)) {
-      throw new MigrationJournalError(`Migration file ${tag}.sql is not in the journal.`);
+      throw new MigrationJournalError(
+        `Migration file ${tag}.sql is not in the journal. Rollback SQL belongs in apps/ads/shared/drizzle-rollbacks/, outside this folder.`,
+      );
     }
   }
   return entries;

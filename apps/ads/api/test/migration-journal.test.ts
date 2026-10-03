@@ -165,7 +165,9 @@ describe("migration journal", () => {
 
     const extra = copyMigrations();
     writeFileSync(join(extra, "0009_extra.sql"), "select 1;\n");
-    expect(() => assertMigrationJournal(extra)).toThrow(/0009_extra.sql is not in the journal/);
+    expect(() => assertMigrationJournal(extra)).toThrow(
+      /0009_extra.sql is not in the journal\. Rollback SQL belongs in apps\/ads\/shared\/drizzle-rollbacks\//,
+    );
 
     const result = await runMigrate({
       ...process.env,
