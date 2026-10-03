@@ -1,5 +1,5 @@
 import { JWT_LOCAL_FALLBACK, isProductionRuntime, signingSecretProblem } from "@cerevex/contracts";
-import { assertAdsProductionSecrets } from "@tharros/ads-shared/production-secrets";
+import { assertAdsApiProductionSecrets } from "@tharros/ads-shared/production-secrets";
 
 /** Pre-existing local fallback. Dev and test only. Production must set JWT_SECRET. */
 export { JWT_LOCAL_FALLBACK };
@@ -27,7 +27,7 @@ export function jwtSecretBytes(): Uint8Array {
 
 /** Call on ads-api boot. Exits the process when a production runtime lacks usable ads secrets. */
 export function assertJwtSecretConfigured(): void {
-  assertAdsProductionSecrets();
+  assertAdsApiProductionSecrets();
 }
 
 export function warnIfJwtSecretUnset(log: (message: string) => void = console.warn): void {

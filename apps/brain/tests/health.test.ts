@@ -52,6 +52,14 @@ try {
   assert.equal(ready.status, 200);
   assert.doesNotThrow(() => assertProductionSecrets());
 
+  env.APP_PASSWORD = 'change-this-to-secure-password';
+  assert.equal((await GET()).status, 503);
+  assert.throws(() => assertProductionSecrets(), /APP_PASSWORD:placeholder/);
+  env.APP_PASSWORD = 'CHANGE-THIS-TO-SECURE-PASSWORD';
+  assert.throws(() => assertProductionSecrets(), /APP_PASSWORD:placeholder/);
+  env.APP_PASSWORD = 'console-secret';
+  assert.doesNotThrow(() => assertProductionSecrets());
+
   clearSecrets();
   env.NODE_ENV = 'test';
   env.RAILWAY_ENVIRONMENT_NAME = 'staging';

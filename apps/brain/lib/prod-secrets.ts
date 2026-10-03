@@ -1,5 +1,5 @@
 import type { OpsEnvEntry } from '@cerevex/contracts';
-import { opsEnvRequiredInProduction } from '@cerevex/contracts';
+import { APP_PASSWORD_PLACEHOLDER, opsEnvRequiredInProduction, signingSecretProblem } from '@cerevex/contracts';
 import { encryptionKeyProblem, isProductionRuntime } from './runtime-env';
 
 /** Brain production boot and /api/health. Names only — values are never returned. */
@@ -22,6 +22,11 @@ export function productionSecretProblems(
     if (entry.env === 'ENCRYPTION_KEY') {
       const encryption = encryptionKeyProblem();
       if (encryption) problems.push(`ENCRYPTION_KEY:${encryption}`);
+      continue;
+    }
+    if (entry.env === 'APP_PASSWORD') {
+      const problem = signingSecretProblem(process.env.APP_PASSWORD, [APP_PASSWORD_PLACEHOLDER], 1);
+      if (problem) problems.push(`APP_PASSWORD:${problem}`);
       continue;
     }
     if (!(process.env[entry.env] || '').trim()) problems.push(`${entry.env}:missing`);
