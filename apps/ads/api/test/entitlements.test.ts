@@ -11,10 +11,11 @@ import {
 import { getAdPlatformConnector } from "@tharros/ads-shared/connectors";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
-import { setClientPlan } from "@tharros/ads-shared/entitlements";
+import { activateStore, setClientPlan } from "@tharros/ads-shared/entitlements";
 import { adAccounts, clients, locations, workspaces } from "@tharros/ads-shared/schema";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import { checkViolationMessage } from "../src/db-errors";
+import { upsertConnectedAccount } from "../src/connect";
 import { createPendingConnection } from "../src/pending-connect";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
@@ -584,4 +585,87 @@ describe("disconnected ad account sync", () => {
     const afterRefusal = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, accountA!.id) });
     expect(afterRefusal?.connectionStatus).toBe("disconnected");
   });
+});
+
+describe("lock order under concurrent writes", () => {
+  const NAMES = ["Lock Order Paid", "Lock Order Scholarship"];
+  let workspaceId = "";
+
+  beforeAll(async () => {
+    const { workspace } = await ensureScopedUser();
+    workspaceId = workspace.id;
+    await getDb().delete(clients).where(inArray(clients.name, NAMES));
+  });
+
+  afterAll(async () => {
+    await getDb().delete(clients).where(inArray(clients.name, NAMES));
+    await closeDb();
+  });
+
+  async function outcome(run: () => Promise<unknown>): Promise<string | null> {
+    try {
+      const value = await run();
+      if (value && typeof value === "object" && "status" in value && (value as { status?: string }).status === "error") {
+        return String((value as { lastError?: string | null }).lastError ?? "sync error");
+      }
+      return null;
+    } catch (error) {
+      return databaseMessage(error);
+    }
+  }
+
+  it("finishes 160 mixed writes with no deadlocks on a paid client and on a Scholarship client", async () => {
+    for (const plan of ["paid", "scholarship"] as const) {
+      const name = plan === "paid" ? "Lock Order Paid" : "Lock Order Scholarship";
+      const [client] = await getDb()
+        .insert(clients)
+        .values({ workspaceId, name, status: "active", plan })
+        .returning();
+      const meta = await upsertConnectedAccount({
+        workspaceId,
+        clientId: client.id,
+        platform: "meta",
+        externalId: `act_lock_${plan}`,
+        scopes: [],
+        tokens: { accessToken: "lock-order-token", mock: true },
+        label: "mock",
+      });
+      await upsertConnectedAccount({
+        workspaceId,
+        clientId: client.id,
+        platform: "google",
+        externalId: `customers/lock-${plan}`,
+        scopes: [],
+        tokens: { accessToken: "lock-order-token", mock: true },
+        label: "mock",
+      });
+      await activateStore(client.id, `lock-store-${plan}`);
+
+      const failures: string[] = [];
+      for (let round = 0; round < 40; round += 1) {
+        const results = await Promise.all([
+          outcome(() => runAdAccountSync(meta.id)),
+          outcome(() => runAdAccountSync(meta.id)),
+          outcome(() =>
+            upsertConnectedAccount({
+              workspaceId,
+              clientId: client.id,
+              platform: "google",
+              externalId: `customers/lock-${plan}`,
+              scopes: [],
+              tokens: { accessToken: "lock-order-token", mock: true },
+              label: "mock",
+            }),
+          ),
+          outcome(() => activateStore(client.id, `lock-store-${plan}`)),
+        ]);
+        for (const result of results) {
+          if (result) failures.push(result);
+        }
+      }
+
+      expect(failures.filter((failure) => /deadlock/i.test(failure))).toEqual([]);
+      expect(failures).toEqual([]);
+    }
+  }, 120_000);
 });

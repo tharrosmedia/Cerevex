@@ -52,14 +52,16 @@ DECLARE
   client_plan text;
   active_count integer;
 BEGIN
-  -- Same key in every Scholarship trigger. READ COMMITTED (the app default)
-  -- takes a fresh snapshot after this wait, so the count sees the other write.
-  PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
-
+  -- Lock order is fixed: client row, then the advisory lock. App writers lock
+  -- the client row first. Taking the advisory lock first deadlocks them.
+  -- READ COMMITTED (the app default) takes a fresh snapshot after the row
+  -- wait, so the count sees the other write.
   SELECT plan INTO client_plan
   FROM os.clients
   WHERE id = NEW.client_id
   FOR UPDATE;
+
+  PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
 
   IF client_plan IS DISTINCT FROM 'scholarship' OR NEW.status IS DISTINCT FROM 'active' THEN
     RETURN NEW;
@@ -97,12 +99,13 @@ DECLARE
   active_count integer;
   platform_key text;
 BEGIN
-  PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
-
+  -- Same order as the location trigger: client row, then advisory lock.
   SELECT plan INTO client_plan
   FROM os.clients
   WHERE id = NEW.client_id
   FOR UPDATE;
+
+  PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
 
   IF client_plan IS DISTINCT FROM 'scholarship' OR NEW.connection_status = 'disconnected' THEN
     RETURN NEW;
@@ -154,6 +157,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- The UPDATE already holds this client row. The advisory lock comes second.
   PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.id::text));
 
   SELECT count(*)::integer INTO loc_count

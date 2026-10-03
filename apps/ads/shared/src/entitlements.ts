@@ -4,9 +4,10 @@
  * getEntitlements reports the plan. precheckCanActivateAdAccounts is an
  * unlocked batch pre-check for the connect screen. It does not lock the
  * client row. The real guards are activateStore and rejectAdAccountIfBlocked,
- * which lock the client and check again before writing. setClientPlan refuses
- * an over-limit move to Scholarship and turns nothing off. Monthly counters
- * are not stored here.
+ * which lock the client row and check again before writing. Triggers lock
+ * that same client row before the Scholarship advisory lock. setClientPlan
+ * refuses an over-limit move to Scholarship and turns nothing off. Monthly
+ * counters are not stored here.
  */
 import {
   SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM,
