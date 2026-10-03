@@ -60,6 +60,44 @@ jobs:
       - name: Test Brain
         if: needs.changes.outputs.brain == 'true'
         run: npm run test --workspace=@cerevex/brain
+      - name: Build Brain
+        if: needs.changes.outputs.brain == 'true'
+        env:
+          ENCRYPTION_KEY: ci-encryption-key-no-whitespace
+          APP_PASSWORD: ci-app-password
+          ADS_INTERNAL_KEY: ci-internal-key
+          GSC_OAUTH_STATE_SECRET: ci-gsc-state-secret
+          SENTRY_AUTH_TOKEN: ""
+        run: npm run build --workspace=@cerevex/brain
+      - name: Smoke Brain
+        if: needs.changes.outputs.brain == 'true'
+        env:
+          ENCRYPTION_KEY: ci-encryption-key-no-whitespace
+          APP_PASSWORD: ci-app-password
+          ADS_INTERNAL_KEY: ci-internal-key
+          GSC_OAUTH_STATE_SECRET: ci-gsc-state-secret
+          PORT: "3310"
+        run: |
+          set -euo pipefail
+          npm run start --workspace=@cerevex/brain &
+          pid=$!
+          trap 'kill $pid' EXIT
+          ready=0
+          for _ in $(seq 1 40); do
+            if curl -sf -o /dev/null http://127.0.0.1:3310/api/health; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+          code_root=$(curl -s -o /tmp/brain-root.txt -w '%{http_code}' http://127.0.0.1:3310/)
+          code_health=$(curl -s -o /tmp/brain-health.txt -w '%{http_code}' http://127.0.0.1:3310/api/health)
+          code_gated=$(curl -s -o /tmp/brain-gated.txt -w '%{http_code}' http://127.0.0.1:3310/api/wordpress/plugin)
+          echo "root=$code_root health=$code_health gated=$code_gated"
+          test "$code_root" != "500"
+          test "$code_health" = "200"
+          test "$code_gated" = "401"
       - name: Skip (no Brain / SEO changes)
         if: needs.changes.outputs.brain != 'true'
         run: echo "Skipped — apps/ads-only change. Brain + jobs/seo stay independently green."
