@@ -58,7 +58,7 @@ Or from this directory: `npm run db:up && npm run db:migrate && npm run db:seed 
 
 ## Migration ledger
 
-`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. This README does not contain a production migrate command. `ads:db:migrate` and the Bun one-shot are local or other non-production only. Migrate refuses when schema `os` already has tables but `os.__drizzle_migrations` is missing or empty, including a database whose rows are still in `drizzle.__drizzle_migrations`. For that local or other non-production database, create the os ledger if needed and copy it once, then run migrate again:
+`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. The only production migrate command is [Production migrate](#production-migrate). `ads:db:migrate` and the Bun one-shot are local or other non-production only. Migrate refuses when schema `os` already has tables but `os.__drizzle_migrations` is missing or empty, including a database whose rows are still in `drizzle.__drizzle_migrations`. For that local or other non-production database, create the os ledger if needed and copy it once, then run migrate again:
 
 ```sql
 CREATE TABLE IF NOT EXISTS os.__drizzle_migrations (
@@ -77,6 +77,8 @@ npm run ledger --workspace=@tharros/ads-shared
 
 SQL in `apps/ads/shared/drizzle/*.sql` is immutable once applied or merged to `main`. `.gitattributes` forces LF on those files. A hash mismatch prints the expected hash and the hash that was found. `ADS_MIGRATIONS_FOLDER` is honored only when `NODE_ENV=test`. Any other value is refused before that folder is read. Rollback SQL belongs in `apps/ads/shared/drizzle-rollbacks/`, outside the migrator folder.
 
+The hand steps below are for a local or other non-production database. Do not use them on production.
+
 If migrate refuses a tag whose `when` is at or below the latest applied `created_at`, changing that `when` in place will not apply it. Either:
 
 1. Apply `<tag>.sql` by hand with `search_path` set to `os, public`. Insert one row into `os.__drizzle_migrations`: `hash` is the sha256 hex of the file text, and `created_at` is the journal `when`. Then run migrate again.
@@ -94,6 +96,26 @@ Health:
 - API: `GET http://127.0.0.1:43180/health`
 - Worker: `GET http://127.0.0.1:43182/health`
 - Inngest Dev UI: http://127.0.0.1:43183
+
+## Production migrate
+
+Adam, or an ops shell that already has the prod URL, runs this once before a deploy that needs a new `os` tag. Do not run it twice at once. It does not seed, and it does not apply Brain `public` migrations. `npm run ads:db:migrate` and `bun artifacts/os-neon-migrate.ts` stay local or other non-production only.
+
+```bash
+PRODUCTION_NEON_HOST=<neon-host> DATABASE_URL='<prod-url>' npm run ads:db:migrate:prod -- --host <neon-host> --confirm
+```
+
+`<neon-host>` is the hostname only (no user, password, or path). `DATABASE_URL` must set `sslmode=require` or stricter (`verify-ca`, `verify-full`) on every host, including loopback. `sslmode=disable` is refused. A missing `sslmode` is refused unless the test-only flag `OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK=1` is set, and that flag is honored only when the host is loopback (`127.0.0.1`, `localhost`, or `::1`). Do not set it for a production run. The host node-postgres will connect to (parsed with `pg-connection-string`, the same parser as `pg`) must equal `--host` and `PRODUCTION_NEON_HOST`. The command checks that before it connects. It refuses a `host` or `hostaddr` query parameter, an `options` parameter (including `endpoint=`), more than one host, a unix-socket host, and `endpoint=` in the password. It never prints `DATABASE_URL`. Put the URL in the environment only. Do not commit it. Optional `--statement-timeout` overrides the statement timeout. The default is `120s`. Example: `--statement-timeout 5min`. The value must be a duration such as `120s`, `500ms`, or `5min`.
+
+Before any write it opens a read-only transaction, lists `os.__drizzle_migrations`, and prints JSON: `applied` tags and the `pending` tags it would apply. A bundled migration is applied only when `artifacts/<tag>.sql` and the `sql` field in `artifacts/os-migrate-bundle.json` share one sha256, and the SQL is schema-qualified to `os`. Comments and string literals are ignored for that check. It refuses `public.` identifiers, `SET SCHEMA public`, `ALTER ... SET SCHEMA public`, and `SET search_path` or `SET LOCAL search_path` to anything other than `os`. A `public.` mention that appears only in a comment is allowed. A ledger row counts as that migration only when both `hash` and `created_at` match the bundle. Anything else is drift or an unknown row: a hash on the right `created_at` that is not the artifact hash, a known hash on the wrong `created_at`, a row that matches nothing, a duplicate, or a later tag applied while an earlier tag is missing. Those cases print the problem and refuse before any write. This command does not create `os.__drizzle_migrations`.
+
+Each pending tag then runs in its own transaction. The transaction first takes `pg_advisory_xact_lock(hashtext('cerevex.os-prod-migrate')::bigint)`, which is this command's lock. That wait uses a 30s `lock_timeout`. If another run still holds the lock, the command refuses with "another migrate run holds the lock." After the lock is held, the transaction sets `lock_timeout` to 5s for the DDL and `statement_timeout` to the `--statement-timeout` value (default `120s`), then reads the ledger again before it runs the SQL. The SQL and the ledger insert commit together. A failure rolls that tag back. Tags already committed earlier in the same run stay applied. A second overlapping run either applies nothing or refuses. Running the command again after a success applies only what the ledger still does not have. When every bundled tag is already applied, `--confirm` writes nothing. Still do not start two runs at once.
+
+Replace `--confirm` with `--dry-run` to print the same listing and write nothing. Omitting both flags prints the listing and refuses to write. `--host` is required. It does not default.
+
+### Rollback
+
+Note the Neon point-in-time restore timestamp before you run the command. This command does not run down migrations and does not delete ledger rows. Undo for a migration it has committed is that Neon restore, or a new forward migration whose `when` is after every applied `created_at`. A point-in-time restore rewinds the whole Neon branch, including Brain's `public` schema, not only `os`. Do not edit applied SQL, do not apply files with `psql`, and do not change `os.__drizzle_migrations` on production. SQL in `apps/ads/shared/drizzle-rollbacks/` is not applied here.
 
 ## Environment
 
