@@ -35,8 +35,7 @@
         "raw": "agency owner"
       },
       "approvalOwnerResolved": {
-        "name": "Adam",
-        "email": "adam@tharrosmedia.com",
+        "name": "agency owner (Adam Leech)",
         "role": "approver-and-admin",
         "resolvedFrom": "agency-owner"
       },
@@ -370,7 +369,8 @@
           ],
           "promptLayer": {
             "seeded": false,
-            "version": null
+            "version": null,
+            "path": "clients/hvac-usa/prompt-layer-web.md"
           }
         }
       ],
@@ -402,7 +402,8 @@
       ],
       "promptLayer": {
         "seeded": false,
-        "version": null
+        "version": null,
+        "path": "clients/hvac-usa/prompt-layer.md"
       }
     },
     {
@@ -437,8 +438,7 @@
         "raw": "TBD"
       },
       "approvalOwnerResolved": {
-        "name": "Adam",
-        "email": "adam@tharrosmedia.com",
+        "name": "agency owner (Adam Leech)",
         "role": "approver-and-admin",
         "resolvedFrom": "tbd-default"
       },
@@ -739,7 +739,8 @@
           "notes": [],
           "promptLayer": {
             "seeded": false,
-            "version": null
+            "version": null,
+            "path": "clients/got-ductless/prompt-layer-web.md"
           }
         },
         {
@@ -855,7 +856,8 @@
           ],
           "promptLayer": {
             "seeded": false,
-            "version": null
+            "version": null,
+            "path": "clients/got-ductless/prompt-layer-maryland.md"
           }
         }
       ],
@@ -887,7 +889,8 @@
       ],
       "promptLayer": {
         "seeded": false,
-        "version": null
+        "version": null,
+        "path": "clients/got-ductless/prompt-layer.md"
       }
     },
     {
@@ -922,8 +925,7 @@
         "raw": "TBD"
       },
       "approvalOwnerResolved": {
-        "name": "Adam",
-        "email": "adam@tharrosmedia.com",
+        "name": "agency owner (Adam Leech)",
         "role": "approver-and-admin",
         "resolvedFrom": "tbd-default"
       },
@@ -1179,7 +1181,8 @@
           "notes": [],
           "promptLayer": {
             "seeded": false,
-            "version": null
+            "version": null,
+            "path": "clients/kc-prestige-hvac/prompt-layer-service.md"
           }
         }
       ],
@@ -1211,7 +1214,8 @@
       ],
       "promptLayer": {
         "seeded": false,
-        "version": null
+        "version": null,
+        "path": "clients/kc-prestige-hvac/prompt-layer.md"
       }
     },
     {
@@ -1246,8 +1250,7 @@
         "raw": "TBD"
       },
       "approvalOwnerResolved": {
-        "name": "Adam",
-        "email": "adam@tharrosmedia.com",
+        "name": "agency owner (Adam Leech)",
         "role": "approver-and-admin",
         "resolvedFrom": "tbd-default"
       },
@@ -1515,7 +1518,8 @@
           "notes": [],
           "promptLayer": {
             "seeded": false,
-            "version": null
+            "version": null,
+            "path": "clients/elmar-hvac/prompt-layer-service.md"
           }
         }
       ],
@@ -1547,7 +1551,8 @@
       ],
       "promptLayer": {
         "seeded": false,
-        "version": null
+        "version": null,
+        "path": "clients/elmar-hvac/prompt-layer.md"
       }
     },
     {
@@ -1582,8 +1587,7 @@
         "raw": "agency owner"
       },
       "approvalOwnerResolved": {
-        "name": "Adam",
-        "email": "adam@tharrosmedia.com",
+        "name": "agency owner (Adam Leech)",
         "role": "approver-and-admin",
         "resolvedFrom": "agency-owner"
       },
@@ -1771,7 +1775,8 @@
           "notes": [],
           "promptLayer": {
             "seeded": false,
-            "version": null
+            "version": null,
+            "path": "clients/tharros-media/prompt-layer-web.md"
           }
         }
       ],
@@ -1791,7 +1796,8 @@
       ],
       "promptLayer": {
         "seeded": false,
-        "version": null
+        "version": null,
+        "path": "clients/tharros-media/prompt-layer.md"
       }
     },
     {
@@ -1826,8 +1832,7 @@
         "raw": "agency owner"
       },
       "approvalOwnerResolved": {
-        "name": "Adam",
-        "email": "adam@tharrosmedia.com",
+        "name": "agency owner (Adam Leech)",
         "role": "approver-and-admin",
         "resolvedFrom": "agency-owner"
       },
@@ -2020,14 +2025,16 @@
           "notes": [],
           "promptLayer": {
             "seeded": false,
-            "version": null
+            "version": null,
+            "path": "clients/cerevex/prompt-layer-product.md"
           }
         }
       ],
       "extras": [],
       "promptLayer": {
         "seeded": false,
-        "version": null
+        "version": null,
+        "path": "clients/cerevex/prompt-layer.md"
       }
     }
   ],

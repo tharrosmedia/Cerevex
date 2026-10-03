@@ -13,6 +13,7 @@ CREATE TABLE "os"."skill_client_configs" (
 	"scope_allowed" boolean DEFAULT true NOT NULL,
 	"pilot" boolean DEFAULT false NOT NULL,
 	"approval_owner_resolved" text NOT NULL,
+	"approval_owner_user_id" uuid,
 	"config_json" jsonb NOT NULL,
 	"missing_facts_json" jsonb NOT NULL,
 	"imported_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -22,6 +23,8 @@ CREATE TABLE "os"."skill_client_configs" (
 );
 --> statement-breakpoint
 ALTER TABLE "os"."skill_client_configs" ADD CONSTRAINT "skill_client_configs_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "os"."clients"("id") ON DELETE set null ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "os"."skill_client_configs" ADD CONSTRAINT "skill_client_configs_approval_owner_user_id_users_id_fk" FOREIGN KEY ("approval_owner_user_id") REFERENCES "os"."users"("id") ON DELETE set null ON UPDATE no action;
 --> statement-breakpoint
 CREATE INDEX "skill_client_configs_client_idx" ON "os"."skill_client_configs" USING btree ("client_id");
 --> statement-breakpoint

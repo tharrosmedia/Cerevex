@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { factFromDecomposed, makeFact, resolveApprovalOwner } from "./fact";
 import { isInScopeClient, marketingGateFromStatus } from "./gates";
+import { clientPromptLayerPath, storePromptLayerPath } from "./prompt-layer";
 import type {
   ChannelFact,
   ClientSkillConfig,
@@ -279,8 +280,8 @@ function parseVoice(body: string, source: string, asOf: string): {
   };
 }
 
-function emptyLayer(): { seeded: false; version: null } {
-  return { seeded: false, version: null };
+function emptyLayer(layerPath: string): { seeded: false; version: null; path: string } {
+  return { seeded: false, version: null, path: layerPath };
 }
 
 function makeStore(input: {
@@ -310,7 +311,7 @@ function makeStore(input: {
     valueModelOverride: null,
     segmentsOverride: null,
     notes: input.notes ?? [],
-    promptLayer: emptyLayer(),
+    promptLayer: emptyLayer(storePromptLayerPath(input.storeKey.slice(0, input.storeKey.indexOf("/")), input.storeKey)),
   };
 }
 
@@ -493,7 +494,7 @@ export function parseProfile(input: {
     openQuestions,
     stores,
     extras,
-    promptLayer: emptyLayer(),
+    promptLayer: emptyLayer(clientPromptLayerPath(slug)),
   };
 }
 

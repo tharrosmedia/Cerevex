@@ -35,13 +35,20 @@ A requested version that is not the vendored pin throws. The loader checks the c
 
 Prompt-layer precedence, highest first: compliance, profile facts, client layer (a store layer refines the client layer), template defaults. If no layer exists, fall back to the profile. Seeding a layer is a later PR.
 
+The layer paths are canonical:
+
+- Client: `clients/<client>/prompt-layer.md` (`clientPromptLayerPath`)
+- Store: `clients/<client>/prompt-layer-<store>.md` (`storePromptLayerPath`)
+
+`loadPromptLayerRef` exposes both helpers. A store key such as `got-ductless/maryland` maps to `clients/got-ductless/prompt-layer-maryland.md`.
+
 ## Profile import
 
 ```bash
 npm run import --workspace=@cerevex/skills
 ```
 
-Parses `vendor/tharros-shared-references/references/clients/<slug>/profile.md` into typed client and store config. Every fact is `known`, `tbd`, `inference`, or `assumption`. `approval_owner: TBD` resolves to Adam. Each client gets a Missing facts checklist from its TBD fields and open questions.
+Parses `vendor/tharros-shared-references/references/clients/<slug>/profile.md` into typed client and store config. Every fact is `known`, `tbd`, `inference`, or `assumption`. `approval_owner: TBD` and `agency owner` resolve to the identity `agency owner (Adam Leech)`. The fact stays TBD on the Missing facts checklist. The identity is not an email. The ads import binds it to `os.users` with `APPROVAL_OWNER_USER_ID` or the workspace membership whose role is `owner`. `APPROVAL_OWNER_NAME` in `apps/ads/.env.example` documents that name. Each client gets a Missing facts checklist from its TBD fields and open questions.
 
 Scope gate: only HVAC USA, Got Ductless, KC Prestige HVAC, Elmar HVAC, Tharros Media, and Cerevex. Level Agency tenants (Edge NYC, Vessel NYC, Kiavi, Perfect Lens World, Perfect Lens CA, Lenspure) cannot be imported and cannot run a skill or job.
 

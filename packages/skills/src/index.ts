@@ -23,7 +23,9 @@ export {
   PROMPT_LAYER_PRECEDENCE,
   PROMPT_LAYER_SLUG,
   PROMPT_LAYER_VERSION,
+  clientPromptLayerPath,
   higherPrecedence,
+  storePromptLayerPath,
 } from "./prompt-layer";
 
 export {
@@ -48,6 +50,7 @@ export {
 export type { DatedRow } from "./staleness";
 
 export {
+  DEFAULT_APPROVAL_OWNER_IDENTITY,
   classifyProfileValue,
   decomposeProfileValue,
   resolveApprovalOwner,
@@ -79,6 +82,8 @@ export type {
   ManifestEntry,
   MissingFactItem,
   PackId,
+  PromptLayerSlot,
+  ResolvedApprovalOwner,
   SkillConfigBundle,
   SkillRunKind,
   SkillSlug,

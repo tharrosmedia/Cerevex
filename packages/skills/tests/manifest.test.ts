@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { buildManifest, readBannerVersion, sha256 } from "../src/manifest";
-import { SkillVersionPinError, loadPromptLayerRef, loadSharedRef, loadTemplate } from "../src/loader";
+import {
+  SkillVersionPinError,
+  clientPromptLayerPath,
+  loadPromptLayerRef,
+  loadSharedRef,
+  loadTemplate,
+  storePromptLayerPath,
+} from "../src/loader";
 import { MANIFEST_PATH, SKILLS_CONTENT_ROOT } from "../src/paths";
 import path from "node:path";
 import { PROMPT_LAYER_PRECEDENCE, higherPrecedence } from "../src/prompt-layer";
@@ -60,6 +67,13 @@ assert.deepEqual(
 assert.equal(higherPrecedence("client-layer", "profile-facts"), "profile-facts");
 assert.equal(higherPrecedence("template-defaults", "client-layer"), "client-layer");
 assert.match(loadedPrompt.body, /No layer anywhere: fall back to the profile silently/);
+assert.equal(clientPromptLayerPath("got-ductless"), "clients/got-ductless/prompt-layer.md");
+assert.equal(storePromptLayerPath("got-ductless", "maryland"), "clients/got-ductless/prompt-layer-maryland.md");
+assert.equal(
+  storePromptLayerPath("got-ductless", "got-ductless/maryland"),
+  "clients/got-ductless/prompt-layer-maryland.md",
+);
+assert.equal(storePromptLayerPath("kc-prestige-hvac", "service"), "clients/kc-prestige-hvac/prompt-layer-service.md");
 
 const again = buildManifest();
 assert.equal(again.entries.find((item) => item.slug === "paid-media")?.contentHash, expected && manifest.entries.find((item) => item.slug === "paid-media")?.contentHash);

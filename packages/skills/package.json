@@ -14,9 +14,6 @@
     "import": "tsx scripts/import-profiles.ts",
     "resync": "tsx scripts/resync.ts"
   },
-  "dependencies": {
-    "@cerevex/contracts": "*"
-  },
   "devDependencies": {
     "@types/node": "^24.5.2",
     "tsx": "^4.20.6",

@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { classifyProfileValue, decomposeProfileValue, resolveApprovalOwner, valueForClientFacingCopy } from "../src/fact";
+import {
+  DEFAULT_APPROVAL_OWNER_IDENTITY,
+  classifyProfileValue,
+  decomposeProfileValue,
+  resolveApprovalOwner,
+  valueForClientFacingCopy,
+} from "../src/fact";
 import { makeFact } from "../src/fact";
 
 const known = classifyProfileValue("Lennox and Trane, sold online");
@@ -34,12 +40,17 @@ assert.match(split.primary.value ?? "", /order value/);
 assert.equal(split.parts.filter((part) => part.state === "tbd").length, 2);
 
 const owner = resolveApprovalOwner(makeFact("TBD", null, null, "approval_owner"));
-assert.equal(owner.name, "Adam");
-assert.equal(owner.email, "adam@tharrosmedia.com");
+assert.equal(owner.name, DEFAULT_APPROVAL_OWNER_IDENTITY);
+assert.equal(owner.name, "agency owner (Adam Leech)");
+assert.equal("email" in owner, false);
 assert.equal(owner.resolvedFrom, "tbd-default");
 
 const agency = resolveApprovalOwner(makeFact("agency owner", "profile", "2026-09-29", "approval_owner"));
-assert.equal(agency.name, "Adam");
+assert.equal(agency.name, "agency owner (Adam Leech)");
 assert.equal(agency.resolvedFrom, "agency-owner");
+
+const named = resolveApprovalOwner(makeFact("Jordan Lee", "profile", "2026-09-29", "approval_owner"));
+assert.equal(named.name, "Jordan Lee");
+assert.equal(named.resolvedFrom, "profile");
 
 console.log("fact tests ok");

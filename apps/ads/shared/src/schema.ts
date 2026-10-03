@@ -565,6 +565,8 @@ export const skillClientConfigs = osSchema.table(
     scopeAllowed: boolean("scope_allowed").notNull().default(true),
     pilot: boolean("pilot").notNull().default(false),
     approvalOwnerResolved: text("approval_owner_resolved").notNull(),
+    /** os.users.id for the resolved approval owner. Null until APPROVAL_OWNER_USER_ID or the owner role binds it. */
+    approvalOwnerUserId: uuid("approval_owner_user_id").references(() => users.id, { onDelete: "set null" }),
     configJson: jsonb("config_json").notNull(),
     missingFactsJson: jsonb("missing_facts_json").notNull(),
     importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),

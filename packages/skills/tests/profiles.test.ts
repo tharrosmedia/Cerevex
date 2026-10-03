@@ -22,8 +22,10 @@ assert.equal(hvac.pilot, true);
 assert.equal(got.pilot, false);
 assert.equal(hvac.marketingGate, "off");
 assert.equal(hvac.approvalOwner.state, "known");
-assert.equal(hvac.approvalOwnerResolved.name, "Adam");
+assert.equal(hvac.approvalOwnerResolved.name, "agency owner (Adam Leech)");
 assert.equal(hvac.approvalOwnerResolved.resolvedFrom, "agency-owner");
+assert.equal(hvac.promptLayer.path, "clients/hvac-usa/prompt-layer.md");
+assert.equal(hvac.stores[0]?.promptLayer.path, "clients/hvac-usa/prompt-layer-web.md");
 assert.equal(hvac.dealerAuthorization?.state, "tbd");
 assert.equal(hvac.planningNote?.state, "inference");
 assert.equal(valueForClientFacingCopy(hvac.planningNote), null);
@@ -42,11 +44,13 @@ assert.match(JSON.stringify(hvac.stores[0]?.notes), /local-ductless-stores/);
 
 assert.equal(got.approvalOwner.state, "tbd");
 assert.equal(got.approvalOwnerResolved.resolvedFrom, "tbd-default");
-assert.equal(got.approvalOwnerResolved.email, "adam@tharrosmedia.com");
+assert.equal(got.approvalOwnerResolved.name, "agency owner (Adam Leech)");
+assert.equal("email" in got.approvalOwnerResolved, false);
 assert.deepEqual(
   got.stores.map((store) => store.storeKey),
   ["got-ductless/web", "got-ductless/maryland"],
 );
+assert.equal(got.stores[1]?.promptLayer.path, "clients/got-ductless/prompt-layer-maryland.md");
 const maryland = got.stores[1];
 assert.equal(maryland?.role, "storefront");
 assert.equal(maryland?.site?.value, "/pages/local-ductless-stores");

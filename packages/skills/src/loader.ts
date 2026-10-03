@@ -3,6 +3,8 @@ import path from "node:path";
 import { buildManifest, entryBySlug, hashFiles } from "./manifest";
 import { MANIFEST_PATH, REFERENCES_DIR, REFERENCES_ROOT, SKILLS_CONTENT_ROOT } from "./paths";
 import { PROMPT_LAYER_SLUG, PROMPT_LAYER_VERSION } from "./prompt-layer";
+
+export { clientPromptLayerPath, storePromptLayerPath } from "./prompt-layer";
 import type { LoadedTemplate, ManifestEntry, SkillSlug, SkillsManifest } from "./types";
 import { SKILL_SLUGS } from "./types";
 
@@ -88,7 +90,10 @@ export function loadSharedRef(slug: string, version: string, manifest = manifest
   return loadEntry(entry, version);
 }
 
-/** Pinned prompt-layer procedure. Seeding a client layer is PR 3. */
+/**
+ * Pinned prompt-layer procedure. Seeding a client layer is PR 3.
+ * Layer files, when seeded, use `clientPromptLayerPath` and `storePromptLayerPath`.
+ */
 export function loadPromptLayerRef(manifest = manifestFromDisk()): LoadedTemplate {
   return loadSharedRef(PROMPT_LAYER_SLUG, PROMPT_LAYER_VERSION, manifest);
 }

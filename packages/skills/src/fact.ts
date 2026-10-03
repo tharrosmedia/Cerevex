@@ -1,7 +1,7 @@
-import { DEFAULT_APPROVE_OPERATOR_EMAIL } from "@cerevex/contracts";
 import type { Fact, FactState, ResolvedApprovalOwner } from "./types";
 
-const DEFAULT_APPROVAL_OWNER_NAME = "Adam";
+/** Identity used when a profile says TBD or "agency owner". Not an email and not a user id. */
+export const DEFAULT_APPROVAL_OWNER_IDENTITY = "agency owner (Adam Leech)";
 
 export function classifyProfileValue(
   raw: string,
@@ -207,23 +207,20 @@ export function valueForClientFacingCopy<T>(fact: Fact<T> | null | undefined): T
 export function resolveApprovalOwner(fact: Fact<string>): ResolvedApprovalOwner {
   if (fact.state === "tbd" || fact.value == null) {
     return {
-      name: DEFAULT_APPROVAL_OWNER_NAME,
-      email: DEFAULT_APPROVE_OPERATOR_EMAIL,
+      name: DEFAULT_APPROVAL_OWNER_IDENTITY,
       role: "approver-and-admin",
       resolvedFrom: "tbd-default",
     };
   }
   if (/agency owner/i.test(fact.value)) {
     return {
-      name: DEFAULT_APPROVAL_OWNER_NAME,
-      email: DEFAULT_APPROVE_OPERATOR_EMAIL,
+      name: DEFAULT_APPROVAL_OWNER_IDENTITY,
       role: "approver-and-admin",
       resolvedFrom: "agency-owner",
     };
   }
   return {
     name: fact.value,
-    email: null,
     role: "approver",
     resolvedFrom: "profile",
   };

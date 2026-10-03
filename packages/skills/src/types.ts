@@ -59,6 +59,14 @@ export interface MeasurementConfig {
 
 export type StoreRole = "web" | "storefront" | "service-area" | "product";
 
+/** Slot only. Slice 1 PR 1 records the canonical path and does not seed the file (PR 3). */
+export interface PromptLayerSlot {
+  seeded: false;
+  version: null;
+  /** Canonical box path: `clients/<client>/prompt-layer.md` or `clients/<client>/prompt-layer-<store>.md`. */
+  path: string;
+}
+
 export interface StoreSkillConfig {
   storeKey: string;
   role: StoreRole;
@@ -76,7 +84,7 @@ export interface StoreSkillConfig {
   valueModelOverride: Fact<string> | null;
   segmentsOverride: Fact<string> | null;
   notes: Fact<string>[];
-  promptLayer: { seeded: false; version: null };
+  promptLayer: PromptLayerSlot;
 }
 
 export interface IndexedFact {
@@ -86,9 +94,13 @@ export interface IndexedFact {
   fact: Fact<unknown>;
 }
 
+/**
+ * Identity for a resolved approval owner. Not an email.
+ * Binding this identity to `os.users` is the ads import's job (`APPROVAL_OWNER_USER_ID`
+ * or the workspace membership with role `owner`).
+ */
 export interface ResolvedApprovalOwner {
   name: string;
-  email: string | null;
   role: "approver-and-admin" | "approver";
   resolvedFrom: "tbd-default" | "agency-owner" | "profile";
 }
@@ -142,7 +154,7 @@ export interface ClientSkillConfig {
   stores: StoreSkillConfig[];
   /** Extra decomposed clauses (TBD gaps, labeled inferences) that are not the primary field. */
   extras: IndexedFact[];
-  promptLayer: { seeded: false; version: null };
+  promptLayer: PromptLayerSlot;
 }
 
 export interface MissingFactItem {

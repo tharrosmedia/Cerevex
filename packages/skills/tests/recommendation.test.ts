@@ -37,8 +37,8 @@ const recordV11 = {
   dedupe_key: "hvac-usa/web|google_ads:campaign:123|google_search|lower budget",
   approval: {
     status: "approved",
-    approver: "Adam",
-    approved_by: "adam@tharrosmedia.com",
+    approver: "agency owner (Adam Leech)",
+    approved_by: "agency owner (Adam Leech)",
     approved_at: "2026-10-03T12:00:00Z",
     executed_by: "cerevex_apply",
     executed_at: "2026-10-03T12:05:00Z",
