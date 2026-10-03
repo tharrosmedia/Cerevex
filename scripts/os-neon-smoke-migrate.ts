@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Repo-canonical ads-module Neon smoke migrator (schema `os` stays).
- * Filename keeps os- prefix so existing Railway one-shot commands keep working.
+ * Local/non-production ads migrator (schema `os` stays). Not a production path.
+ * Filename keeps os- prefix so existing one-shot commands keep working.
  * Reads apps/ads/shared/drizzle (journal order). Does not seed.
  */
 import { dirname, resolve } from "node:path";

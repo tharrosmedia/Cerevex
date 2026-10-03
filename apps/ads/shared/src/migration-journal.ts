@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
+import { LEGACY_LEDGER_COPY_SQL, MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
 
 export type JournalEntry = {
   idx: number;
@@ -111,6 +111,32 @@ function foundHash(applied: AppliedMigration[], createdAt: number): string {
   const row = applied.find((candidate) => candidate.createdAt === createdAt);
   if (!row) return "<none>";
   return String(row.hash ?? "<null>");
+}
+
+/**
+ * A fresh database has no `os` tables and no ledger. A database that already
+ * has `os` tables, or rows in the old `drizzle` ledger, must not look like a
+ * fresh database: Drizzle would re-run from 0000 and can leave an empty
+ * `os.__drizzle_migrations` behind.
+ */
+export function assertPopulatedSchemaHasLedger(input: {
+  otherOsTables: number;
+  ledgerRows: number | null;
+  legacyLedgerRows: number;
+}): void {
+  const missingOrEmpty = input.ledgerRows === null || input.ledgerRows === 0;
+  if (!missingOrEmpty) return;
+  if (input.otherOsTables === 0 && input.legacyLedgerRows === 0) return;
+  const state = input.ledgerRows === null ? "missing" : "empty";
+  const why = [
+    input.otherOsTables > 0 ? `schema ${MIGRATIONS_SCHEMA} already has tables` : "",
+    input.legacyLedgerRows > 0 ? "drizzle.__drizzle_migrations has rows" : "",
+  ]
+    .filter((part) => part.length > 0)
+    .join(" and ");
+  throw new MigrationJournalError(
+    `Refusing to migrate. ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE} is ${state} but ${why}. For a local or non-production database whose ledger is still drizzle.__drizzle_migrations, copy it once: ${LEGACY_LEDGER_COPY_SQL} Do not run that copy against production.`,
+  );
 }
 
 /**
