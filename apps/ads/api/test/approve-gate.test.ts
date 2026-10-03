@@ -71,6 +71,58 @@ describe("M5 Adam-only Approve + freeze", () => {
     await closeDb();
   });
 
+  async function recommendationStatus(id: string) {
+    const res = await app.request(`/recommendations/${id}`, {
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    const body = await json(res);
+    return String((body.recommendation as { status?: string } | undefined)?.status ?? "");
+  }
+
+  it("returns 401 for unauthenticated approve/apply and a wrong internal key without changing state", async () => {
+    const before = await recommendationStatus(recommendationId);
+    const decide = await app.request(`/recommendations/${recommendationId}/decide`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "approve" }),
+    });
+    expect(decide.status).toBe(401);
+    const apply = await app.request(`/recommendations/${recommendationId}/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(apply.status).toBe(401);
+    const wrong = await app.request(`/recommendations/${recommendationId}/decide`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-cerevex-internal-key": "not-the-real-key" },
+      body: JSON.stringify({ action: "authorize" }),
+    });
+    expect(wrong.status).toBe(401);
+    expect(await recommendationStatus(recommendationId)).toBe(before);
+  });
+
+  it("lets an authenticated approver through while the kill switch blocks the write", async () => {
+    const before = await recommendationStatus(recommendationId);
+    const res = await app.request(`/recommendations/${recommendationId}/decide`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ action: "approve" }),
+    });
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(409);
+    expect(String((await json(res)).error)).toMatch(/paused/i);
+    const apply = await app.request(`/recommendations/${recommendationId}/apply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(apply.status).not.toBe(401);
+    expect(apply.status).not.toBe(403);
+    expect(await recommendationStatus(recommendationId)).toBe(before);
+  });
+
   it("blocks a non-allowlist operator from Approve", async () => {
     const res = await app.request(`/recommendations/${recommendationId}/decide`, {
       method: "POST",

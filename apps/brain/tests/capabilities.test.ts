@@ -127,6 +127,10 @@ assert.equal(resolveWorkspaceCapabilities({}, { PLATFORM_SYNC_LIVE: '0' })['sync
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'APP_PASSWORD')?.kind, 'secret');
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ADS_INTERNAL_KEY')?.kind, 'secret');
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'APPROVE_OPERATOR_EMAILS')?.kind, 'identity');
+assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'CONSOLE_OPERATOR_EMAIL')?.help || '', /not a credential/i);
+assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help || '', /exits ads-api boot with status 1/i);
+assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help || '', /local fallback/i);
+assert.doesNotMatch(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help || '', /does not fail closed/i);
 assert.deepEqual(approveOperatorEmails({}), [DEFAULT_APPROVE_OPERATOR_EMAIL]);
 assert.equal(canApproveApply('adam@tharrosmedia.com', {}), true);
 assert.equal(canApproveApply('other@tharrosmedia.com', { SEED_OWNER_EMAIL: 'other@tharrosmedia.com' }), false);

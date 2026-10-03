@@ -5,12 +5,12 @@ import { SignJWT, jwtVerify } from "jose";
 import type { AuthContext, Role } from "@tharros/ads-shared";
 import { getDb } from "@tharros/ads-shared/db";
 import { clientMemberships, memberships, users } from "@tharros/ads-shared/schema";
+import { jwtSecretBytes } from "./jwt-secret";
 
 const SESSION_COOKIE = "tharros_session";
 
 function jwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET ?? "replace-with-a-long-random-local-secret";
-  return new TextEncoder().encode(secret);
+  return jwtSecretBytes();
 }
 
 export function sessionCookieName(): string {
@@ -88,6 +88,7 @@ export function extractBearer(header: string | undefined): string | null {
   return token;
 }
 
+/** Header only. A query-string key must not authenticate approve/apply or any other route. */
 export function extractInternalKey(header: string | undefined): string | null {
   const value = header?.trim();
   return value ? value : null;

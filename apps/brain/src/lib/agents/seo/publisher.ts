@@ -160,7 +160,7 @@ export async function publishContent({ storeId, draft, type = 'collection', plat
       response = await updateCollection(client, useId, mainInput);
     } else {
       console.time('[PUBLISH] create-main');
-      response = await createAndPublishCollection(client, mainInput);
+      response = await createAndPublishCollection(client, mainInput, storeId);
       console.timeEnd('[PUBLISH] create-main');
     }
   }

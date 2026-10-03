@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { sentryScrubHooks } from "./lib/sentry-scrub";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -6,11 +7,15 @@ Sentry.init({
   // 100% in dev, lower in prod
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.1,
 
-  // Attach local variable values to stack frames (server only)
-  includeLocalVariables: true,
+  includeLocalVariables: false,
+  sendDefaultPii: false,
+  dataCollection: {
+    cookies: false,
+    urlQueryParams: false,
+    userInfo: false,
+  },
 
   enableLogs: true,
 
-  // Uncomment to reduce PII
-  // dataCollection: { userInfo: false, httpBodies: [] },
+  ...sentryScrubHooks(),
 });
