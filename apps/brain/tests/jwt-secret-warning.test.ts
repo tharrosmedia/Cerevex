@@ -122,6 +122,43 @@ try {
     }
   }
 
+  for (const node of ['Production', ' production ', 'PRODUCTION']) {
+    env.NODE_ENV = node;
+    delete env.RAILWAY_ENVIRONMENT;
+    delete env.RAILWAY_ENVIRONMENT_NAME;
+    delete env.JWT_SECRET;
+    assert.throws(() => assertJwtSecretConfigured(), /Refusing to boot/);
+    const response = await app.request('/auth/me', { headers: { authorization: `Bearer ${forged}` } });
+    assert.equal(response.status, 401, node);
+  }
+  env.NODE_ENV = 'test';
+  env.RAILWAY_ENVIRONMENT = ' production ';
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  delete env.JWT_SECRET;
+  assert.throws(() => assertJwtSecretConfigured(), /Refusing to boot/);
+  delete env.RAILWAY_ENVIRONMENT;
+  env.RAILWAY_ENVIRONMENT_NAME = 'Production';
+  assert.throws(() => jwtSecretBytes(), /Refusing to sign or verify/);
+
+  env.NODE_ENV = 'production';
+  delete env.RAILWAY_ENVIRONMENT;
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.JWT_SECRET = JWT_LOCAL_FALLBACK;
+  assert.equal(configuredJwtSecret(), null);
+  assert.throws(() => assertJwtSecretConfigured(), /Refusing to boot/);
+  assert.throws(() => jwtSecretBytes(), /Refusing to sign or verify/);
+  const placeholder = await app.request('/auth/me', { headers: { authorization: `Bearer ${forged}` } });
+  assert.equal(placeholder.status, 401);
+  env.JWT_SECRET = `  ${JWT_LOCAL_FALLBACK}  `;
+  assert.throws(() => assertJwtSecretConfigured(), /Refusing to boot/);
+
+  env.NODE_ENV = 'test';
+  delete env.RAILWAY_ENVIRONMENT;
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.JWT_SECRET = JWT_LOCAL_FALLBACK;
+  assert.equal(new TextDecoder().decode(jwtSecretBytes()), JWT_LOCAL_FALLBACK);
+  assert.doesNotThrow(() => assertJwtSecretConfigured());
+
   env.NODE_ENV = 'production';
   delete env.RAILWAY_ENVIRONMENT;
   delete env.RAILWAY_ENVIRONMENT_NAME;

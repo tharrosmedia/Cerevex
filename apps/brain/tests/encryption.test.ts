@@ -87,6 +87,11 @@ try {
   assert.equal(plaintextSecretsAllowed(), false);
   assert.throws(() => assertEncryptionConfigured(), /ENCRYPTION_KEY is required in production/);
 
+  env.NODE_ENV = ' Production ';
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  assert.equal(plaintextSecretsAllowed(), false);
+  assert.throws(() => assertEncryptionConfigured(), /ENCRYPTION_KEY is required in production/);
+
   delete env.RAILWAY_ENVIRONMENT_NAME;
   env.NODE_ENV = 'test';
   const exactKey = 'abc';

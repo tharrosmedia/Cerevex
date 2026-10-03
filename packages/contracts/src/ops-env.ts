@@ -63,7 +63,7 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "JWT_SECRET",
     kind: "secret",
-    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD. If unset, ads auth still falls back to a hardcoded local string (pre-existing). Startup logs a warning and does not fail closed.",
+    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD. Required in production when NODE_ENV, RAILWAY_ENVIRONMENT, or RAILWAY_ENVIRONMENT_NAME is production after trim and case-folding. The value is trimmed. Unset, empty, whitespace, or the local placeholder exits ads-api boot with status 1. Dev and test use the built-in local fallback when the value is unset, empty, or whitespace, log a warning, and keep running. Never deploy the placeholder.",
   },
   {
     env: "ADS_INTERNAL_KEY",

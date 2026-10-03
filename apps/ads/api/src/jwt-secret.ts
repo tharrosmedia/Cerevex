@@ -1,17 +1,22 @@
 /** Pre-existing local fallback. Dev and test only. Production must set JWT_SECRET. */
 export const JWT_LOCAL_FALLBACK = "replace-with-a-long-random-local-secret";
 
-/** Trimmed JWT_SECRET, or null when it is unset, empty, or whitespace. */
-export function configuredJwtSecret(): string | null {
-  const trimmed = (process.env.JWT_SECRET ?? "").trim();
-  return trimmed ? trimmed : null;
+function productionSignal(value: string | undefined): boolean {
+  return (value ?? "").trim().toLowerCase() === "production";
 }
 
-/** Same production signals as Brain: NODE_ENV or either Railway environment name. */
+/** Trimmed JWT_SECRET, or null when it is unset, empty, whitespace, or the prod placeholder. */
+export function configuredJwtSecret(): string | null {
+  const trimmed = (process.env.JWT_SECRET ?? "").trim();
+  if (!trimmed) return null;
+  if (isAdsProduction() && trimmed === JWT_LOCAL_FALLBACK) return null;
+  return trimmed;
+}
+
+/** NODE_ENV or either Railway name, after trim and case-folding. */
 export function isAdsProduction(): boolean {
-  if (process.env.NODE_ENV === "production") return true;
-  return [process.env.RAILWAY_ENVIRONMENT, process.env.RAILWAY_ENVIRONMENT_NAME].some(
-    (name) => (name || "").toLowerCase() === "production",
+  return [process.env.NODE_ENV, process.env.RAILWAY_ENVIRONMENT, process.env.RAILWAY_ENVIRONMENT_NAME].some(
+    productionSignal,
   );
 }
 
