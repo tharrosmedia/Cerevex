@@ -55,7 +55,7 @@ M5 (`0002_m5_apply.sql`) adds `"os"."ad_accounts"."frozen"` and `"os"."apply_job
 
 **Why `search_path`:** Drizzle column types are written as `"platform"` (unprefixed) while the type lives at `"os"."platform"`. Migrations must run with `search_path` including `os` (migrate.ts sets this). Do not create those enums in `public`.
 
-Drizzle also creates journal schema **`drizzle`** (`__drizzle_migrations`). That is expected and is not a Brain table.
+The migrate journal is `os.__drizzle_migrations` (not a separate `drizzle` schema, and not a Brain table).
 
 ---
 

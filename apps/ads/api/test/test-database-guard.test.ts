@@ -4,7 +4,7 @@ import {
   assessTestDatabase,
   assertSafeTestDatabase,
   type AssessTestDatabaseInput,
-} from "@tharros/ads-shared/test-database";
+} from "@tharros/ads-shared/server";
 
 const CI_URL = "postgres://tharros:tharros@127.0.0.1:54329/tharros?options=-csearch_path%3Dos";
 
@@ -21,7 +21,17 @@ describe("test database guard", () => {
     expect(assess(CI_URL).allowed).toBe(true);
     expect(assess("postgres://tharros:tharros@localhost:54329/tharros").allowed).toBe(true);
     expect(assess("postgres://tharros:tharros@[::1]:5432/tharros").allowed).toBe(true);
+    expect(assess("postgres://u:p@LOCALHOST/cerevex").allowed).toBe(true);
     expect(assess("postgresql://user:secret@127.0.0.1/db").host).toBe("127.0.0.1");
+  });
+
+  it("refuses a query-string neon host and a .local host", () => {
+    const neonOverride = assess("postgres://u:p@localhost/db?host=ep-example.neon.tech");
+    expect(neonOverride.allowed).toBe(false);
+    expect(neonOverride.host).toBe("ep-example.neon.tech");
+    const localSuffix = assess("postgres://u:p@shop.local/cerevex");
+    expect(localSuffix.allowed).toBe(false);
+    expect(localSuffix.host).toBe("shop.local");
   });
 
   it("allows a known test database and a marked Neon branch without the opt-in", () => {
@@ -434,6 +444,9 @@ describe("test database guard", () => {
     const seed = readFileSync(new URL("../../shared/src/seed.ts", import.meta.url), "utf8");
     const setup = readFileSync(new URL("./setup-database-guard.ts", import.meta.url), "utf8");
     const vitest = readFileSync(new URL("../vitest.config.ts", import.meta.url), "utf8");
+    const importer = readFileSync(new URL("../../shared/src/skill-config-import.ts", import.meta.url), "utf8");
+    expect(importer).toContain("assessTestDatabase");
+    expect(importer).not.toMatch(/endsWith\(\s*["']\.local["']\s*\)/);
     expect(seed).toContain("assertSafeTestDatabase");
     expect(seed).toContain('purpose: "the ads database seed"');
     expect(setup).toContain("assertSafeTestDatabase");

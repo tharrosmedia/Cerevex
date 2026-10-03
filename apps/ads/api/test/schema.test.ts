@@ -31,6 +31,8 @@ const REQUIRED_TABLES = [
   "analytics_connections",
   "funnel_events",
   "lp_snapshots",
+  "skill_client_configs",
+  "skill_store_configs",
 ];
 
 describe("M1 core schema", () => {

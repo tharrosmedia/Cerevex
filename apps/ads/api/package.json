@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cerevex/skills": "*",
     "@hono/node-server": "^1.19.4",
     "@tharros/ads-shared": "*",
     "bcryptjs": "^3.0.2",

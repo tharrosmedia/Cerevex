@@ -57,6 +57,7 @@
  * runners. Migrate scripts are intentional ops paths and are not guarded.
  */
 
+import "server-only";
 import { isIP } from "node:net";
 import { domainToASCII } from "node:url";
 import { parse as parseConnectionString, type ConnectionOptions } from "pg-connection-string";
