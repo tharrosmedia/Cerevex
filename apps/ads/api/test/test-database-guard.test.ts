@@ -31,15 +31,13 @@ describe("test database guard", () => {
     expect(assess("postgres://user:secret@ci.example.com:5432/app").allowed).toBe(true);
     expect(assess("postgres://user:secret@ep-branch-demo.us-east-2.aws.neon.tech/neondb").allowed).toBe(true);
     expect(assess("postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/preview").allowed).toBe(true);
+    expect(assess("postgres://user:secret@br-cool-branch.us-east-2.aws.neon.tech/neondb").allowed).toBe(true);
     expect(
       assess("postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb?branch=dev").allowed,
-    ).toBe(true);
-    expect(
-      assess("postgres://user:secret@br-cool-branch.us-east-2.aws.neon.tech/neondb").allowed,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       assess("postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb?branch=br-cool").allowed,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("refuses database names that only contain test as a substring", () => {
@@ -128,8 +126,122 @@ describe("test database guard", () => {
     expect(invalid.allowed).toBe(false);
     expect(invalid.message).not.toContain("super-secret");
 
-    expect(assess(CI_URL, { PRODUCTION_DATABASE_URL: "" }).allowed).toBe(false);
+    expect(assess(CI_URL, { PRODUCTION_DATABASE_URL: "" }).allowed).toBe(true);
+    expect(assess(CI_URL, { PRODUCTION_DATABASE_URL: "   " }).allowed).toBe(true);
+    expect(assess(CI_URL, { PRODUCTION_NEON_HOST: "  \n" }).allowed).toBe(true);
     expect(assess(CI_URL, {}).allowed).toBe(true);
+  });
+
+  it("reads PRODUCTION_NEON_HOST from a bare host, host:port, or any scheme URL", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const pooler = `postgres://user:super-secret@ep-cool-darkness-123456-pooler.us-east-2.aws.neon.tech/neondb`;
+    const direct = `postgres://user:super-secret@${prod}/neondb?branch=dev`;
+    const forms = [
+      prod,
+      `${prod}:5432`,
+      `HTTPS://${prod}/console`,
+      `https://user:other-secret@${prod}/console`,
+      `postgres://owner:other-secret@${prod}/neondb`,
+      `postgresql://owner:other-secret@${prod}:5432/neondb`,
+    ];
+    for (const listed of forms) {
+      const blocked = assess(pooler, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: listed });
+      expect(blocked.allowed, listed).toBe(false);
+      expect(blocked.message).toContain("production Neon host");
+      expect(blocked.message).not.toContain("super-secret");
+      expect(blocked.message).not.toContain("other-secret");
+      expect(assess(direct, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: listed }).allowed).toBe(false);
+      expect(assess(CI_URL, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: listed }).allowed).toBe(true);
+    }
+  });
+
+  it("fails closed when PRODUCTION_NEON_HOST is non-empty but has no hostname", () => {
+    for (const listed of ["https://", "https://user:super-secret@", "not a host", "postgres://user:pw@host1:5432,host2:5433/db"]) {
+      const refused = assess(CI_URL, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: listed });
+      expect(refused.allowed, listed).toBe(false);
+      expect(refused.message).toContain("PRODUCTION_NEON_HOST is set but could not be parsed");
+      expect(refused.message).not.toContain("super-secret");
+    }
+  });
+
+  it("does not let a branch query param whitelist the production endpoint", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const branched = `postgres://user:secret@${prod}/neondb?branch=dev`;
+    const endpointBranch = "ep-branch-demo.us-east-2.aws.neon.tech";
+    expect(assess(branched).allowed).toBe(false);
+    expect(assess(branched, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed).toBe(true);
+    expect(
+      assess(branched, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: `https://${prod}` }).allowed,
+    ).toBe(false);
+    expect(
+      assess(`postgres://user:secret@${endpointBranch}/neondb?branch=anything`, {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_NEON_HOST: endpointBranch,
+      }).allowed,
+    ).toBe(false);
+    expect(assess(`postgres://user:secret@${endpointBranch}/neondb`).allowed).toBe(true);
+  });
+
+  it("denies the driver host when PRODUCTION_NEON_HOST is a postgres URL with ?host=", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const listed = `postgres://u:p@localhost/db?host=${prod}`;
+    const target = `postgres://user:super-secret@${prod}/neondb`;
+    const env = { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: listed };
+    const blocked = assess(target, env);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.host).toBe(prod);
+    expect(blocked.message).not.toContain("super-secret");
+    expect(assess(CI_URL, env).allowed).toBe(true);
+    expect(
+      assess(target, {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_DATABASE_URL: `postgresql://u:p@localhost/db?host=${prod}`,
+      }).allowed,
+    ).toBe(false);
+  });
+
+  it("strips trailing dots so the production host and a test database name still refuse", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const dotted = `postgres://user:secret@${prod}./x_test`;
+    expect(assess(dotted, { PRODUCTION_NEON_HOST: prod }).allowed).toBe(false);
+    expect(assess(dotted, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: prod }).allowed).toBe(false);
+    expect(
+      assess(`postgres://user:secret@${prod}/neondb`, {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_NEON_HOST: `${prod}.`,
+      }).allowed,
+    ).toBe(false);
+    expect(assess("postgres://user:secret@db.example.com./cerevex_test").allowed).toBe(true);
+  });
+
+  it("rejects hostnames with empty or hyphen-edged labels", () => {
+    for (const listed of ["-.", "..", "-bad.example", "bad-.example", "foo..bar", "a..b"]) {
+      const refused = assess(CI_URL, { PRODUCTION_NEON_HOST: listed });
+      expect(refused.allowed, listed).toBe(false);
+      expect(refused.message).toContain("PRODUCTION_NEON_HOST is set but could not be parsed");
+    }
+    expect(assess(CI_URL, { PRODUCTION_NEON_HOST: "ep-ok.example." }).allowed).toBe(true);
+  });
+
+  it("denies a Neon options endpoint that matches the configured production endpoint", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const branchHost = "ep-branch-demo.us-east-2.aws.neon.tech";
+    const withEndpoint = `postgres://user:secret@${branchHost}/neondb?options=${encodeURIComponent("endpoint=ep-cool-darkness-123456")}`;
+    const withPooler = `postgres://user:secret@1.2.3.4/neondb?options=${encodeURIComponent("-c endpoint=ep-cool-darkness-123456-pooler")}`;
+    const withProject = `postgres://user:secret@${branchHost}/neondb?options=${encodeURIComponent("project=ep-cool-darkness-123456")}`;
+    const env = { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: prod };
+    expect(assess(withEndpoint, env).allowed).toBe(false);
+    expect(assess(withEndpoint, env).message).toContain("production Neon endpoint");
+    expect(assess(withEndpoint, env).message).not.toContain("secret");
+    expect(assess(withPooler, env).allowed).toBe(false);
+    expect(assess(withProject, env).allowed).toBe(false);
+    expect(assess(`postgres://user:secret@${branchHost}/neondb`, { PRODUCTION_NEON_HOST: prod }).allowed).toBe(true);
+    expect(
+      assess(
+        `postgres://user:secret@${branchHost}/neondb?options=${encodeURIComponent("endpoint=ep-other-branch")}`,
+        env,
+      ).allowed,
+    ).toBe(true);
   });
 
   it("treats a missing URL as safe for tests and unsafe for seed", () => {
