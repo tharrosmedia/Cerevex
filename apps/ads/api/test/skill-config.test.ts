@@ -10,7 +10,7 @@ import {
   users,
   workspaces,
 } from "@tharros/ads-shared/schema";
-import { assertLocalDatabase, importSkillConfigBundle, resolveSkillClientLink } from "@tharros/ads-shared";
+import { assertLocalDatabase, importSkillConfigBundle, resolveSkillClientLink } from "@tharros/ads-shared/server";
 import { and, eq } from "drizzle-orm";
 
 const IN_SCOPE = [

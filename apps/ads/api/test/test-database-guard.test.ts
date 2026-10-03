@@ -4,7 +4,7 @@ import {
   assessTestDatabase,
   assertSafeTestDatabase,
   type AssessTestDatabaseInput,
-} from "@tharros/ads-shared/test-database";
+} from "@tharros/ads-shared/server";
 
 const CI_URL = "postgres://tharros:tharros@127.0.0.1:54329/tharros?options=-csearch_path%3Dos";
 
