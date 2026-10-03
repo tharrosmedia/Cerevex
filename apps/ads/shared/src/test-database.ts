@@ -29,10 +29,16 @@
  * `PGOPTIONS`, matches a configured production endpoint even when the URL host
  * is different. The same id in the password (`endpoint=<id>;…` or
  * `endpoint=<id>$…`, or `PGPASSWORD` when the URL has no password) is treated
- * the same way, and that routing id stops a test-looking database name from
- * allowing a remote host. Empty or whitespace-only values of either variable
- * are unset.
- * A non-empty value that does not parse fails closed.
+ * the same way, and that routing id stops a test-looking database name and a
+ * `ci`, `test`, or `br-` host label from allowing a remote host. Production
+ * URLs are parsed with an empty env, so `PGOPTIONS` and `PGPASSWORD` are not
+ * copied into the production endpoint set. `~/.pgpass` and `PGPASSFILE` are
+ * not read; a routing id that exists only there is not checked. Empty or
+ * whitespace-only values of either variable are unset.
+ * A non-empty value that does not parse fails closed. A host that still
+ * contains `%` after the driver parse is refused unless it is an IPv6 zone
+ * id. `domainToASCII` would percent-decode it again; node-postgres looks up
+ * the literal name.
  *
  * Without PRODUCTION_NEON_HOST or PRODUCTION_DATABASE_URL, an unmarked Neon
  * host is only a normal remote host: refused by default, allowed with the
@@ -98,19 +104,31 @@ function purposeLabel(purpose: string | undefined): string {
 
 /**
  * Returns null when a non-empty host is non-ASCII and `domainToASCII` cannot
- * turn it into ASCII. Empty input stays empty. IPv4, IPv6, and socket paths
- * are not passed through `domainToASCII`.
+ * turn it into ASCII, or when that conversion would not be the name
+ * node-postgres looks up. Empty input stays empty. IPv4, IPv6 (including a
+ * zone id), and socket paths are not passed through `domainToASCII`.
  */
 function normalizeHost(hostname: string): string | null {
   let host = hostname.trim();
   if (!host) return "";
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
   if (host.startsWith("/")) return host.toLowerCase();
+  // `domainToASCII` percent-decodes. A leftover `%` is a literal DNS label
+  // for pg, except an IPv6 zone id (`fe80::1%eth0`), which `isIP` accepts.
+  if (host.includes("%") && isIP(host) !== 6) return null;
   if (isIP(host)) return host.toLowerCase().replace(/\.+$/, "");
   const ascii = domainToASCII(host);
   if (!ascii || /[^\u0000-\u007f]/.test(ascii)) return null;
   const stripped = ascii.replace(/\.+$/, "").toLowerCase();
-  return stripped || null;
+  if (!stripped) return null;
+  // ASCII may change only by case folding, trailing dots, or an IPv4 form
+  // `domainToASCII` rewrites to a dotted address (`127.1`, `0x7f000001`).
+  // Any other change is not IDNA and is not the name pg looks up.
+  if (!/[^\u0000-\u007f]/.test(host)) {
+    const folded = host.replace(/\.+$/, "").toLowerCase();
+    if (folded !== stripped && isIP(stripped) === 0) return null;
+  }
+  return stripped;
 }
 
 function isAbsoluteConnectionString(value: string): boolean {
@@ -205,7 +223,8 @@ export function isLocalDatabaseHost(hostname: string): boolean {
 }
 
 function isKnownTestDatabase(database: string, host: string, routedByEndpoint: boolean): boolean {
-  if (!routedByEndpoint && isTestDatabaseName(database)) return true;
+  if (routedByEndpoint) return false;
+  if (isTestDatabaseName(database)) return true;
   return host.split(".").some((label) => label === "test" || label === "ci");
 }
 
@@ -243,11 +262,11 @@ function neonEndpointKey(host: string): string | null {
  * PRODUCTION_NEON_HOST token: bare hostname, host:port, or any scheme URL.
  * Returns [] for a blank token, null when a non-empty token has no hostname.
  */
-function hostsFromToken(token: string, env: EnvLike): { hosts: string[]; endpointIds: string[] } | null {
+function hostsFromToken(token: string): { hosts: string[]; endpointIds: string[] } | null {
   const trimmed = token.trim();
   if (!trimmed) return { hosts: [], endpointIds: [] };
   if (/^(?:postgres|postgresql):\/\//i.test(trimmed)) {
-    const parsed = parseDriverConnection(trimmed, env);
+    const parsed = parseDriverConnection(trimmed, {});
     if (!parsed || parsed.hosts.length === 0) return null;
     return { hosts: parsed.hosts, endpointIds: parsed.endpointIds };
   }
@@ -266,11 +285,11 @@ function hostsFromToken(token: string, env: EnvLike): { hosts: string[]; endpoin
   return host && isHostname(host) ? { hosts: [host], endpointIds: [] } : null;
 }
 
-function hostsFromListedValue(value: string, env: EnvLike): { hosts: string[]; endpointIds: string[] } | null {
+function hostsFromListedValue(value: string): { hosts: string[]; endpointIds: string[] } | null {
   const hosts: string[] = [];
   const endpointIds: string[] = [];
   for (const part of value.split(",")) {
-    const parsed = hostsFromToken(part, env);
+    const parsed = hostsFromToken(part);
     if (!parsed) return null;
     hosts.push(...parsed.hosts);
     endpointIds.push(...parsed.endpointIds);
@@ -283,7 +302,7 @@ function loadProductionHosts(env: EnvLike): ProductionConfig {
   const endpointIds: string[] = [];
   const listed = env[PRODUCTION_NEON_HOST_ENV];
   if (!blankEnv(listed)) {
-    const parsed = hostsFromListedValue(listed ?? "", env);
+    const parsed = hostsFromListedValue(listed ?? "");
     if (!parsed) {
       return { ok: false, detail: `${PRODUCTION_NEON_HOST_ENV} is set but could not be parsed.` };
     }
@@ -292,7 +311,7 @@ function loadProductionHosts(env: EnvLike): ProductionConfig {
   }
   const databaseUrl = env[PRODUCTION_DATABASE_URL_ENV];
   if (!blankEnv(databaseUrl)) {
-    const parsed = parseDriverConnection(databaseUrl ?? "", env);
+    const parsed = parseDriverConnection(databaseUrl ?? "", {});
     if (!parsed || parsed.hosts.length === 0) {
       return { ok: false, detail: `${PRODUCTION_DATABASE_URL_ENV} is set but could not be parsed.` };
     }
@@ -337,7 +356,7 @@ function hostAllowed(parsed: ParsedConnection, host: string, production: Product
   return (
     isLocalDatabaseHost(host) ||
     isKnownTestDatabase(parsed.database, host, routedByEndpoint) ||
-    isNeonBranchDatabase(parsed, host, production)
+    (!routedByEndpoint && isNeonBranchDatabase(parsed, host, production))
   );
 }
 

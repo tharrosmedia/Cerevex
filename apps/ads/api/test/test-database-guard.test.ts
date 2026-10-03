@@ -357,6 +357,79 @@ describe("test database guard", () => {
     expect(allowedCodes).toEqual([]);
   });
 
+  it("refuses a double-encoded percent host that domainToASCII would call localhost", () => {
+    const urlHost = assess("postgres://u:pw@local%2568ost/x");
+    expect(urlHost.allowed).toBe(false);
+    expect(urlHost.host).toBeNull();
+    expect(urlHost.message).toContain("could not be parsed");
+    expect(urlHost.message).not.toContain("pw");
+
+    const queryHost = assess("postgres://u:pw@db.example.com/x?host=local%2568ost");
+    expect(queryHost.allowed).toBe(false);
+    expect(queryHost.host).toBeNull();
+    expect(queryHost.message).toContain("could not be parsed");
+    expect(queryHost.message).not.toContain("pw");
+
+    expect(assess("postgres://u:pw@local%2568ost/x", { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed).toBe(false);
+    expect(assess("postgres://user:pw@127.1/app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@0x7f000001/app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@localhost/app").allowed).toBe(true);
+  });
+
+  it("does not let a routing endpoint id use ci, test, or br- host labels", () => {
+    const password = encodeURIComponent("endpoint=ep-other-branch$pw");
+    const ci = `postgres://user:${password}@ci.example.com/app`;
+    const testLabel = `postgres://user:pw@test.example.com/app?options=${encodeURIComponent("endpoint=ep-other-branch")}`;
+    const branch = `postgres://user:${password}@br-cool-branch.us-east-2.aws.neon.tech/neondb`;
+    expect(assess(ci).allowed).toBe(false);
+    expect(assess(ci).message).not.toContain("pw");
+    expect(assess(testLabel).allowed).toBe(false);
+    expect(assess(branch).allowed).toBe(false);
+    expect(assess(ci, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed).toBe(true);
+    expect(assess(branch, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed).toBe(true);
+    expect(assess("postgres://user:pw@ci.example.com/app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@test.example.com/app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@br-cool-branch.us-east-2.aws.neon.tech/neondb").allowed).toBe(true);
+    expect(assess(`postgres://user:${password}@127.0.0.1/app`).allowed).toBe(true);
+  });
+
+  it("does not copy PGOPTIONS or PGPASSWORD into the production endpoint set", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const productionUrl = `postgres://owner:other-secret@${prod}/neondb`;
+    const env = {
+      PRODUCTION_DATABASE_URL: productionUrl,
+      PGOPTIONS: "endpoint=ep-dev-branch",
+    };
+    expect(assess(CI_URL, env).allowed).toBe(true);
+    expect(
+      assess(`postgres://user:secret@${prod}/neondb`, { ...env, ALLOW_NONLOCAL_TEST_DB: "1" }).allowed,
+    ).toBe(false);
+
+    const dev = assess("postgres://user@ep-dev-branch.us-east-2.aws.neon.tech/neondb", {
+      ...env,
+      ALLOW_NONLOCAL_TEST_DB: "1",
+    });
+    expect(dev.allowed).toBe(true);
+    expect(dev.message).not.toContain("production Neon");
+    expect(dev.message).not.toContain("other-secret");
+
+    const fromPassword = assess("postgres://user@1.2.3.4/neondb", {
+      ALLOW_NONLOCAL_TEST_DB: "1",
+      PRODUCTION_DATABASE_URL: `postgres://owner@${prod}/neondb`,
+      PGPASSWORD: "endpoint=ep-dev-branch$super-secret",
+    });
+    expect(fromPassword.allowed).toBe(true);
+    expect(fromPassword.message).not.toContain("production Neon");
+    expect(fromPassword.message).not.toContain("super-secret");
+
+    expect(
+      assess(CI_URL, {
+        PRODUCTION_NEON_HOST: productionUrl,
+        PGOPTIONS: "endpoint=ep-dev-branch",
+      }).allowed,
+    ).toBe(true);
+  });
+
   it("is wired into the ads seed script and every ads API test entrypoint", () => {
     const seed = readFileSync(new URL("../../shared/src/seed.ts", import.meta.url), "utf8");
     const setup = readFileSync(new URL("./setup-database-guard.ts", import.meta.url), "utf8");
