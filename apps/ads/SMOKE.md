@@ -260,7 +260,7 @@ Expected `os` tables include:
 Optional API health (needs OS process + same `DATABASE_URL`; no platform writes):
 
 ```bash
-# JWT_SECRET required to boot; META_/GOOGLE_ stay empty
+# JWT_SECRET (32+ chars, not the placeholder) required to boot in any Railway environment; META_/GOOGLE_ stay empty
 npm run ads:dev
 # other terminal
 curl -sS http://127.0.0.1:43180/health

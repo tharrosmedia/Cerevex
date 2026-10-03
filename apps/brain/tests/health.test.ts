@@ -6,7 +6,7 @@ import { GET } from '../app/api/health/route';
 import { assertProductionSecrets, shouldCheckProductionSecrets } from '../lib/prod-secrets';
 
 const env = process.env as Record<string, string | undefined>;
-const keys = ['NODE_ENV', 'RAILWAY_ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'ENCRYPTION_KEY', 'GSC_OAUTH_STATE_SECRET', 'APP_PASSWORD', 'ADS_INTERNAL_KEY'] as const;
+const keys = ['NODE_ENV', 'RAILWAY_ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'CEREVEX_REQUIRE_SIGNING_SECRETS', 'ENCRYPTION_KEY', 'GSC_OAUTH_STATE_SECRET', 'APP_PASSWORD', 'ADS_INTERNAL_KEY'] as const;
 const prev = Object.fromEntries(keys.map((key) => [key, env[key]]));
 
 function restore() {
@@ -51,6 +51,17 @@ try {
   const ready = await GET();
   assert.equal(ready.status, 200);
   assert.doesNotThrow(() => assertProductionSecrets());
+
+  clearSecrets();
+  env.NODE_ENV = 'test';
+  env.RAILWAY_ENVIRONMENT_NAME = 'staging';
+  assert.equal((await GET()).status, 503);
+  assert.throws(() => assertProductionSecrets(), /ENCRYPTION_KEY:missing/);
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.CEREVEX_REQUIRE_SIGNING_SECRETS = 'true';
+  assert.equal((await GET()).status, 503);
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
+  assert.equal((await GET()).status, 200);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const instrumentation = readFileSync(join(here, '../instrumentation.ts'), 'utf8');

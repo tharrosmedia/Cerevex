@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { serve as inngestNodeServe } from "inngest/node";
 import pino from "pino";
 import { loadEnv } from "@tharros/ads-shared/env";
+import { assertAdsProductionSecrets } from "@tharros/ads-shared/production-secrets";
 import { checkDatabase } from "@tharros/ads-shared/db";
 import { checkInngest, inngest } from "@tharros/ads-shared/inngest";
 import { FUNCTION_IDS, functions } from "./register";
@@ -20,6 +21,13 @@ const logger = pino({
     },
   },
 });
+
+try {
+  assertAdsProductionSecrets();
+} catch (error) {
+  logger.error({ msg: error instanceof Error ? error.message : "Required production secrets are missing" });
+  process.exit(1);
+}
 
 const app = new Hono();
 app.get("/health", async (c) => {

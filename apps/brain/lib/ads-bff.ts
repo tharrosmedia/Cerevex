@@ -1,3 +1,5 @@
+import { isProductionRuntime } from "./runtime-env";
+
 export type AdsFailReason = "not_configured" | "unreachable" | "unauthorized" | "not_found" | "error";
 
 export type AdsResult<T> =
@@ -81,7 +83,7 @@ export type AdsWorkspace = {
 function adsApiUrl(): string {
   const fromEnv = process.env.ADS_API_URL?.replace(/\/$/, "");
   if (fromEnv) return fromEnv;
-  if (process.env.NODE_ENV === "production") return "";
+  if (isProductionRuntime()) return "";
   return "http://127.0.0.1:43180";
 }
 

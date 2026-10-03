@@ -1,3 +1,5 @@
+import type { OpsEnvEntry } from '@cerevex/contracts';
+import { opsEnvRequiredInProduction } from '@cerevex/contracts';
 import { encryptionKeyProblem, isProductionRuntime } from './runtime-env';
 
 /** Brain production boot and /api/health. Names only — values are never returned. */
@@ -10,14 +12,19 @@ export const PRODUCTION_SECRET_NAMES = [
 
 export type ProductionSecretProblem = `${(typeof PRODUCTION_SECRET_NAMES)[number]}:${'missing' | 'whitespace'}`;
 
-export function productionSecretProblems(): ProductionSecretProblem[] {
+/** Uses OpsEnvEntry.requiredInProduction === "brain". ENCRYPTION_KEY keeps the no-trim whitespace check. */
+export function productionSecretProblems(
+  entries: readonly OpsEnvEntry[] = opsEnvRequiredInProduction('brain'),
+): string[] {
   if (!isProductionRuntime()) return [];
-  const problems: ProductionSecretProblem[] = [];
-  const encryption = encryptionKeyProblem();
-  if (encryption) problems.push(`ENCRYPTION_KEY:${encryption}`);
-  for (const name of PRODUCTION_SECRET_NAMES) {
-    if (name === 'ENCRYPTION_KEY') continue;
-    if (!(process.env[name] || '').trim()) problems.push(`${name}:missing`);
+  const problems: string[] = [];
+  for (const entry of entries) {
+    if (entry.env === 'ENCRYPTION_KEY') {
+      const encryption = encryptionKeyProblem();
+      if (encryption) problems.push(`ENCRYPTION_KEY:${encryption}`);
+      continue;
+    }
+    if (!(process.env[entry.env] || '').trim()) problems.push(`${entry.env}:missing`);
   }
   return problems;
 }

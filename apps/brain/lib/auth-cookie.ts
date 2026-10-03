@@ -1,3 +1,5 @@
+import { isProductionRuntime } from './runtime-env';
+
 /** Shared Brain console session cookie. Value remains APP_PASSWORD (unchanged contract). */
 export const AUTH_COOKIE_NAME = 'auth';
 
@@ -15,7 +17,7 @@ export type AuthCookieOptions = {
 export function authCookieOptions(): AuthCookieOptions {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProductionRuntime(),
     sameSite: 'lax',
     path: '/',
     maxAge: AUTH_IDLE_MAX_AGE,

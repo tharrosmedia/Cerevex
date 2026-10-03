@@ -1,24 +1,27 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import { LOCAL_DEV_TOKEN_KEY, isProductionRuntime, signingSecretProblem } from "@cerevex/contracts";
 import { loadEnv } from "./env";
 
-const LOCAL_DEV_KEY = "local-dev-only-token-key-32b!!";
+function deriveTokenKey(value: string): Buffer {
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    return Buffer.from(value, "hex");
+  }
+  if (value.length === 32) {
+    return Buffer.from(value, "utf8");
+  }
+  return scryptSync(value, "tharros-os-token", 32);
+}
 
 function encryptionKey(): Buffer {
   loadEnv();
   const raw = process.env.TOKEN_ENCRYPTION_KEY;
-  if (!raw) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("TOKEN_ENCRYPTION_KEY is required in production");
-    }
-    return Buffer.from(LOCAL_DEV_KEY, "utf8");
+  const problem = signingSecretProblem(raw, [LOCAL_DEV_TOKEN_KEY]);
+  if (isProductionRuntime() && problem) {
+    throw new Error(`TOKEN_ENCRYPTION_KEY is ${problem} in production`);
   }
-  if (/^[0-9a-fA-F]{64}$/.test(raw)) {
-    return Buffer.from(raw, "hex");
-  }
-  if (raw.length === 32) {
-    return Buffer.from(raw, "utf8");
-  }
-  return scryptSync(raw, "tharros-os-token", 32);
+  // The example placeholder is 30 chars, so the unset dev key is scrypt(placeholder), same as setting it.
+  if (problem === "missing") return deriveTokenKey(LOCAL_DEV_TOKEN_KEY);
+  return deriveTokenKey((raw ?? "").trim());
 }
 
 export function encryptSecret(plaintext: string): string {
