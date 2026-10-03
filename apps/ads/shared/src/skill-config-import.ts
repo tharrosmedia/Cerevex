@@ -1,25 +1,32 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { DEFAULT_APPROVE_OPERATOR_EMAIL } from "@cerevex/contracts";
 import type { ClientSkillConfig, SkillConfigBundle } from "@cerevex/skills";
 import type { Database } from "./db";
 import { clients, memberships, skillClientConfigs, skillStoreConfigs, users } from "./schema";
 import { SKILL_CLIENT_ALIASES } from "./skill-client-aliases";
+import { assessTestDatabase, type EnvLike } from "./test-database";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Profile import writes config only. It does not run against Neon or any other remote host. */
-export function assertLocalDatabase(connectionString: string): void {
-  const host = /@([^/:?]+)/.exec(connectionString)?.[1] ?? "";
-  const local =
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host === "::1" ||
-    host === "postgres" ||
-    host.endsWith(".local");
-  if (!local) {
-    throw new Error(
-      `Refusing to write skill config to non-local database host "${host}". Prod migrations and imports run only after Adam merges and Cos confirms.`,
-    );
+export class SkillConfigImportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SkillConfigImportError";
   }
+}
+
+/**
+ * Skill-config import uses the shared test-database guard (effective host,
+ * including `?host=`). It does not keep a separate hostname regex.
+ */
+export function assertLocalDatabase(connectionString: string, env: EnvLike = process.env): void {
+  const verdict = assessTestDatabase({
+    databaseUrl: connectionString,
+    env,
+    purpose: "skill config import",
+    requireUrl: true,
+  });
+  if (!verdict.allowed) throw new SkillConfigImportError(verdict.message);
 }
 
 export interface SkillClientLink {
@@ -54,7 +61,7 @@ export function resolveSkillClientLink(
 
 export interface SkillConfigImportResult {
   links: Array<{ slug: string; clientId: string | null; warning: string | null }>;
-  approvalOwnerUserId: string | null;
+  approvalOwnerUserId: string;
   warnings: string[];
 }
 
@@ -64,41 +71,76 @@ function approvalOwnerLabel(client: ClientSkillConfig): string {
   return client.approvalOwnerResolved.name;
 }
 
+function workspaceIdForLinkedClients(
+  rows: ReadonlyArray<{ id: string; name: string; workspaceId: string }>,
+): string {
+  const workspaceIds = new Set<string>();
+  for (const slug of Object.keys(SKILL_CLIENT_ALIASES)) {
+    const link = resolveSkillClientLink(slug, rows);
+    if (!link.clientId) continue;
+    const row = rows.find((item) => item.id === link.clientId);
+    if (row) workspaceIds.add(row.workspaceId);
+  }
+  if (workspaceIds.size === 1) return [...workspaceIds][0]!;
+  if (workspaceIds.size === 0) {
+    throw new SkillConfigImportError(
+      "No in-scope os.clients row identifies a workspace. Set APPROVAL_OWNER_USER_ID. Refusing to bind an owner from another workspace.",
+    );
+  }
+  throw new SkillConfigImportError(
+    `In-scope clients span ${workspaceIds.size} workspaces. Set APPROVAL_OWNER_USER_ID. Refusing to bind one owner across workspaces.`,
+  );
+}
+
+/**
+ * Bind the approval owner to APPROVAL_OWNER_USER_ID, or to Adam's user when
+ * that user is an owner of the workspace that holds the linked clients.
+ * Any other owner is refused. Failure throws before a row is written.
+ */
 async function resolveApprovalOwnerUserId(
   db: Database,
-): Promise<{ userId: string | null; warning: string | null }> {
+  rows: ReadonlyArray<{ id: string; name: string; workspaceId: string }>,
+): Promise<string> {
   const configured = process.env.APPROVAL_OWNER_USER_ID?.trim();
   if (configured) {
     if (!UUID_RE.test(configured)) {
-      return {
-        userId: null,
-        warning: "APPROVAL_OWNER_USER_ID is not a uuid; leaving approval_owner_user_id unset.",
-      };
+      throw new SkillConfigImportError(
+        "APPROVAL_OWNER_USER_ID is not a uuid. Refusing to bind the approval owner.",
+      );
     }
     const user = await db.query.users.findFirst({ where: eq(users.id, configured) });
     if (!user) {
-      return {
-        userId: null,
-        warning: `APPROVAL_OWNER_USER_ID ${configured} does not match os.users.id; leaving approval_owner_user_id unset.`,
-      };
+      throw new SkillConfigImportError(
+        `APPROVAL_OWNER_USER_ID ${configured} does not match os.users.id. Refusing to bind the approval owner.`,
+      );
     }
-    return { userId: user.id, warning: null };
+    return user.id;
   }
 
-  const owners = await db.select().from(memberships).where(eq(memberships.role, "owner"));
-  if (owners.length === 1) return { userId: owners[0]?.userId ?? null, warning: null };
-  if (owners.length === 0) {
-    return {
-      userId: null,
-      warning:
-        "No workspace membership with role owner; set APPROVAL_OWNER_USER_ID to bind the approval owner. Leaving approval_owner_user_id unset.",
-    };
+  const workspaceId = workspaceIdForLinkedClients(rows);
+  const email = DEFAULT_APPROVE_OPERATOR_EMAIL.toLowerCase();
+  const adam = await db.query.users.findFirst({ where: eq(users.email, email) });
+  if (!adam) {
+    throw new SkillConfigImportError(
+      `No os.users row for the Approve operator in packages/contracts/src/approve-allowlist.ts. Set APPROVAL_OWNER_USER_ID. Refusing to bind another workspace owner.`,
+    );
   }
-  return {
-    userId: null,
-    warning:
-      "More than one workspace owner membership; set APPROVAL_OWNER_USER_ID to bind the approval owner. Leaving approval_owner_user_id unset.",
-  };
+  const [membership] = await db
+    .select({ userId: memberships.userId })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.userId, adam.id),
+        eq(memberships.workspaceId, workspaceId),
+        eq(memberships.role, "owner"),
+      ),
+    );
+  if (!membership) {
+    throw new SkillConfigImportError(
+      `The Approve operator is not an owner of workspace ${workspaceId}. Refusing to bind another workspace owner under the agency-owner label. Set APPROVAL_OWNER_USER_ID to bind an explicit user.`,
+    );
+  }
+  return adam.id;
 }
 
 /**
@@ -107,20 +149,16 @@ async function resolveApprovalOwnerUserId(
  * and does not insert Level Agency slugs.
  *
  * approval_owner_resolved stores the identity (default "agency owner (Adam Leech)",
- * overridable with APPROVAL_OWNER_NAME). approval_owner_user_id binds that identity
- * to os.users via APPROVAL_OWNER_USER_ID, or the single workspace owner membership.
+ * overridable with APPROVAL_OWNER_NAME). approval_owner_user_id is Adam's user
+ * on that workspace, or APPROVAL_OWNER_USER_ID.
  */
 export async function importSkillConfigBundle(
   db: Database,
   bundle: SkillConfigBundle,
 ): Promise<SkillConfigImportResult> {
   const existing = await db.select().from(clients);
-  const owner = await resolveApprovalOwnerUserId(db);
+  const approvalOwnerUserId = await resolveApprovalOwnerUserId(db, existing);
   const warnings: string[] = [];
-  if (owner.warning) {
-    warnings.push(owner.warning);
-    console.warn(owner.warning);
-  }
   const links: SkillConfigImportResult["links"] = [];
 
   for (const client of bundle.clients) {
@@ -144,42 +182,44 @@ export async function importSkillConfigBundle(
       scopeAllowed: true,
       pilot: client.pilot,
       approvalOwnerResolved: label,
-      approvalOwnerUserId: owner.userId,
+      approvalOwnerUserId,
       configJson: client,
       missingFactsJson: bundle.missingFacts[client.slug],
     };
-    await db
-      .insert(skillClientConfigs)
-      .values(values)
-      .onConflictDoUpdate({
-        target: skillClientConfigs.slug,
-        set: {
-          clientId: values.clientId,
-          displayName: values.displayName,
-          snapshotId: values.snapshotId,
-          profileHash: values.profileHash,
-          marketingGate: values.marketingGate,
-          scopeAllowed: values.scopeAllowed,
-          pilot: values.pilot,
-          approvalOwnerResolved: values.approvalOwnerResolved,
-          approvalOwnerUserId: values.approvalOwnerUserId,
-          configJson: values.configJson,
-          missingFactsJson: values.missingFactsJson,
-        },
-      });
-    await db.delete(skillStoreConfigs).where(eq(skillStoreConfigs.clientSlug, client.slug));
-    if (client.stores.length > 0) {
-      await db.insert(skillStoreConfigs).values(
-        client.stores.map((store) => ({
-          clientSlug: client.slug,
-          storeKey: store.storeKey,
-          brainStoreId: store.brainStoreId,
-          role: store.role,
-          configJson: store,
-        })),
-      );
-    }
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(skillClientConfigs)
+        .values(values)
+        .onConflictDoUpdate({
+          target: skillClientConfigs.slug,
+          set: {
+            clientId: values.clientId,
+            displayName: values.displayName,
+            snapshotId: values.snapshotId,
+            profileHash: values.profileHash,
+            marketingGate: values.marketingGate,
+            scopeAllowed: values.scopeAllowed,
+            pilot: values.pilot,
+            approvalOwnerResolved: values.approvalOwnerResolved,
+            approvalOwnerUserId: values.approvalOwnerUserId,
+            configJson: values.configJson,
+            missingFactsJson: values.missingFactsJson,
+          },
+        });
+      await tx.delete(skillStoreConfigs).where(eq(skillStoreConfigs.clientSlug, client.slug));
+      if (client.stores.length > 0) {
+        await tx.insert(skillStoreConfigs).values(
+          client.stores.map((store) => ({
+            clientSlug: client.slug,
+            storeKey: store.storeKey,
+            brainStoreId: store.brainStoreId,
+            role: store.role,
+            configJson: store,
+          })),
+        );
+      }
+    });
   }
 
-  return { links, approvalOwnerUserId: owner.userId, warnings };
+  return { links, approvalOwnerUserId, warnings };
 }

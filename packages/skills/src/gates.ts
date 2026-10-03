@@ -54,6 +54,19 @@ export function marketingGateFromStatus(status: string): "on" | "off" {
 }
 
 /**
+ * Cerevex is internal-only. A missing gate fails closed for that client.
+ * An explicit "off" is the only way a Cerevex marketing run is allowed.
+ */
+function effectiveMarketingGate(
+  clientSlug: string,
+  marketingGate: "on" | "off" | null | undefined,
+): "on" | "off" {
+  if (marketingGate === "on" || marketingGate === "off") return marketingGate;
+  if (normalizeTenantKey(clientSlug) === "cerevex") return "on";
+  return "off";
+}
+
+/**
  * Scope and marketing gates. Enforced here, in config, not in skill prompts.
  * A marketing gate of "on" means marketing and qualified-outcome work is blocked.
  */
@@ -77,7 +90,8 @@ export function evaluateSkillRun(input: {
     };
   }
   const blockedKind = input.runKind === "marketing" || input.runKind === "qualified-outcome";
-  if (blockedKind && input.marketingGate === "on") {
+  const gate = effectiveMarketingGate(input.clientSlug, input.marketingGate);
+  if (blockedKind && gate === "on") {
     return {
       allowed: false,
       gate: "marketing",

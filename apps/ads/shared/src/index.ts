@@ -154,7 +154,12 @@ export type {
   BookedJobSignalRecDraft,
 } from "./lead-lifecycle";
 export { evaluateApplyGate, applyBlockMessage, APPLY_BLOCK_REASONS } from "./apply-gate";
-export { assertLocalDatabase, importSkillConfigBundle, resolveSkillClientLink } from "./skill-config-import";
+export {
+  SkillConfigImportError,
+  assertLocalDatabase,
+  importSkillConfigBundle,
+  resolveSkillClientLink,
+} from "./skill-config-import";
 export type { SkillClientLink, SkillConfigImportResult } from "./skill-config-import";
 export { SKILL_CLIENT_ALIASES } from "./skill-client-aliases";
 export {

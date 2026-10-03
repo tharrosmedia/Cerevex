@@ -12,6 +12,21 @@ import { SKILL_SLUGS } from "./types";
 
 export const HASH_ALGORITHM = "sha256-sorted-path-v1" as const;
 
+/** Unicode code-point order. Independent of locale. */
+export function compareCodePoint(a: string, b: string): number {
+  let ia = 0;
+  let ib = 0;
+  while (ia < a.length && ib < b.length) {
+    const ca = a.codePointAt(ia) ?? 0;
+    const cb = b.codePointAt(ib) ?? 0;
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    ia += ca > 0xffff ? 2 : 1;
+    ib += cb > 0xffff ? 2 : 1;
+  }
+  if (ia >= a.length && ib >= b.length) return 0;
+  return ia >= a.length ? -1 : 1;
+}
+
 export function sha256(bytes: Buffer | string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -19,7 +34,7 @@ export function sha256(bytes: Buffer | string): string {
 export function listFiles(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
-    for (const name of readdirSync(dir).sort((a, b) => a.localeCompare(b))) {
+    for (const name of readdirSync(dir).sort(compareCodePoint)) {
       if (name === ".DS_Store") continue;
       const abs = path.join(dir, name);
       const rel = path.relative(root, abs).split(path.sep).join("/");
@@ -39,7 +54,7 @@ export function hashFiles(root: string, relativeFiles: readonly string[]): {
     const buf = readFileSync(path.join(root, rel));
     return { path: rel, sha256: sha256(buf) };
   });
-  files.sort((a, b) => a.path.localeCompare(b.path));
+  files.sort((a, b) => compareCodePoint(a.path, b.path));
   const hash = createHash("sha256");
   for (const file of files) {
     hash.update(file.path);
@@ -140,6 +155,16 @@ function sharedRefSpecs(): RefSpec[] {
       files: ["lead-classifier.md"],
     },
     {
+      slug: "references/README",
+      root: REFERENCES_DIR,
+      files: ["README.md"],
+    },
+    {
+      slug: "verticals/README",
+      root: path.join(REFERENCES_DIR, "verticals"),
+      files: ["README.md"],
+    },
+    {
       slug: "licenses",
       root: REFERENCES_DIR,
       files: ["LICENSES.md"],
@@ -159,7 +184,7 @@ function sharedRefSpecs(): RefSpec[] {
     });
   }
   const clientRoot = path.join(REFERENCES_DIR, "clients");
-  for (const slug of readdirSync(clientRoot).sort((a, b) => a.localeCompare(b))) {
+  for (const slug of readdirSync(clientRoot).sort(compareCodePoint)) {
     const dir = path.join(clientRoot, slug);
     if (!statSync(dir).isDirectory()) continue;
     specs.push({
@@ -179,7 +204,7 @@ export function buildManifest(): SkillsManifest {
     ...SKILL_SLUGS.map((slug) => skillEntry(slug)),
     ...sharedRefSpecs().map((spec) => refEntry(spec, libraryVersion)),
   ];
-  entries.sort((a, b) => a.kind.localeCompare(b.kind) || a.slug.localeCompare(b.slug));
+  entries.sort((a, b) => compareCodePoint(a.kind, b.kind) || compareCodePoint(a.slug, b.slug));
   return {
     snapshotId: snapshot.snapshotId,
     snapshotTimestamp: snapshot.snapshotTimestamp,

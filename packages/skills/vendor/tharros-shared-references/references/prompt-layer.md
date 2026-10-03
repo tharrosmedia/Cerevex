@@ -1,6 +1,6 @@
 # Client prompt layer (Cerevex export): how skills load it
 
-> version 1.0 · 2026-10-03 · from Cerevex Skills Integration Brief 1.0 (ACCEPTED 2026-10-03) §6.1–§6.7 and §8.2 M. Agency-wide procedure: no client facts here. Every client-facing skill points to this file with one line; the procedure lives only here.
+> version 1.0.1 · 2026-10-03 (07:26 ET §8.3 install edit; supersedes the earlier 1.0 text) · from Cerevex Skills Integration Brief 1.0 (ACCEPTED 2026-10-03) §6.1–§6.7 and §8.2 M. Agency-wide procedure: no client facts here. Every client-facing skill points to this file with one line; the procedure lives only here.
 
 ## What a prompt layer is
 
@@ -14,7 +14,7 @@ A layer never holds facts (facts live in `profile.md`), never holds another clie
 |---|---|---|
 | Drive (master export) | `Agents/Cerevex/Client prompt layers/<client>.md`, or `<client>-<store>.md` for a store layer | Cerevex, on every approved layer version or rollback. Overwrites the current file; older versions are in Drive file history. |
 | Box (what skills read) | `clients/<client>/prompt-layer.md` under this references folder (`/home/box/agent-data/workflows/tharros-shared-references/references/`) | The Drive-to-box sync routine. Cerevex never writes to the box. |
-| Box, store layer | TBD. The brief names only the client file. Until Eng/Cos fix a name, treat `clients/<client>/prompt-layer-<store>.md` as the expected path. | The same sync routine |
+| Box, store layer | `clients/<client>/prompt-layer-<store>.md` (fixed by Cos 2026-10-03; matches Cerevex PR #49). | The same sync routine |
 
 Each export starts with a header giving the layer id and version (for example `<client>[/<store>]@v<n>`), the export date, the approving rec id, and the line "Exported from Cerevex. Read-only. Change it through a Cerevex rec."
 

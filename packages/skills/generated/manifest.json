@@ -171,13 +171,26 @@
     {
       "slug": "prompt-layer",
       "kind": "shared-ref",
-      "version": "1.0",
+      "version": "1.0.1",
       "versionSource": "banner",
-      "contentHash": "89101005ec410ee44d3b2dff8160f07b436c771bcf8038acaf9e96acae0225c4",
+      "contentHash": "698272990e4d55a9c91b83516beeec46fabb047c1b395087cadd9511c69c8de5",
       "files": [
         {
           "path": "prompt-layer.md",
-          "sha256": "137e304c69236c2d142ea984c81afcd0469684071bd95056882e6ea568d60ed6"
+          "sha256": "69e3d463c490519ad80603125d872ce5aa29cae20580cb3bb19c4108f73097e9"
+        }
+      ]
+    },
+    {
+      "slug": "references/README",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "fb9122da91ec603f68343678edb8c412db54e0f968b092f2f09e9004c9f0630d",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "cfb85d70d424a8a07be8e6ef7bcea3334b607562f9ee7967b1b43a723044b981"
         }
       ]
     },
@@ -204,6 +217,19 @@
         {
           "path": "verified-facts.md",
           "sha256": "c04eb5089a1422c12d1ec9da2bdef18bc6b53fb57392709d921c416c7e3ed0c2"
+        }
+      ]
+    },
+    {
+      "slug": "verticals/README",
+      "kind": "shared-ref",
+      "version": "4.1.0",
+      "versionSource": "library-skill-header",
+      "contentHash": "743a7de9bac7160287d71041fb103a1f508d1c06e04c7efb43a9232dad80587a",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "09169a23af352f673aaf48f6ceda3dbdf5a5500d815d1bf4ebcf89d46e60c3f8"
         }
       ]
     },
@@ -289,15 +315,15 @@
       "kind": "skill",
       "version": "0.4.1-accepted",
       "versionSource": "banner",
-      "contentHash": "7c3029fac0d2e43603fd3b81a827197571d2e2774569f370aa0eac4c5c88688c",
+      "contentHash": "3f271f91137a560266b9f3acdc7654ca9c7b01d1b4624366eb238afeb7a55848",
       "files": [
-        {
-          "path": "references/universal-rules.md",
-          "sha256": "b965f0daf286a134c9dce93c404dcad5a8c7cb8e2d5a47104f4846fd20e9163b"
-        },
         {
           "path": "SKILL.md",
           "sha256": "7f7d9620eb78f1141470b170581161b17411efaa485201279e67a11791964b67"
+        },
+        {
+          "path": "references/universal-rules.md",
+          "sha256": "b965f0daf286a134c9dce93c404dcad5a8c7cb8e2d5a47104f4846fd20e9163b"
         }
       ]
     },
@@ -306,8 +332,12 @@
       "kind": "skill",
       "version": "3.0.1-accepted",
       "versionSource": "banner",
-      "contentHash": "f35bd4a338fea3161603ebdb45eb0ef63ce0003eb663a71c60cd0e150febff51",
+      "contentHash": "3cafc05eaf97e10b7e9ccc84f9be5544642f40aab1c5dc269040d6aa0f7dfcf6",
       "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1dd7722a7243fe28dbeac7191208f957565844f82b77f4e56bd1cc25320f8275"
+        },
         {
           "path": "assets/brief-checklist.md",
           "sha256": "d51298f3c35eeb3cdffcd8041e489988842577441be711e1ffd7182a9aac7dec"
@@ -323,10 +353,6 @@
         {
           "path": "references/patterns.md",
           "sha256": "ea8b3b2c9d2ccd7184ba3a6ad2b2d098a4b4ee33da4913f314e8c95e93a58d3e"
-        },
-        {
-          "path": "SKILL.md",
-          "sha256": "1dd7722a7243fe28dbeac7191208f957565844f82b77f4e56bd1cc25320f8275"
         }
       ]
     },
@@ -335,8 +361,12 @@
       "kind": "skill",
       "version": "0.4.1-accepted",
       "versionSource": "banner",
-      "contentHash": "251f9966be3beb09d8224fa6a319317acc1a3749aec5c57b9dc5c47bacdfea69",
+      "contentHash": "2c6d51a398ca77849b7a139d0169e786dac9aa9189ddf7d44e56b4fe159dff9d",
       "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "9e4756ef96c2c0f43206ac2fd3b8ce98ef5c7194c1abf6c173a4fc943fdff3d1"
+        },
         {
           "path": "references/audit-checklist.md",
           "sha256": "de612bce0050adc870ee4d0dfd4463564c740069dcfbb33ab92644748fb5fa4a"
@@ -364,10 +394,6 @@
         {
           "path": "references/tiktok.md",
           "sha256": "c72db70c652aa196330f3e22bc9a413917d5deea3e5cd3a997ac47686a947ac3"
-        },
-        {
-          "path": "SKILL.md",
-          "sha256": "9e4756ef96c2c0f43206ac2fd3b8ce98ef5c7194c1abf6c173a4fc943fdff3d1"
         }
       ]
     },
@@ -389,8 +415,12 @@
       "kind": "skill",
       "version": "1.0-accepted",
       "versionSource": "banner",
-      "contentHash": "ccb81f635dae404ef5549c3eb14c82b7481224f9fb3b0b7e5f8774d6825ff7af",
+      "contentHash": "f9e6308eaf19e87e701a16f60cd201e8e8568d3d7d37f4f6e0dacb6c1340c8c2",
       "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "fddf51a154501748fba784441ed9d4bd8f1c3170f3a8a7ae0de2db8e3c0100b3"
+        },
         {
           "path": "assets/brief-template.md",
           "sha256": "bb4ae88523164d9425b3e61bf683a6ea9d2b78c32d6f070d1a9b3959f19b527a"
@@ -414,10 +444,6 @@
         {
           "path": "scripts/analyze_text.py",
           "sha256": "adda3de37e01d5e0d66065181d806eabb4c1cfccdafa8803939fdf2e5d50d855"
-        },
-        {
-          "path": "SKILL.md",
-          "sha256": "fddf51a154501748fba784441ed9d4bd8f1c3170f3a8a7ae0de2db8e3c0100b3"
         }
       ]
     }

@@ -41,6 +41,17 @@ const cerevexRecord = evaluateSkillRun({
 });
 assert.equal(cerevexRecord.allowed, true);
 
+const cerevexMissingGate = evaluateSkillRun({ clientSlug: "cerevex", runKind: "marketing" });
+assert.equal(cerevexMissingGate.allowed, false);
+assert.equal(cerevexMissingGate.gate, "marketing");
+assert.equal(
+  evaluateSkillRun({ clientSlug: "Cerevex", runKind: "qualified-outcome", marketingGate: null }).allowed,
+  false,
+);
+assert.equal(evaluateSkillRun({ clientSlug: "cerevex", runKind: "internal-record" }).allowed, true);
+assert.equal(evaluateSkillRun({ clientSlug: "cerevex", runKind: "marketing", marketingGate: "off" }).allowed, true);
+assert.equal(evaluateSkillRun({ clientSlug: "hvac-usa", runKind: "marketing" }).allowed, true);
+
 assert.equal(
   evaluateSkillRun({ clientSlug: "hvac-usa", runKind: "marketing", marketingGate: "off" }).allowed,
   true,

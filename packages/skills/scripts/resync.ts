@@ -12,11 +12,12 @@
  * after the skills archive is extracted. Runtime never reads the box or Drive.
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildManifest } from "../src/manifest";
+import { buildManifest, sha256 } from "../src/manifest";
 import { importProfiles } from "../src/import-profiles";
+import { SNAPSHOT_TIMEZONE, snapshotTimestamp } from "../src/snapshot-time";
 import {
   CLIENT_CONFIG_PATH,
   GENERATED_DIR,
@@ -42,10 +43,8 @@ function snapshotIdFrom(file: string): string {
   return match[1];
 }
 
-function timestampFrom(snapshotId: string): string {
-  const match = snapshotId.match(/^(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})$/);
-  if (!match) throw new Error(`Bad snapshot id ${snapshotId}`);
-  return `${match[1]}T${match[2]}:${match[3]}:00-04:00`;
+function archiveSha256(file: string): string {
+  return sha256(readFileSync(file));
 }
 
 function overlays(): Array<{ name: string; archive: string }> {
@@ -99,14 +98,15 @@ try {
 
   const snapshot = {
     snapshotId: referencesId,
-    snapshotTimestamp: timestampFrom(referencesId),
-    timezone: "America/New_York",
+    snapshotTimestamp: snapshotTimestamp(referencesId),
+    timezone: SNAPSHOT_TIMEZONE,
     recordedFrom:
       "Vendored from the box library /home/box/agent-data/workflows/ as of the snapshot stamp in America/New_York. Cerevex does not read the box or Drive at runtime.",
     sources: [
       {
         kind: "tharros-shared-references",
         archiveName: path.basename(referencesArchive),
+        sha256: archiveSha256(referencesArchive),
         upstreamPath: "/home/box/agent-data/workflows/tharros-shared-references",
         vendoredPath: "packages/skills/vendor/tharros-shared-references",
         status: "accepted",
@@ -114,6 +114,7 @@ try {
       {
         kind: "skills",
         archiveName: path.basename(skillsArchive),
+        sha256: archiveSha256(skillsArchive),
         upstreamPath:
           "/home/box/agent-data/workflows/{paid-media,seo-audit,seo-research,claims-check,no-slop-copy,account-review-loop}",
         vendoredPath: "packages/skills/vendor/skills",
@@ -123,6 +124,7 @@ try {
         kind: "skill-overlay",
         skill: overlay.name,
         archiveName: path.basename(overlay.archive),
+        sha256: archiveSha256(overlay.archive),
         upstreamPath: `/home/box/agent-data/workflows/${overlay.name}`,
         vendoredPath: `packages/skills/vendor/skills/${overlay.name}`,
         status: "accepted",

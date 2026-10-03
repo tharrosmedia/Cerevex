@@ -1,17 +1,16 @@
 /**
- * Precedence from references/prompt-layer.md (version 1.0, 2026-10-03).
+ * Precedence from references/prompt-layer.md (version 1.0.1, 2026-10-03).
  * Seeding a layer is PR 3. This module exposes the procedure the loader pins
  * and the canonical layer paths.
  *
  * Client file: `clients/<client>/prompt-layer.md`
  * Store file: `clients/<client>/prompt-layer-<store>.md`
  *
- * Those paths are canonical here. Cos is recording the store path in prompt-layer.md.
- * This package does not rewrite the vendored copy of that file.
+ * Both paths are canonical. Version 1.0.1 of the vendored procedure names the store path.
  */
 
 export const PROMPT_LAYER_SLUG = "prompt-layer" as const;
-export const PROMPT_LAYER_VERSION = "1.0" as const;
+export const PROMPT_LAYER_VERSION = "1.0.1" as const;
 
 export const PROMPT_LAYER_PRECEDENCE = [
   {

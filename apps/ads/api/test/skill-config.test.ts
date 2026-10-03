@@ -29,9 +29,13 @@ describe("skill config import", () => {
     await closeDb();
   });
 
-  it("refuses a non-local database host", () => {
-    expect(() => assertLocalDatabase("postgres://user:pass@ep-example.neon.tech/cerevex")).toThrow(/non-local/);
-    expect(() => assertLocalDatabase("postgres://tharros:tharros@127.0.0.1:54329/tharros")).not.toThrow();
+  it("uses the shared test-database guard for the effective host", () => {
+    const env = {};
+    expect(() => assertLocalDatabase("postgres://u:p@localhost/db?host=ep-example.neon.tech", env)).toThrow(/not local/);
+    expect(() => assertLocalDatabase("postgres://u:p@shop.local/cerevex", env)).toThrow(/not local/);
+    expect(() => assertLocalDatabase("postgres://u:p@[::1]/cerevex", env)).not.toThrow();
+    expect(() => assertLocalDatabase("postgres://u:p@LOCALHOST/cerevex", env)).not.toThrow();
+    expect(() => assertLocalDatabase("postgres://tharros:tharros@127.0.0.1:54329/tharros", env)).not.toThrow();
   });
 
   it("links by alias, including a row named KC Prestige HVAC", () => {
@@ -153,6 +157,120 @@ describe("skill config import", () => {
         )
       `),
     ).rejects.toThrow();
+  });
+
+  it("binds Adam on the client workspace and refuses another workspace owner", async () => {
+    const db = getDb();
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.name, "Tharros Media"),
+    });
+    if (!workspace) throw new Error("Seed workspace missing");
+    const [adam] = await db
+      .select({ userId: memberships.userId })
+      .from(memberships)
+      .where(and(eq(memberships.workspaceId, workspace.id), eq(memberships.role, "owner")));
+    if (!adam) throw new Error("Seed owner missing");
+
+    const otherEmail = "skill-config-other-owner@example.com";
+    await db.delete(users).where(eq(users.email, otherEmail));
+    const [otherUser] = await db
+      .insert(users)
+      .values({
+        email: otherEmail,
+        name: "Other Owner",
+        passwordHash: "not-a-real-hash",
+      })
+      .returning();
+    const existingOther = await db.query.workspaces.findFirst({
+      where: eq(workspaces.name, "Skill Config Fixture Agency"),
+    });
+    const [insertedWorkspace] = existingOther
+      ? []
+      : await db
+          .insert(workspaces)
+          .values({ name: "Skill Config Fixture Agency", applyKillSwitch: true })
+          .returning();
+    const otherWorkspace = existingOther ?? insertedWorkspace;
+    if (!otherUser || !otherWorkspace) throw new Error("Failed to insert the other owner");
+
+    const previousUserId = process.env.APPROVAL_OWNER_USER_ID;
+    try {
+      await db.insert(memberships).values({
+        userId: otherUser.id,
+        workspaceId: otherWorkspace.id,
+        role: "owner",
+      });
+      const bound = await importSkillConfigBundle(db, importProfiles());
+      expect(bound.approvalOwnerUserId).toBe(adam.userId);
+      expect(bound.approvalOwnerUserId).not.toBe(otherUser.id);
+
+      await db
+        .update(memberships)
+        .set({ role: "operator" })
+        .where(and(eq(memberships.userId, adam.userId), eq(memberships.workspaceId, workspace.id)));
+      await db.insert(memberships).values({
+        userId: otherUser.id,
+        workspaceId: workspace.id,
+        role: "owner",
+      });
+      await expect(importSkillConfigBundle(db, importProfiles())).rejects.toThrow(
+        /Refusing to bind another workspace owner/,
+      );
+      const kept = await db
+        .select({ approvalOwnerUserId: skillClientConfigs.approvalOwnerUserId })
+        .from(skillClientConfigs)
+        .where(eq(skillClientConfigs.slug, "got-ductless"));
+      expect(kept[0]?.approvalOwnerUserId).toBe(adam.userId);
+
+      await db
+        .update(memberships)
+        .set({ role: "owner" })
+        .where(and(eq(memberships.userId, adam.userId), eq(memberships.workspaceId, workspace.id)));
+      await db
+        .delete(memberships)
+        .where(and(eq(memberships.userId, otherUser.id), eq(memberships.workspaceId, workspace.id)));
+
+      process.env.APPROVAL_OWNER_USER_ID = otherUser.id;
+      const explicit = await importSkillConfigBundle(db, importProfiles());
+      expect(explicit.approvalOwnerUserId).toBe(otherUser.id);
+
+      process.env.APPROVAL_OWNER_USER_ID = "not-a-uuid";
+      await expect(importSkillConfigBundle(db, importProfiles())).rejects.toThrow(/not a uuid/);
+    } finally {
+      if (previousUserId === undefined) delete process.env.APPROVAL_OWNER_USER_ID;
+      else process.env.APPROVAL_OWNER_USER_ID = previousUserId;
+      await db
+        .update(memberships)
+        .set({ role: "owner" })
+        .where(and(eq(memberships.userId, adam.userId), eq(memberships.workspaceId, workspace.id)));
+      await db.delete(memberships).where(eq(memberships.userId, otherUser.id));
+      await db.delete(users).where(eq(users.id, otherUser.id));
+      delete process.env.APPROVAL_OWNER_USER_ID;
+      if (previousUserId !== undefined) process.env.APPROVAL_OWNER_USER_ID = previousUserId;
+      await importSkillConfigBundle(db, importProfiles());
+    }
+  });
+
+  it("rolls back the store delete when the reinsert fails", async () => {
+    const db = getDb();
+    await importSkillConfigBundle(db, importProfiles());
+    const before = await db
+      .select()
+      .from(skillStoreConfigs)
+      .where(eq(skillStoreConfigs.clientSlug, "got-ductless"));
+    expect(before.map((store) => store.storeKey).sort()).toEqual(["got-ductless/maryland", "got-ductless/web"]);
+
+    const bundle = importProfiles();
+    const store = bundle.clients.find((client) => client.slug === "got-ductless")?.stores[0];
+    if (!store) throw new Error("Got Ductless store missing");
+    (store as { loop?: unknown }).loop = store;
+    await expect(importSkillConfigBundle(db, bundle)).rejects.toThrow(/circular/i);
+
+    const after = await db
+      .select()
+      .from(skillStoreConfigs)
+      .where(eq(skillStoreConfigs.clientSlug, "got-ductless"));
+    expect(after.map((row) => row.storeKey).sort()).toEqual(["got-ductless/maryland", "got-ductless/web"]);
   });
 
   it("leaves an unknown client unlinked when the bundle names one", async () => {

@@ -48,7 +48,10 @@ assert.equal(readBannerVersion(noSlop), "3.0.1-accepted");
 assert.equal(sha256(readFileSync(noSlopPath)), "1dd7722a7243fe28dbeac7191208f957565844f82b77f4e56bd1cc25320f8275");
 
 const prompt = manifest.entries.find((item) => item.slug === "prompt-layer");
-assert.equal(prompt?.version, "1.0");
+assert.equal(prompt?.version, "1.0.1");
+assert.equal(prompt?.files[0]?.sha256, "69e3d463c490519ad80603125d872ce5aa29cae20580cb3bb19c4108f73097e9");
+assert.ok(manifest.entries.some((item) => item.slug === "references/README"));
+assert.ok(manifest.entries.some((item) => item.slug === "verticals/README"));
 const loadedPrompt = loadPromptLayerRef(manifest);
 assert.match(loadedPrompt.body, /Profile facts/);
 assert.throws(() => loadedPrompt.read("../SKILL.md"), /Refusing to read/);

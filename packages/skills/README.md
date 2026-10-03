@@ -40,7 +40,7 @@ The layer paths are canonical:
 - Client: `clients/<client>/prompt-layer.md` (`clientPromptLayerPath`)
 - Store: `clients/<client>/prompt-layer-<store>.md` (`storePromptLayerPath`)
 
-`loadPromptLayerRef` exposes both helpers. A store key such as `got-ductless/maryland` maps to `clients/got-ductless/prompt-layer-maryland.md`.
+`loadPromptLayerRef` loads `prompt-layer@1.0.1` and exposes both helpers. A store key such as `got-ductless/maryland` maps to `clients/got-ductless/prompt-layer-maryland.md`. The vendored procedure names that store path.
 
 ## Profile import
 
