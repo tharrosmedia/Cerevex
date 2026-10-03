@@ -8,6 +8,7 @@ import { LegalLinks } from '@/components/legal-links';
 import SiteNav from '@/components/site-nav';
 import StoreSwitcher from '@/components/store-switcher';
 import { adsModuleOrigin } from '@/lib/module-origins';
+import { isProductionRuntime } from '@/lib/runtime-env';
 import { isPublicLegalPath } from '@/lib/public-paths';
 import { getWorkspaceProductSettings } from '@/src/lib/db/workspace-modules';
 
@@ -22,7 +23,7 @@ async function setActiveStore(formData: FormData) {
   const cookieStore = await cookies();
   cookieStore.set('activeStoreId', storeId, {
     path: '/',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProductionRuntime(),
     sameSite: 'lax',
   });
   const headerList = await headers();

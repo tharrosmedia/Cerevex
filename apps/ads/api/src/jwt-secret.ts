@@ -1,50 +1,40 @@
+import { JWT_LOCAL_FALLBACK, isProductionRuntime, signingSecretProblem } from "@cerevex/contracts";
+import { assertAdsApiProductionSecrets } from "@tharros/ads-shared/production-secrets";
+
 /** Pre-existing local fallback. Dev and test only. Production must set JWT_SECRET. */
-export const JWT_LOCAL_FALLBACK = "replace-with-a-long-random-local-secret";
+export { JWT_LOCAL_FALLBACK };
 
-function productionSignal(value: string | undefined): boolean {
-  return (value ?? "").trim().toLowerCase() === "production";
-}
-
-/** Trimmed JWT_SECRET, or null when it is unset, empty, whitespace, or the prod placeholder. */
+/** Trimmed JWT_SECRET, or null when production rejects it or the value is unset. */
 export function configuredJwtSecret(): string | null {
   const trimmed = (process.env.JWT_SECRET ?? "").trim();
-  if (!trimmed) return null;
-  if (isAdsProduction() && trimmed === JWT_LOCAL_FALLBACK) return null;
-  return trimmed;
-}
-
-/** NODE_ENV or either Railway name, after trim and case-folding. */
-export function isAdsProduction(): boolean {
-  return [process.env.NODE_ENV, process.env.RAILWAY_ENVIRONMENT, process.env.RAILWAY_ENVIRONMENT_NAME].some(
-    productionSignal,
-  );
+  const problem = signingSecretProblem(process.env.JWT_SECRET, [JWT_LOCAL_FALLBACK]);
+  if (!isProductionRuntime()) return problem === "missing" ? null : trimmed;
+  return problem ? null : trimmed;
 }
 
 /**
- * HMAC key. Production with an empty secret throws so sign and verify both fail closed.
- * Dev and test keep the local fallback.
+ * HMAC key. A production runtime with a missing, short, or placeholder secret throws
+ * so sign and verify both fail closed. Dev and test keep the local fallback when unset.
  */
 export function jwtSecretBytes(): Uint8Array {
   const configured = configuredJwtSecret();
   if (configured) return new TextEncoder().encode(configured);
-  if (isAdsProduction()) {
+  if (isProductionRuntime()) {
     throw new Error("JWT_SECRET is required in production. Refusing to sign or verify sessions.");
   }
   return new TextEncoder().encode(JWT_LOCAL_FALLBACK);
 }
 
-/** Call on ads-api boot. Exits the process when production has no usable JWT_SECRET. */
+/** Call on ads-api boot. Exits the process when a production runtime lacks usable ads secrets. */
 export function assertJwtSecretConfigured(): void {
-  if (!isAdsProduction()) return;
-  if (configuredJwtSecret()) return;
-  throw new Error("JWT_SECRET is required in production. Refusing to boot.");
+  assertAdsApiProductionSecrets();
 }
 
 export function warnIfJwtSecretUnset(log: (message: string) => void = console.warn): void {
   if (configuredJwtSecret()) return;
-  if (isAdsProduction()) {
+  if (isProductionRuntime()) {
     log(
-      "[auth] JWT_SECRET is unset or whitespace. Refusing to sign or verify sessions in production.",
+      "[auth] JWT_SECRET is missing, too short, or the local placeholder. Refusing to sign or verify sessions in production.",
     );
     return;
   }

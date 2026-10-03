@@ -193,8 +193,19 @@ export {
   OPS_ENV_REGISTRY,
   opsEnvSecrets,
   opsEnvCapabilityKills,
+  opsEnvRequiredInProduction,
 } from "./ops-env";
-export type { OpsEnvKind, OpsEnvEntry } from "./ops-env";
+export type { OpsEnvKind, OpsEnvEntry, OpsEnvRequiredIn } from "./ops-env";
+
+export {
+  MIN_SIGNING_SECRET_LENGTH,
+  JWT_LOCAL_FALLBACK,
+  LOCAL_DEV_TOKEN_KEY,
+  APP_PASSWORD_PLACEHOLDER,
+  isProductionRuntime,
+  signingSecretProblem,
+} from "./runtime-env";
+export type { SigningSecretProblem } from "./runtime-env";
 
 export {
   ADS_NAV_SHELLS,

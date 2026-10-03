@@ -2,6 +2,7 @@ import { listJobs } from '@/src/lib/db/jobs';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { listStores, getActiveStoreId, getStore } from '@/src/lib/db/stores';
+import { isProductionRuntime } from '@/lib/runtime-env';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ export default async function History() {
       if (storeId) {
         cookieStore.set('activeStoreId', storeId, {
           path: '/',
-          secure: process.env.NODE_ENV === 'production',
+          secure: isProductionRuntime(),
           sameSite: 'lax',
         });
       }

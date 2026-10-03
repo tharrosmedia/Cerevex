@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import {
   blockedUnfinishedCapabilityOns,
+  isProductionRuntime,
   parseWorkspaceModuleSettings,
   resolveWorkspaceCapabilities,
   settingsJsonWithBusinessType,
@@ -64,7 +65,7 @@ async function writeCookieSettings(settings: Record<string, unknown>) {
   jar.set(WORKSPACE_COOKIE, JSON.stringify(settings), {
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProductionRuntime(),
   });
 }
 

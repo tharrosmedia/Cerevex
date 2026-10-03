@@ -8,10 +8,18 @@ import type { CapabilityId } from "./capabilities";
 export const OPS_ENV_KINDS = ["capability_kill", "capability_companion", "identity", "secret"] as const;
 export type OpsEnvKind = (typeof OPS_ENV_KINDS)[number];
 
+/** Which process must have this value before production traffic. Workers do not use JWT_SECRET. */
+export type OpsEnvRequiredIn = "brain" | "ads-api" | "ads-workers";
+
 export type OpsEnvEntry = {
   env: string;
   kind: OpsEnvKind;
   capability?: CapabilityId;
+  /**
+   * Set when a production runtime must have this value.
+   * Brain and ads do not share one secret list: JWT_SECRET is ads-only, ENCRYPTION_KEY is Brain-only.
+   */
+  requiredInProduction?: OpsEnvRequiredIn | readonly OpsEnvRequiredIn[];
   help: string;
 };
 
@@ -58,21 +66,25 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "APP_PASSWORD",
     kind: "secret",
-    help: "Brain console session cookie only. Not ads JWT. Not a feature flag. Do not bolt ads RBAC onto this.",
+    requiredInProduction: "brain",
+    help: "Brain console session cookie only. Not ads JWT. Not a feature flag. Do not bolt ads RBAC onto this. Required in a production runtime. The .env.example placeholder change-this-to-secure-password is refused in any case. Dev and test may still use that placeholder.",
   },
   {
     env: "JWT_SECRET",
     kind: "secret",
-    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD. Required in production when NODE_ENV, RAILWAY_ENVIRONMENT, or RAILWAY_ENVIRONMENT_NAME is production after trim and case-folding. The value is trimmed. Unset, empty, whitespace, or the local placeholder exits ads-api boot with status 1. Dev and test use the built-in local fallback when the value is unset, empty, or whitespace, log a warning, and keep running. Never deploy the placeholder.",
+    requiredInProduction: "ads-api",
+    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD. Ads workers do not read it and do not require it to boot. Required on ads-api in a production runtime: NODE_ENV, RAILWAY_ENVIRONMENT, or RAILWAY_ENVIRONMENT_NAME equals production after trim and case-folding; or either Railway variable is any other non-empty environment name (staging and production-eu included); or CEREVEX_REQUIRE_SIGNING_SECRETS is 1, true, or yes. Cerevex Railway production is literally named production. The value is trimmed. Unset, empty, whitespace, shorter than 32 Unicode code points, or the local placeholder in any case exits ads-api boot with status 1. Dev and test use the built-in local fallback when the value is unset, empty, or whitespace, log a warning, and keep running. Never deploy the placeholder.",
   },
   {
     env: "ADS_INTERNAL_KEY",
     kind: "secret",
+    requiredInProduction: "brain",
     help: "Server-side Brain BFF → ads API service key (x-cerevex-internal-key). Acts as the seeded owner. Never expose to the browser. Header only — never a query param.",
   },
   {
     env: "GSC_OAUTH_STATE_SECRET",
     kind: "secret",
+    requiredInProduction: "brain",
     help: "HMAC secret for the Brain Search Console OAuth state parameter. Not a feature flag.",
   },
   {
@@ -81,9 +93,16 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
     help: "Optional ads JWT the Brain BFF can send as Bearer. Not a feature flag.",
   },
   {
+    env: "ENCRYPTION_KEY",
+    kind: "secret",
+    requiredInProduction: "brain",
+    help: "Brain encryption for sensitive DB fields. Required in a production runtime (same environment rule as JWT_SECRET). The raw value is never trimmed: surrounding whitespace fails closed and Brain will not boot. Not a feature flag.",
+  },
+  {
     env: "TOKEN_ENCRYPTION_KEY",
     kind: "secret",
-    help: "Encrypts OAuth tokens at rest in schema os. Not a feature flag.",
+    requiredInProduction: ["ads-api", "ads-workers"],
+    help: "Encrypts OAuth tokens at rest in schema os. Not a feature flag. Required on ads-api and ads workers in a production runtime (same environment rule as JWT_SECRET, including any non-empty Railway environment name and CEREVEX_REQUIRE_SIGNING_SECRETS=1, true, or yes). The raw value is never trimmed, so existing ciphertext stays decryptable. Leading or trailing whitespace fails closed at boot. Unset, empty, shorter than 32 Unicode code points, or the local placeholder in any case exits ads-api and ads-worker boot with status 1. Dev and test use that placeholder only when the value is unset.",
   },
   {
     env: "CALLRAIL_API_KEY",
@@ -128,4 +147,16 @@ export function opsEnvSecrets(): readonly OpsEnvEntry[] {
 
 export function opsEnvCapabilityKills(): readonly OpsEnvEntry[] {
   return OPS_ENV_REGISTRY.filter((entry) => entry.kind === "capability_kill" && entry.capability);
+}
+
+function entryRequiredIn(entry: OpsEnvEntry, target: OpsEnvRequiredIn): boolean {
+  const required = entry.requiredInProduction;
+  if (required == null) return false;
+  if (typeof required === "string") return required === target;
+  return required.includes(target);
+}
+
+/** Secrets the named process must have in a production runtime. Driven by requiredInProduction. */
+export function opsEnvRequiredInProduction(target: OpsEnvRequiredIn): readonly OpsEnvEntry[] {
+  return OPS_ENV_REGISTRY.filter((entry) => entryRequiredIn(entry, target));
 }
