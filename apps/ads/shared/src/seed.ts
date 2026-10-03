@@ -1,3 +1,4 @@
+import { assertSafeTestDatabase } from "./test-database";
 import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import { closeDb, getDb } from "./db";
@@ -9,6 +10,11 @@ const PILOT_CLIENTS = ["Got Ductless", "KC Prestige", "Elmar HVAC"] as const;
 
 async function main(): Promise<void> {
   loadEnv();
+  assertSafeTestDatabase({
+    databaseUrl: process.env.DATABASE_URL,
+    requireUrl: true,
+    purpose: "the ads database seed",
+  });
   const db = getDb();
 
   const ownerEmail = (process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com").toLowerCase();

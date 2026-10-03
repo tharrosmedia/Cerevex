@@ -9,6 +9,7 @@
     "./schema": "./src/schema.ts",
     "./inngest": "./src/inngest.ts",
     "./env": "./src/env.ts",
+    "./test-database": "./src/test-database.ts",
     "./crypto": "./src/crypto.ts",
     "./oauth": "./src/oauth.ts",
     "./credentials": "./src/credentials.ts",

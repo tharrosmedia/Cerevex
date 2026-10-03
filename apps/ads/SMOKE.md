@@ -64,14 +64,14 @@ Drizzle also creates journal schema **`drizzle`** (`__drizzle_migrations`). That
 | Side | App id | Serve route | Function IDs | Events |
 |---|---|---|---|---|
 | Brain SEO | `INNGEST_APP_ID` **or** `shopify-brain` | Next: `apps/brain/app/api/inngest/route.ts` → `{PUBLIC_URL}/api/inngest` | `seo-*` (+ helpers `update-job-status`, `log-event`) | `seo/*` |
-| Ads | `OS_INNGEST_APP_ID` **or else** `INNGEST_APP_ID` **or else** `cerevex-ads` | Worker: `apps/ads/workers/src/index.ts` → `http://<API_HOST>:<WORKER_PORT>/api/inngest` (local `:43182`) | `ads-*` plus one-release `os-*` / `meta-ads-*` / `google-ads-*` | `ads/*` plus one-release `os/*` / `meta/ads/*` / `google/ads/*` |
+| Ads | `OS_INNGEST_APP_ID` **or else** `cerevex-ads` (does not read `INNGEST_APP_ID`) | Worker: `apps/ads/workers/src/index.ts` → `http://<API_HOST>:<WORKER_PORT>/api/inngest` (local `:43182`) | `ads-*` plus one-release `os-*` / `meta-ads-*` / `google-ads-*` | `ads/*` plus one-release `os/*` / `meta/ads/*` / `google/ads/*` |
 
 Wiring:
 
 - Brain client: `jobs/seo/src/client.ts` — `id: process.env.INNGEST_APP_ID \|\| 'shopify-brain'`
 - Brain register: `apps/brain/src/inngest/index.ts` re-exports `@cerevex/jobs-seo`
 - Brain Cloud resync: `apps/brain/scripts/sync-inngest.ts` → `POST https://api.inngest.com/v2/apps/${appId}/syncs` with `{ url: PUBLIC_URL + '/api/inngest' }` (`npm run inngest:sync`)
-- OS client: `apps/ads/shared/src/inngest.ts` — `id: OS_INNGEST_APP_ID \|\| INNGEST_APP_ID \|\| "cerevex-ads"`
+- OS client: `apps/ads/shared/src/inngest.ts` — `id: OS_INNGEST_APP_ID \|\| "cerevex-ads"` (never `INNGEST_APP_ID`)
 - OS functions: `@cerevex/jobs-ads-shared` + `@cerevex/jobs-ads-meta` + `@cerevex/jobs-ads-google` (composed in `apps/ads/workers/src/register.ts`). Legacy `@cerevex/jobs-meta-ads` / `@cerevex/jobs-google-ads` re-export the platform packages and are not served a second time.
 - OS serve: worker `GET/POST` `/api/inngest` (Inngest `serve` from `inngest/node`)
 - Local OS Dev Server: `apps/ads/package.json` `dev` → `inngest-cli … --port 43183 -u http://127.0.0.1:43182/api/inngest`
@@ -303,7 +303,7 @@ curl -sS http://127.0.0.1:43182/health
 #   serve: $PUBLIC_URL/api/inngest
 #   npm run inngest:sync   # only with Brain PUBLIC_URL
 
-# OS — explicit app id so Brain INNGEST_APP_ID cannot win the fallback
+# OS — OS_INNGEST_APP_ID or the cerevex-ads default. Brain INNGEST_APP_ID is not read.
 export OS_INNGEST_APP_ID=cerevex-ads
 # Reuse Brain INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY when granted.
 # Do NOT set INNGEST_APP_ID=shopify-brain on the OS worker.
