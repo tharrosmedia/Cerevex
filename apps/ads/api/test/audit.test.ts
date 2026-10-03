@@ -46,6 +46,13 @@ describe("M3 audit → findings → recommendations", () => {
   });
 
   afterAll(async () => {
+    if (ownerToken) {
+      await app.request("/workspace", {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ applyKillSwitch: true }),
+      });
+    }
     await closeDb();
   });
 
@@ -63,6 +70,7 @@ describe("M3 audit → findings → recommendations", () => {
     const findings = body.findings as { title: string; body: { writes?: boolean } }[];
     const recs = body.recommendations as {
       id: string;
+      type: string;
       status: string;
       schemaVersion: string;
       proposedMutations: { execute?: boolean }[];
@@ -77,7 +85,9 @@ describe("M3 audit → findings → recommendations", () => {
     expect(JSON.stringify(body)).not.toContain("graph.facebook.com");
     expect(JSON.stringify(body)).not.toContain("googleads.googleapis.com");
     auditRunId = String((body.audit as { id: string }).id);
-    recommendationId = recs[0]!.id;
+    const reviewCpa = recs.find((row) => row.type === "review_cpa");
+    expect(reviewCpa?.id).toBeTruthy();
+    recommendationId = reviewCpa!.id;
 
     const stored = await getDb().query.recommendations.findFirst({
       where: eq(recommendations.id, recommendationId),
@@ -123,45 +133,47 @@ describe("M3 audit → findings → recommendations", () => {
   });
 
   it("blocks Approve while the kill switch is on, then applies after it is turned off", async () => {
-    const blocked = await app.request(`/recommendations/${recommendationId}/decide`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ action: "approve", note: "M5 — should block" }),
-    });
-    expect(blocked.status).toBe(409);
-    const blockedBody = await json(blocked);
-    expect(String(blockedBody.error)).toMatch(/paused/i);
+    try {
+      const blocked = await app.request(`/recommendations/${recommendationId}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve", note: "M5 — should block" }),
+      });
+      expect(blocked.status).toBe(409);
+      const blockedBody = await json(blocked);
+      expect(String(blockedBody.error)).toMatch(/paused/i);
 
-    const flip = await app.request("/workspace", {
-      method: "PATCH",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ applyKillSwitch: false }),
-    });
-    expect(flip.status).toBe(200);
+      const flip = await app.request("/workspace", {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ applyKillSwitch: false }),
+      });
+      expect(flip.status).toBe(200);
 
-    const decide = await app.request(`/recommendations/${recommendationId}/decide`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ action: "approve", note: "M5 smoke", inline: true }),
-    });
-    const decided = await json(decide);
-    expect(decide.status).toBe(200);
-    expect((decided.recommendation as { status: string }).status).toBe("authorized");
-    expect((decided.authorization as { id: string } | null)?.id).toBeTruthy();
-    expect((decided.applyJob as { status: string }).status).toBe("succeeded");
-    expect(decided.writes).toBe(true);
+      const decide = await app.request(`/recommendations/${recommendationId}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve", note: "M5 smoke", inline: true }),
+      });
+      const decided = await json(decide);
+      expect(decide.status).toBe(200);
+      expect((decided.recommendation as { status: string }).status).toBe("authorized");
+      expect((decided.authorization as { id: string } | null)?.id).toBeTruthy();
+      expect((decided.applyJob as { status: string }).status).toBe("succeeded");
+      expect(decided.writes).toBe(true);
 
-    const jobs = await getDb()
-      .select()
-      .from(applyJobs)
-      .where(eq(applyJobs.authorizationId, String((decided.authorization as { id: string }).id)));
-    expect(jobs[0]?.status).toBe("succeeded");
-
-    await app.request("/workspace", {
-      method: "PATCH",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ applyKillSwitch: true }),
-    });
+      const jobs = await getDb()
+        .select()
+        .from(applyJobs)
+        .where(eq(applyJobs.authorizationId, String((decided.authorization as { id: string }).id)));
+      expect(jobs[0]?.status).toBe("succeeded");
+    } finally {
+      await app.request("/workspace", {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ applyKillSwitch: true }),
+      });
+    }
   });
 
   it("never writes platforms on deny or snooze", async () => {
