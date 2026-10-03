@@ -41,11 +41,13 @@
   "scripts": {
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
+    "import:skill-config": "tsx src/skill-config-import-cli.ts",
     "drizzle:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@cerevex/contracts": "*",
+    "@cerevex/skills": "*",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.7",
