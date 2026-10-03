@@ -6,6 +6,7 @@ import { z } from "zod";
 import { canMutate, workspaceIdsFor, type AuthContext } from "@tharros/ads-shared";
 import { getDb } from "@tharros/ads-shared/db";
 import { clients } from "@tharros/ads-shared/schema";
+import { auditActor } from "./auth";
 import { requireMutableClient } from "./connect";
 import { writeAuditEvent } from "@tharros/ads-shared/audit";
 import type { AppEnv } from "./types";
@@ -80,8 +81,7 @@ export async function ensureSiteClient(auth: AuthContext, siteId: string, name: 
     const [adopted] = await db.update(clients).set({ siteId }).where(eq(clients.id, sameName.id)).returning();
     await writeAuditEvent({
       workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "client.site_linked",
       entityType: "client",
       entityId: adopted.id,
@@ -104,8 +104,7 @@ export async function ensureSiteClient(auth: AuthContext, siteId: string, name: 
   if (created) {
     await writeAuditEvent({
       workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "client.created_for_site",
       entityType: "client",
       entityId: created.id,
@@ -145,8 +144,7 @@ export function registerSiteRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHan
       .returning();
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: parsed.data.siteId ? "client.site_linked" : "client.site_unlinked",
       entityType: "client",
       entityId: client.id,

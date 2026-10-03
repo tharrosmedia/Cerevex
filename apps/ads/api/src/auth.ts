@@ -1,10 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { compare } from "bcryptjs";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { SignJWT, jwtVerify } from "jose";
 import type { AuthContext, Role } from "@tharros/ads-shared";
+import { SERVICE_ACTOR } from "@tharros/ads-shared/actor";
 import { getDb } from "@tharros/ads-shared/db";
-import { clientMemberships, memberships, users } from "@tharros/ads-shared/schema";
+import { clientMemberships, memberships, users, workspaces } from "@tharros/ads-shared/schema";
 
 const SESSION_COOKIE = "tharros_session";
 
@@ -69,6 +70,7 @@ export async function loadAuthContext(userId: string): Promise<AuthContext | nul
     .where(eq(clientMemberships.userId, userId));
 
   return {
+    principal: "user",
     user: { id: user.id, email: user.email, name: user.name },
     memberships: workspaceRows.map((row) => ({
       workspaceId: row.workspaceId,
@@ -93,7 +95,7 @@ export function extractInternalKey(header: string | undefined): string | null {
   return value ? value : null;
 }
 
-/** ADS_INTERNAL_KEY is a service secret (Brain BFF), not a feature flag. */
+/** ADS_INTERNAL_KEY is a service secret (Brain BFF), not a feature flag and not a user. */
 export function internalKeyMatches(provided: string | undefined | null): boolean {
   const expected = process.env.ADS_INTERNAL_KEY;
   if (!expected || !provided) return false;
@@ -103,15 +105,42 @@ export function internalKeyMatches(provided: string | undefined | null): boolean
   return timingSafeEqual(a, b);
 }
 
-export async function loadInternalOperatorAuth(): Promise<AuthContext | null> {
+export function isServicePrincipal(auth: AuthContext): boolean {
+  return auth.principal === "service" || auth.user == null;
+}
+
+/** Audit actor for this request. The service principal never carries a user id. */
+export function auditActor(auth: AuthContext): { actorType: "user" | "service"; actorId: string | null } {
+  if (isServicePrincipal(auth) || !auth.user) {
+    return { actorType: "service", actorId: null };
+  }
+  return { actorType: "user", actorId: auth.user.id };
+}
+
+/** Event payload reference. `service` is not a users.id. */
+export function actorRef(auth: AuthContext): string {
+  return auth.user?.id ?? SERVICE_ACTOR;
+}
+
+/**
+ * Internal-key requests run as the service principal.
+ * Visibility is every workspace, in id order. This does not look up a user or an owner.
+ */
+export async function loadServiceAuth(): Promise<AuthContext> {
   const db = getDb();
-  const [row] = await db
-    .select({ userId: memberships.userId })
-    .from(memberships)
-    .where(eq(memberships.role, "owner"))
-    .limit(1);
-  if (!row) return null;
-  return loadAuthContext(row.userId);
+  const workspaceRows = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .orderBy(asc(workspaces.id));
+  return {
+    principal: "service",
+    user: null,
+    memberships: workspaceRows.map((row) => ({
+      workspaceId: row.id,
+      role: "operator" satisfies Role,
+    })),
+    clientMemberships: [],
+  };
 }
 
 export { and, eq };
