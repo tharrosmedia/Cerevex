@@ -200,7 +200,7 @@ Expected public tables (Brain migrations `0001`–`0010`):
 
 ### 2. Do not apply OS migrations from this checklist
 
-This checklist has no production migrate command. `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
+This checklist does not apply OS migrations. The only production migrate command is in the ads README (Production migrate). `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
 
 Manual SQL equivalent (if you use `psql` instead of the migrator):
 

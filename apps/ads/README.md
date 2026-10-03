@@ -58,7 +58,7 @@ Or from this directory: `npm run db:up && npm run db:migrate && npm run db:seed 
 
 ## Migration ledger
 
-`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. This README does not contain a production migrate command. `ads:db:migrate` and the Bun one-shot are local or other non-production only. Migrate refuses when schema `os` already has tables but `os.__drizzle_migrations` is missing or empty, including a database whose rows are still in `drizzle.__drizzle_migrations`. For that local or other non-production database, create the os ledger if needed and copy it once, then run migrate again:
+`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. The only production migrate command is [Production migrate](#production-migrate). `ads:db:migrate` and the Bun one-shot are local or other non-production only. Migrate refuses when schema `os` already has tables but `os.__drizzle_migrations` is missing or empty, including a database whose rows are still in `drizzle.__drizzle_migrations`. For that local or other non-production database, create the os ledger if needed and copy it once, then run migrate again:
 
 ```sql
 CREATE TABLE IF NOT EXISTS os.__drizzle_migrations (
@@ -77,6 +77,8 @@ npm run ledger --workspace=@tharros/ads-shared
 
 SQL in `apps/ads/shared/drizzle/*.sql` is immutable once applied or merged to `main`. `.gitattributes` forces LF on those files. A hash mismatch prints the expected hash and the hash that was found. `ADS_MIGRATIONS_FOLDER` is honored only when `NODE_ENV=test`. Any other value is refused before that folder is read. Rollback SQL belongs in `apps/ads/shared/drizzle-rollbacks/`, outside the migrator folder.
 
+The hand steps below are for a local or other non-production database. Do not use them on production.
+
 If migrate refuses a tag whose `when` is at or below the latest applied `created_at`, changing that `when` in place will not apply it. Either:
 
 1. Apply `<tag>.sql` by hand with `search_path` set to `os, public`. Insert one row into `os.__drizzle_migrations`: `hash` is the sha256 hex of the file text, and `created_at` is the journal `when`. Then run migrate again.
@@ -94,6 +96,26 @@ Health:
 - API: `GET http://127.0.0.1:43180/health`
 - Worker: `GET http://127.0.0.1:43182/health`
 - Inngest Dev UI: http://127.0.0.1:43183
+
+## Production migrate
+
+One command applies pending `os` migrations to prod Neon. It does not seed, and it does not apply Brain `public` migrations. `npm run ads:db:migrate` and `bun artifacts/os-neon-migrate.ts` stay local or other non-production only.
+
+```bash
+PRODUCTION_NEON_HOST=<neon-host> DATABASE_URL='<prod-url>' npm run ads:db:migrate:prod -- --host <neon-host> --confirm
+```
+
+`<neon-host>` is the hostname only (no user, password, or path). It must equal `PRODUCTION_NEON_HOST` and the host in `DATABASE_URL`. The command checks those three names before it connects. It never prints `DATABASE_URL`. Put the URL in the environment only. Do not commit it.
+
+Before any write it opens a read-only transaction, lists `os.__drizzle_migrations`, and prints JSON: `applied` tags and the `pending` tags it would apply. A bundled migration is applied only when `artifacts/<tag>.sql` and the `sql` field in `artifacts/os-migrate-bundle.json` share one sha256. A ledger row counts as that migration only when both `hash` and `created_at` match the bundle. Anything else is drift or an unknown row: a hash on the right `created_at` that is not the artifact hash, a known hash on the wrong `created_at`, a row that matches nothing, a duplicate, or a later tag applied while an earlier tag is missing. Those cases print the problem and refuse before any write. This command does not create `os.__drizzle_migrations`.
+
+Each pending tag then runs in its own transaction: the SQL, then the ledger insert, then commit. A failure rolls that tag back. Tags already committed earlier in the same run stay applied. Running the command again applies only what the ledger still does not have. When every bundled tag is already applied, `--confirm` writes nothing.
+
+Replace `--confirm` with `--dry-run` to print the same listing and write nothing. Omitting both flags prints the listing and refuses to write.
+
+### Rollback
+
+This command does not run down migrations and does not delete ledger rows. Undo for a migration this command has committed is a Neon point-in-time restore, or a new forward migration whose `when` is after every applied `created_at`. Do not edit applied SQL, do not apply files with `psql`, and do not change `os.__drizzle_migrations` on production. SQL in `apps/ads/shared/drizzle-rollbacks/` is not applied here.
 
 ## Environment
 
