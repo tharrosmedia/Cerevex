@@ -11,9 +11,18 @@ import {
 
 loadEnv();
 
-/** Distinct app id locally so Brain seo-* sync is not overwritten. Share Inngest Cloud keys — do not provision a second org. */
+/** Ads app id. Live value is cerevex-ads. Never read Brain's INNGEST_APP_ID. */
+export const ADS_INNGEST_APP_ID_DEFAULT = "cerevex-ads";
+
+export function resolveAdsInngestAppId(env: Record<string, string | undefined> = process.env): string {
+  const configured = env.OS_INNGEST_APP_ID?.trim();
+  if (configured) return configured;
+  return ADS_INNGEST_APP_ID_DEFAULT;
+}
+
+/** Distinct app id so Brain seo-* sync is not overwritten. Share Inngest Cloud keys — do not provision a second org. */
 export const inngest = new Inngest({
-  id: process.env.OS_INNGEST_APP_ID || process.env.INNGEST_APP_ID || "cerevex-ads",
+  id: resolveAdsInngestAppId(),
 });
 
 export { EVENTS };

@@ -89,5 +89,8 @@ const clientSrc = readFileSync(fileURLToPath(new URL("../../shared/src/inngest.t
 if (!clientSrc.includes("OS_INNGEST_APP_ID") || !clientSrc.includes('"cerevex-ads"')) {
   throw new Error("ads Inngest client no longer defaults to cerevex-ads via OS_INNGEST_APP_ID");
 }
+if (clientSrc.includes("process.env.INNGEST_APP_ID")) {
+  throw new Error("ads Inngest client must not read INNGEST_APP_ID");
+}
 
 console.log(JSON.stringify({ ok: true, appId: "cerevex-ads", functions: FUNCTION_IDS }, null, 2));
