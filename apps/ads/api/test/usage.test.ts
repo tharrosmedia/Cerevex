@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
-import { usagePeriodKey } from "@cerevex/contracts";
+import { monthlyLimitMessage, usagePeriodKey } from "@cerevex/contracts";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { clients, locations, usageEvents, workspaces } from "@tharros/ads-shared/schema";
@@ -16,7 +16,6 @@ import {
 
 loadEnv();
 
-const JUNE = new Date("2026-06-15T16:00:00.000Z");
 const NAMES = [
   "Usage Period",
   "Usage Cap",
@@ -24,6 +23,7 @@ const NAMES = [
   "Usage Paid",
   "Usage Outcome",
   "Usage Path",
+  "Usage Saves",
 ];
 
 describe("usage month in America/New_York", () => {
@@ -41,6 +41,18 @@ describe("usage month in America/New_York", () => {
     expect(usagePeriodKey(new Date("2026-11-01T04:00:00.000Z"))).toBe("2026-11");
     expect(usagePeriodKey(new Date("2026-11-01T05:30:00.000Z"))).toBe("2026-11");
     expect(usagePeriodKey(new Date("2026-11-01T06:30:00.000Z"))).toBe("2026-11");
+  });
+
+  it("names the next 1st and the paid plan when the month is used up", () => {
+    expect(monthlyLimitMessage("creative_variations", new Date("2026-10-03T16:00:00.000Z"))).toBe(
+      "You've used all 20 creative variations this month. More on November 1, or move to the paid plan for unlimited.",
+    );
+    expect(monthlyLimitMessage("seo_jobs", new Date("2026-12-15T17:00:00.000Z"))).toBe(
+      "You've used all 10 SEO jobs this month. More on January 1, 2027, or move to the paid plan for unlimited.",
+    );
+    expect(monthlyLimitMessage("creative_variations", new Date("2026-10-03T16:00:00.000Z"))).not.toMatch(
+      /tenant|entitlement|\bcap\b/i,
+    );
   });
 });
 
@@ -61,6 +73,7 @@ describe("monthly usage counters", () => {
       ["Usage Paid", "paid"],
       ["Usage Outcome", "scholarship"],
       ["Usage Path", "scholarship"],
+      ["Usage Saves", "scholarship"],
     ] as const;
     for (const [name, plan] of plans) {
       const [row] = await db.insert(clients).values({ workspaceId, name, status: "active", plan }).returning();
@@ -78,34 +91,22 @@ describe("monthly usage counters", () => {
     expect(workspace?.applyKillSwitch).toBe(true);
   });
 
-  it("puts 23:59 and 00:00 ET in different months, including the DST months", async () => {
+  it("stamps the count on the server clock in the current Eastern month", async () => {
     const tenantId = ids["Usage Period"];
-    const stamps = [
-      ["mar-before", "2026-03-01T04:59:00.000Z", "2026-02"],
-      ["mar-after", "2026-03-01T05:00:00.000Z", "2026-03"],
-      ["apr-before", "2026-04-01T03:59:00.000Z", "2026-03"],
-      ["apr-after", "2026-04-01T04:00:00.000Z", "2026-04"],
-      ["nov-before", "2026-11-01T03:59:00.000Z", "2026-10"],
-      ["nov-after", "2026-11-01T04:00:00.000Z", "2026-11"],
-      ["nov-edt", "2026-11-01T05:30:00.000Z", "2026-11"],
-      ["nov-est", "2026-11-01T06:30:00.000Z", "2026-11"],
-    ] as const;
-    for (const [itemId, iso, period] of stamps) {
-      const recorded = await recordUsage({
-        tenantId,
-        kind: "seo_jobs",
-        itemId,
-        outcome: "created",
-        createdAt: new Date(iso),
-      });
-      expect(recorded.periodKey).toBe(period);
-      expect(recorded.counted).toBe(true);
-    }
-    expect((await getUsage(tenantId, new Date("2026-03-01T04:59:00.000Z"))).seoJobs.used).toBe(1);
-    expect((await getUsage(tenantId, new Date("2026-03-15T16:00:00.000Z"))).seoJobs.used).toBe(2);
-    expect((await getUsage(tenantId, new Date("2026-04-15T16:00:00.000Z"))).seoJobs.used).toBe(1);
-    expect((await getUsage(tenantId, new Date("2026-10-15T16:00:00.000Z"))).seoJobs.used).toBe(1);
-    expect((await getUsage(tenantId, new Date("2026-11-15T16:00:00.000Z"))).seoJobs.used).toBe(3);
+    const before = Date.now();
+    const recorded = await recordUsage({
+      tenantId,
+      kind: "seo_jobs",
+      itemId: "server-clock",
+      outcome: "created",
+    });
+    expect(recorded.periodKey).toBe(usagePeriodKey(new Date()));
+    expect(recorded.counted).toBe(true);
+    const [row] = await getDb().select().from(usageEvents).where(eq(usageEvents.clientId, tenantId));
+    expect(row?.periodKey).toBe(usagePeriodKey(new Date()));
+    expect(row?.createdAt.getTime()).toBeGreaterThan(before - 5_000);
+    expect(row?.createdAt.getTime()).toBeLessThan(Date.now() + 5_000);
+    expect((await getUsage(tenantId)).seoJobs.used).toBe(1);
   });
 
   it("does not count rejected, duplicate, or merged items", async () => {
@@ -116,7 +117,6 @@ describe("monthly usage counters", () => {
         kind: "seo_jobs",
         itemId: outcome,
         outcome,
-        createdAt: JUNE,
       });
       expect(recorded.counted).toBe(false);
       expect(recorded.used).toBe(0);
@@ -126,10 +126,9 @@ describe("monthly usage counters", () => {
       kind: "seo_jobs",
       itemId: "kept",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(created.counted).toBe(true);
-    expect((await getUsage(tenantId, JUNE)).seoJobs.used).toBe(1);
+    expect((await getUsage(tenantId)).seoJobs.used).toBe(1);
     const events = await getDb().select().from(usageEvents).where(eq(usageEvents.clientId, tenantId));
     expect(events).toHaveLength(4);
     expect(events.filter((row) => row.counted)).toHaveLength(1);
@@ -142,14 +141,12 @@ describe("monthly usage counters", () => {
       kind: "creative_variations",
       itemId: "same-idea",
       outcome: "created",
-      createdAt: JUNE,
     });
     const retry = await recordUsage({
       tenantId,
       kind: "creative_variations",
       itemId: "same-idea",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(first.counted).toBe(true);
     expect(retry.counted).toBe(false);
@@ -161,19 +158,17 @@ describe("monthly usage counters", () => {
       kind: "creative_variations",
       itemId: "rejected-first",
       outcome: "rejected",
-      createdAt: JUNE,
     });
     const rewritten = await recordUsage({
       tenantId,
       kind: "creative_variations",
       itemId: "rejected-first",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(rejected.counted).toBe(false);
     expect(rewritten.alreadyRecorded).toBe(true);
     expect(rewritten.counted).toBe(false);
-    expect((await getUsage(tenantId, JUNE)).creativeVariations.used).toBe(1);
+    expect((await getUsage(tenantId)).creativeVariations.used).toBe(1);
   });
 
   it("counts a paid tenant with no limit", async () => {
@@ -184,13 +179,12 @@ describe("monthly usage counters", () => {
         kind: "creative_variations",
         itemId: `paid-${i}`,
         outcome: "created",
-        createdAt: JUNE,
       });
     }
-    const usage = await getUsage(tenantId, JUNE);
+    const usage = await getUsage(tenantId);
     expect(usage.plan).toBe("paid");
     expect(usage.creativeVariations).toMatchObject({ used: 25, limit: null, withinCap: true });
-    await expect(assertWithinCap(tenantId, "creative_variations", JUNE)).resolves.toMatchObject({ used: 25 });
+    await expect(assertWithinCap(tenantId, "creative_variations")).resolves.toMatchObject({ used: 25 });
   });
 
   it("reports scholarship usage at 19, 20, and 21 without refusing the 21st", async () => {
@@ -201,10 +195,9 @@ describe("monthly usage counters", () => {
         kind: "creative_variations",
         itemId: `cap-${i}`,
         outcome: "created",
-        createdAt: JUNE,
       });
     }
-    expect(await assertWithinCap(tenantId, "creative_variations", JUNE)).toMatchObject({
+    expect(await assertWithinCap(tenantId, "creative_variations")).toMatchObject({
       used: 19,
       limit: 20,
       withinCap: true,
@@ -215,22 +208,20 @@ describe("monthly usage counters", () => {
       kind: "creative_variations",
       itemId: "cap-20",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(twentieth).toMatchObject({ counted: true, used: 20, limit: 20, withinCap: false });
-    await expect(assertWithinCap(tenantId, "creative_variations", JUNE)).rejects.toBeInstanceOf(UsageLimitError);
+    await expect(assertWithinCap(tenantId, "creative_variations")).rejects.toBeInstanceOf(UsageLimitError);
 
     const twentyFirst = await recordUsage({
       tenantId,
       kind: "creative_variations",
       itemId: "cap-21",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(twentyFirst).toMatchObject({ counted: true, used: 21, withinCap: false });
-    expect((await getUsage(tenantId, JUNE)).creativeVariations.used).toBe(21);
+    expect((await getUsage(tenantId)).creativeVariations.used).toBe(21);
     const view = await getEntitlements(tenantId);
-    expect(view.monthly.creativeVariations).toMatchObject({ limit: 20, used: 0 });
+    expect(view.monthly.creativeVariations).toMatchObject({ limit: 20, used: 21 });
     expect(view.monthly.seoJobs).toMatchObject({ limit: 10, used: 0 });
   });
 
@@ -242,7 +233,6 @@ describe("monthly usage counters", () => {
         kind: "creative_variations",
         itemId: `race-${i}`,
         outcome: "created",
-        createdAt: JUNE,
       });
     }
     const [left, right] = await Promise.all([
@@ -251,20 +241,18 @@ describe("monthly usage counters", () => {
         kind: "creative_variations",
         itemId: "race-left",
         outcome: "created",
-        createdAt: JUNE,
       }),
       recordUsage({
         tenantId,
         kind: "creative_variations",
         itemId: "race-right",
         outcome: "created",
-        createdAt: JUNE,
       }),
     ]);
     expect(left.counted).toBe(true);
     expect(right.counted).toBe(true);
     expect(new Set([left.used, right.used])).toEqual(new Set([20, 21]));
-    expect((await getUsage(tenantId, JUNE)).creativeVariations.used).toBe(21);
+    expect((await getUsage(tenantId)).creativeVariations.used).toBe(21);
   });
 
   it("counts a saved creative variation once, and an SEO job through the store link", async () => {
@@ -288,7 +276,6 @@ describe("monthly usage counters", () => {
       kind: "creative_variations",
       itemId: saved.ideaId,
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(again.alreadyRecorded).toBe(true);
     expect((await getUsage(tenantId, new Date())).creativeVariations.used).toBe(1);
@@ -300,7 +287,6 @@ describe("monthly usage counters", () => {
       kind: "seo_jobs",
       itemId: "job-1",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(fromSite).toMatchObject({ counted: true, used: 1 });
     const retry = await recordUsageForStore({
@@ -308,7 +294,6 @@ describe("monthly usage counters", () => {
       kind: "seo_jobs",
       itemId: "job-1",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(retry).toMatchObject({ counted: false, alreadyRecorded: true, used: 1 });
 
@@ -324,7 +309,6 @@ describe("monthly usage counters", () => {
       kind: "seo_jobs",
       itemId: "job-2",
       outcome: "created",
-      createdAt: JUNE,
     });
     expect(fromLocation).toMatchObject({ counted: true, used: 1, limit: null });
     expect(await recordUsageForStore({
@@ -332,7 +316,59 @@ describe("monthly usage counters", () => {
       kind: "seo_jobs",
       itemId: "job-3",
       outcome: "created",
-      createdAt: JUNE,
     })).toEqual({ skipped: true, reason: "no_client" });
+  });
+
+  it("picks the same client when two active locations share a store id", async () => {
+    const left = ids["Usage Saves"];
+    const right = ids["Usage Race"];
+    const expected = [left, right].sort()[0];
+    await getDb().insert(locations).values([
+      { workspaceId, clientId: left, storeId: "usage-store-shared", status: "active" },
+      { workspaceId, clientId: right, storeId: "usage-store-shared", status: "active" },
+    ]);
+    const recorded = await recordUsageForStore({
+      storeId: "usage-store-shared",
+      kind: "seo_jobs",
+      itemId: "shared-store-job",
+      outcome: "created",
+    });
+    expect(recorded).toMatchObject({ counted: true });
+    const again = await recordUsageForStore({
+      storeId: "usage-store-shared",
+      kind: "seo_jobs",
+      itemId: "shared-store-job-2",
+      outcome: "created",
+    });
+    expect(again).toMatchObject({ counted: true });
+    const usage = await getUsage(expected);
+    expect(usage.seoJobs.used).toBe(2);
+    const other = expected === left ? right : left;
+    expect((await getUsage(other)).seoJobs.used).toBe(0);
+  });
+
+  it("saves 12 creative variations at once with no deadlocks and an exact count", async () => {
+    const tenantId = ids["Usage Saves"];
+    const alternative = {
+      headline: "Same-week visit",
+      body: "Factory-trained techs.",
+      offer: "",
+      videoScript: "Open on the home.",
+      assets: [],
+      targetPlatform: "meta" as const,
+      writes: false as const,
+    };
+    const saved = await Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        saveGrokIdea({
+          workspaceId,
+          clientId: tenantId,
+          title: `Variation ${index}`,
+          alternative,
+        }),
+      ),
+    );
+    expect(new Set(saved.map((row) => row.ideaId)).size).toBe(12);
+    expect((await getUsage(tenantId)).creativeVariations.used).toBe(12);
   });
 });

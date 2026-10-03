@@ -31,6 +31,7 @@ export {
   monthlyUsageLimit,
   isWithinMonthlyLimit,
   monthlyLimitMessage,
+  nextUsageResetLabel,
   usagePeriodKey,
   isLocationStatus,
   isActiveAdAccountStatus,

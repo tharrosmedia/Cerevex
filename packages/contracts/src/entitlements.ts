@@ -150,11 +150,25 @@ export function isWithinMonthlyLimit(used: number, limit: number | null): boolea
   return limit === null || used < limit;
 }
 
-export function monthlyLimitMessage(kind: MonthlyCapId): string {
-  if (kind === "creative_variations") {
-    return "This Scholarship includes 20 creative variations this month.";
-  }
-  return "This Scholarship includes 10 SEO jobs this month.";
+/** The next 1st of the month in America/New_York, written as a plain date. */
+export function nextUsageResetLabel(at: Date = new Date()): string {
+  const [yearText, monthText] = usagePeriodKey(at).split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const onThatDay = new Date(Date.UTC(nextYear, nextMonth - 1, 1, 17, 0, 0));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: USAGE_TIME_ZONE,
+    month: "long",
+    day: "numeric",
+    ...(nextYear !== year ? { year: "numeric" as const } : {}),
+  }).format(onThatDay);
+}
+
+export function monthlyLimitMessage(kind: MonthlyCapId, at: Date = new Date()): string {
+  const amount = kind === "creative_variations" ? "20 creative variations" : "10 SEO jobs";
+  return `You've used all ${amount} this month. More on ${nextUsageResetLabel(at)}, or move to the paid plan for unlimited.`;
 }
 
 /**

@@ -18,7 +18,7 @@ import {
   type PlanId,
   type UsageOutcome,
 } from "@cerevex/contracts";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { clients, locations, usageCounters } from "./schema";
 
@@ -55,7 +55,6 @@ export type UsageRecordInput = {
   kind: MonthlyCapId;
   itemId: string;
   outcome: UsageOutcome;
-  createdAt?: Date;
 };
 
 export type UsageRecordResult = UsageSlice & {
@@ -67,6 +66,7 @@ type UsageWriteRow = {
   inserted: boolean;
   counted: boolean;
   used: number | null;
+  period_key: string;
 };
 
 function slice(kind: MonthlyCapId, plan: PlanId, used: number, periodKey: string): UsageSlice {
@@ -80,19 +80,19 @@ function slice(kind: MonthlyCapId, plan: PlanId, used: number, periodKey: string
   };
 }
 
-async function loadClient(
-  tx: Tx,
-  tenantId: string,
-  lock = false,
-): Promise<{ id: string; workspaceId: string; plan: PlanId }> {
-  const query = tx
+async function loadClient(tx: Tx, tenantId: string): Promise<{ id: string; workspaceId: string; plan: PlanId }> {
+  const [client] = await tx
     .select({ id: clients.id, workspaceId: clients.workspaceId, plan: clients.plan })
     .from(clients)
     .where(eq(clients.id, tenantId));
-  const [client] = await (lock ? query.for("update") : query);
   if (!client) throw new Error("Client not found");
   if (!isPlanId(client.plan)) throw new Error("This account's plan isn't recognized.");
   return { id: client.id, workspaceId: client.workspaceId, plan: client.plan };
+}
+
+/** Serializes usage writes for one client. Re-entrant inside the same transaction. */
+export async function lockUsage(tx: Tx, tenantId: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('os.usage'), hashtext(${tenantId}::text))`);
 }
 
 function rowsOf(result: unknown): UsageWriteRow[] {
@@ -107,35 +107,40 @@ async function writeUsage(tx: Tx, input: UsageRecordInput): Promise<UsageRecordR
   const itemId = input.itemId.trim();
   if (!itemId) throw new Error("A usage item id is required.");
   if (!isUsageOutcome(input.outcome)) throw new Error("That usage outcome isn't recognized.");
-  const createdAt = input.createdAt ?? new Date();
-  const periodKey = usagePeriodKey(createdAt);
   const counted = usageOutcomeCounts(input.outcome);
   // Usage-specific key so a count does not wait behind every location write.
-  // READ COMMITTED sees the other session's commit after this wait. The
-  // counter upsert itself stays atomic (used = used + 1).
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('os.usage'), hashtext(${input.tenantId}::text))`);
-  const client = await loadClient(tx, input.tenantId, true);
+  // Do not FOR UPDATE the client here. Idea inserts already hold KEY SHARE on
+  // that row, and a stronger lock deadlocks a second save. READ COMMITTED
+  // sees the other session's commit after this wait. The counter upsert stays
+  // atomic (used = used + 1). The month comes from the database clock.
+  await lockUsage(tx, input.tenantId);
+  const client = await loadClient(tx, input.tenantId);
 
   const written = await tx.execute(sql`
-    WITH inserted AS (
+    WITH clock AS (
+      SELECT now() AS created_at,
+             to_char(now() AT TIME ZONE 'America/New_York', 'YYYY-MM') AS period_key
+    ),
+    inserted AS (
       INSERT INTO os.usage_events (
         workspace_id, client_id, kind, item_id, outcome, counted, period_key, created_at
-      ) VALUES (
+      )
+      SELECT
         ${client.workspaceId},
         ${client.id},
         ${input.kind},
         ${itemId},
         ${input.outcome},
         ${counted},
-        ${periodKey},
-        ${createdAt}
-      )
+        clock.period_key,
+        clock.created_at
+      FROM clock
       ON CONFLICT (client_id, kind, item_id) DO NOTHING
       RETURNING counted
     ),
     bumped AS (
       INSERT INTO os.usage_counters (client_id, workspace_id, kind, period_key, used)
-      SELECT ${client.id}, ${client.workspaceId}, ${input.kind}, ${periodKey}, 1
+      SELECT ${client.id}, ${client.workspaceId}, ${input.kind}, (SELECT period_key FROM clock), 1
       FROM inserted
       WHERE counted
       ON CONFLICT (client_id, kind, period_key)
@@ -145,13 +150,14 @@ async function writeUsage(tx: Tx, input: UsageRecordInput): Promise<UsageRecordR
     SELECT
       EXISTS (SELECT 1 FROM inserted) AS inserted,
       COALESCE((SELECT counted FROM inserted), false) AS counted,
+      (SELECT period_key FROM clock) AS period_key,
       COALESCE(
         (SELECT used FROM bumped),
         (
           SELECT c.used FROM os.usage_counters c
           WHERE c.client_id = ${client.id}
             AND c.kind = ${input.kind}
-            AND c.period_key = ${periodKey}
+            AND c.period_key = (SELECT period_key FROM clock)
         ),
         0
       ) AS used
@@ -159,6 +165,7 @@ async function writeUsage(tx: Tx, input: UsageRecordInput): Promise<UsageRecordR
   const row = rowsOf(written)[0];
   if (!row) throw new Error("Usage count did not return a row.");
   const used = row.used == null ? 0 : Number(row.used);
+  const periodKey = row.period_key || usagePeriodKey(new Date());
   return {
     ...slice(input.kind, client.plan, used, periodKey),
     counted: Boolean(row?.inserted) && Boolean(row?.counted),
@@ -174,21 +181,23 @@ export async function recordUsage(input: UsageRecordInput, tx?: Tx): Promise<Usa
 
 /**
  * SEO and other Brain jobs know a store id, not an OS client id.
- * Site link wins. An active location is the fallback. No matching client
- * means there is nothing to count, and the caller should still keep the job.
+ * Site link wins. An active location is the fallback. When more than one
+ * client matches, the lowest client id wins, so the choice does not change
+ * between calls. No matching client means there is nothing to count, and the
+ * caller should still keep the job. The month is stamped on the server.
  */
 export async function recordUsageForStore(input: {
   storeId: string;
   kind: MonthlyCapId;
   itemId: string;
   outcome: UsageOutcome;
-  createdAt?: Date;
 }): Promise<UsageRecordResult | { skipped: true; reason: "no_client" }> {
   const db = getDb();
   const [bySite] = await db
     .select({ id: clients.id })
     .from(clients)
     .where(eq(clients.siteId, input.storeId))
+    .orderBy(asc(clients.id))
     .limit(1);
   if (bySite) {
     return recordUsage({
@@ -196,13 +205,13 @@ export async function recordUsageForStore(input: {
       kind: input.kind,
       itemId: input.itemId,
       outcome: input.outcome,
-      createdAt: input.createdAt,
     });
   }
   const [byLocation] = await db
     .select({ id: locations.clientId })
     .from(locations)
     .where(and(eq(locations.storeId, input.storeId), eq(locations.status, "active")))
+    .orderBy(asc(locations.clientId))
     .limit(1);
   if (!byLocation) return { skipped: true, reason: "no_client" };
   return recordUsage({
@@ -210,7 +219,6 @@ export async function recordUsageForStore(input: {
     kind: input.kind,
     itemId: input.itemId,
     outcome: input.outcome,
-    createdAt: input.createdAt,
   });
 }
 

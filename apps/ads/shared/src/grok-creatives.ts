@@ -10,7 +10,7 @@ import { getDb } from "./db";
 import { platformLabel } from "./creative-analysis";
 import { brainstormIdeas, brainstormSessions, recommendations } from "./schema";
 import type { Platform } from "./types";
-import { recordUsage } from "./usage";
+import { lockUsage, recordUsage } from "./usage";
 
 const XAI_BASE = "https://api.x.ai/v1";
 
@@ -180,6 +180,7 @@ export async function saveGrokIdea(input: {
 }): Promise<{ sessionId: string; ideaId: string; alternative: GrokAlternative }> {
   const db = getDb();
   return db.transaction(async (tx) => {
+    await lockUsage(tx, input.clientId);
     const [session] = await tx
       .insert(brainstormSessions)
       .values({
@@ -210,7 +211,6 @@ export async function saveGrokIdea(input: {
         kind: "creative_variations",
         itemId: idea.id,
         outcome: "created",
-        createdAt: idea.createdAt,
       },
       tx,
     );

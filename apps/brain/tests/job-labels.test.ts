@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
+import { countsAsSeoUsage, stableUsageJobId } from '../src/lib/db/jobs';
 import { jobInputDetails, jobInputLabel, jobStatusLabel, jobStatusTone, jobSubject, jobTypeLabel } from '../lib/job-labels';
+
+assert.equal(countsAsSeoUsage('seo', 'collection'), true);
+assert.equal(countsAsSeoUsage('seo', 'seo.wordpress'), false);
+assert.equal(countsAsSeoUsage('ads', 'collection'), false);
+assert.equal(stableUsageJobId('evt-1'), stableUsageJobId('evt-1'));
+assert.notEqual(stableUsageJobId('evt-1'), stableUsageJobId('evt-2'));
+assert.match(stableUsageJobId('evt-1'), /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 assert.equal(jobTypeLabel('seo.generate'), 'SEO create');
 assert.equal(jobTypeLabel('seo.wordpress'), 'WordPress change');
