@@ -10,6 +10,8 @@
     "./inngest": "./src/inngest.ts",
     "./env": "./src/env.ts",
     "./test-database": "./src/test-database.ts",
+    "./migration-ledger": "./src/migration-ledger.ts",
+    "./migration-journal": "./src/migration-journal.ts",
     "./crypto": "./src/crypto.ts",
     "./oauth": "./src/oauth.ts",
     "./credentials": "./src/credentials.ts",
@@ -36,22 +38,27 @@
     "./grok-creatives": "./src/grok-creatives.ts",
     "./attribution": "./src/attribution.ts",
     "./connector-settings": "./src/connector-settings.ts",
-    "./planning-settings": "./src/planning-settings.ts"
+    "./planning-settings": "./src/planning-settings.ts",
+    "./server": "./src/server.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts",
+    "ledger": "tsx src/query-migration-ledger.ts",
+    "seed": "tsx --conditions=react-server src/seed.ts",
+    "import:skill-config": "tsx --conditions=react-server src/skill-config-import-cli.ts",
     "drizzle:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@cerevex/contracts": "*",
+    "@cerevex/skills": "*",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.7",
     "inngest": "^4.20.0",
     "pg": "^8.23.0",
     "pg-connection-string": "^2.14.0",
+    "server-only": "0.0.1",
     "zod": "^4.1.11"
   },
   "devDependencies": {

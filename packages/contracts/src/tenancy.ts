@@ -5,6 +5,9 @@
  * - One Client maps to N stores (`store_id`) — Shopify or WordPress.
  * - OS AdAccounts hang off Client (`clientId`), never `store_id`.
  * - Brain keeps `store_id` keys until a later optional `client_id` backfill.
+ * - Skill client/store config (Brief 1.0 §3) lives in schema `os` as
+ *   `skill_client_configs` / `skill_store_configs` (`@cerevex/skills` import).
+ *   Store rows keep a nullable `brain_store_id` and do not FK into Brain `public`.
  * - A WordPress site is a store with connector_type=wordpress.
  */
 

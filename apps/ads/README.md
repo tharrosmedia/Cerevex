@@ -56,6 +56,32 @@ npm run ads:dev          # api :43180, web :43181, worker :43182, Inngest Dev :4
 
 Or from this directory: `npm run db:up && npm run db:migrate && npm run db:seed && npm run dev` (still uses root workspaces).
 
+## Migration ledger
+
+`ads:db:migrate` records applied files in `os.__drizzle_migrations`. That is the ledger prod already has. There is no `drizzle` schema. This README does not contain a production migrate command. `ads:db:migrate` and the Bun one-shot are local or other non-production only. Migrate refuses when schema `os` already has tables but `os.__drizzle_migrations` is missing or empty, including a database whose rows are still in `drizzle.__drizzle_migrations`. For that local or other non-production database, create the os ledger if needed and copy it once, then run migrate again:
+
+```sql
+CREATE TABLE IF NOT EXISTS os.__drizzle_migrations (
+  id SERIAL PRIMARY KEY,
+  hash text NOT NULL,
+  created_at bigint
+);
+INSERT INTO os.__drizzle_migrations (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;
+```
+
+Do not run that copy against production. To list a local ledger, the script only reads:
+
+```bash
+npm run ledger --workspace=@tharros/ads-shared
+```
+
+SQL in `apps/ads/shared/drizzle/*.sql` is immutable once applied or merged to `main`. `.gitattributes` forces LF on those files. A hash mismatch prints the expected hash and the hash that was found. `ADS_MIGRATIONS_FOLDER` is honored only when `NODE_ENV=test`. Any other value is refused before that folder is read. Rollback SQL belongs in `apps/ads/shared/drizzle-rollbacks/`, outside the migrator folder.
+
+If migrate refuses a tag whose `when` is at or below the latest applied `created_at`, changing that `when` in place will not apply it. Either:
+
+1. Apply `<tag>.sql` by hand with `search_path` set to `os, public`. Insert one row into `os.__drizzle_migrations`: `hash` is the sha256 hex of the file text, and `created_at` is the journal `when`. Then run migrate again.
+2. Re-tag it. Remove the skipped tag from the journal and delete that `.sql` from `apps/ads/shared/drizzle/`. Add a new tag whose `when` is after every journal `when` and after the latest applied `created_at`. Do not change the `when` of a tag that is already applied.
+
 Sign in at http://127.0.0.1:43181 as the seeded owner:
 
 - email: `SEED_OWNER_EMAIL` (default `adam@tharrosmedia.com`)
