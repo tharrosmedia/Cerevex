@@ -139,18 +139,22 @@ describe("migration journal schema", () => {
 
   it("applies only the missing migration on a prod-shaped ledger and does not create drizzle", async () => {
     const entries = journal();
-    expect(entries.map((entry) => entry.tag)).toEqual([
+    const prefix = [
       "0000_m1_spine",
       "0001_m2_connect",
       "0002_m5_apply",
       "0003_m51",
       "0004_site_clients",
       "0005_skill_config",
-    ]);
-    const applied = entries.slice(0, 5);
-    const pending = entries[5]!;
-    const ids = [1, 2, 4, 5, 3];
+      "0006_plan_entitlements",
+    ];
+    expect(entries.map((entry) => entry.tag).slice(0, prefix.length)).toEqual(prefix);
+    const applied = entries.slice(0, 6);
+    const pending = entries.find((entry) => entry.tag === "0006_plan_entitlements");
+    if (!pending) throw new Error("0006_plan_entitlements missing");
+    const ids = [1, 2, 4, 5, 3, 6];
     expect(applied[4]!.tag).toBe("0004_site_clients");
+    expect(applied[5]!.tag).toBe("0005_skill_config");
     expect(ids[4]).toBe(3);
 
     const databaseUrl = await createDatabase(`cerevex_schema_test_${process.pid}_prod`);
@@ -179,7 +183,7 @@ describe("migration journal schema", () => {
       await setup.query(`SELECT setval(pg_get_serial_sequence('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}', 'id'), $1)`, [
         Math.max(...ids),
       ]);
-      const before = await setup.query(`select to_regclass('os.skill_client_configs') as name`);
+      const before = await setup.query(`select to_regclass('os.locations') as name`);
       expect(before.rows[0]?.name).toBeNull();
     } finally {
       await setup.end();
@@ -197,13 +201,14 @@ describe("migration journal schema", () => {
       const rows = await client.query<{ id: number; hash: string; created_at: string }>(
         `select id, hash, created_at::text from ${migrationsRelation()} order by created_at`,
       );
-      expect(rows.rows).toHaveLength(6);
+      expect(rows.rows).toHaveLength(7);
       const stamped = rows.rows.find((row) => Number(row.created_at) === pending.when);
       expect(stamped?.hash).toBe(fileHash(pending.tag));
       expect(rows.rows.find((row) => row.hash === fileHash("0004_site_clients"))?.id).toBe(3);
       expect((await client.query(`select to_regclass('os.skill_client_configs') as name`)).rows[0]?.name).toBe(
         "skill_client_configs",
       );
+      expect((await client.query(`select to_regclass('os.locations') as name`)).rows[0]?.name).toBe("locations");
       const beforeSecond = rows.rows.map((row) => `${row.id}:${row.hash}:${row.created_at}`);
       const second = await runMigrate(databaseUrl);
       expect(second.code, second.stderr).toBe(0);

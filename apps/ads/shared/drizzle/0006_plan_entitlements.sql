@@ -118,8 +118,7 @@ BEGIN
   IF TG_OP = 'UPDATE'
      AND OLD.connection_status IS DISTINCT FROM 'disconnected'
      AND OLD.client_id IS NOT DISTINCT FROM NEW.client_id
-     AND OLD.platform IS NOT DISTINCT FROM NEW.platform
-     AND OLD.external_id IS NOT DISTINCT FROM NEW.external_id THEN
+     AND OLD.platform IS NOT DISTINCT FROM NEW.platform THEN
     RETURN NEW;
   END IF;
 

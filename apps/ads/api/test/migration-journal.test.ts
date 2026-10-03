@@ -119,9 +119,20 @@ function runMigrate(env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: str
   return runNode([tsxBin, migrateScript], env);
 }
 
+/** Fixture copies stop at 0005 so a later tag such as 0006 is not part of the skip case. */
 function copyMigrations(): string {
   const dir = mkdtempSync(join(tmpdir(), "cerevex-journal-"));
   cpSync(realMigrations, dir, { recursive: true });
+  const journalPath = join(dir, "meta", "_journal.json");
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+    entries: Array<{ tag: string; idx: number }>;
+  };
+  const limit = journal.entries.find((entry) => entry.tag === "0005_skill_config");
+  if (!limit) throw new Error("0005_skill_config missing from the journal fixture");
+  const removed = journal.entries.filter((entry) => entry.idx > limit.idx);
+  journal.entries = journal.entries.filter((entry) => entry.idx <= limit.idx);
+  writeFileSync(journalPath, JSON.stringify(journal));
+  for (const entry of removed) rmSync(join(dir, `${entry.tag}.sql`), { force: true });
   return dir;
 }
 
@@ -137,14 +148,18 @@ afterAll(async () => {
 describe("migration journal", () => {
   it("accepts the real journal", () => {
     const entries = assertMigrationJournal(realMigrations);
-    expect(entries.map((entry) => entry.tag)).toEqual([
+    const tags = entries.map((entry) => entry.tag);
+    const prefix = [
       "0000_m1_spine",
       "0001_m2_connect",
       "0002_m5_apply",
       "0003_m51",
       "0004_site_clients",
       "0005_skill_config",
-    ]);
+      "0006_plan_entitlements",
+    ];
+    expect(tags.slice(0, prefix.length)).toEqual(prefix);
+    expect(tags).toContain("0006_plan_entitlements");
     for (let index = 1; index < entries.length; index += 1) {
       expect(entries[index]!.idx).toBeGreaterThan(entries[index - 1]!.idx);
       expect(entries[index]!.when).toBeGreaterThan(entries[index - 1]!.when);
