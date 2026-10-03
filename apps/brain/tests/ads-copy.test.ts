@@ -22,7 +22,7 @@ import {
   syncResultMessage,
 } from '../lib/ads-copy';
 import { isAllowedAdsProxyRequest } from '../lib/ads-proxy-allowlist';
-import { oauthErrorMessage, parseAdsFilters } from '../lib/ads-query';
+import { knownConnectError, oauthErrorMessage, parseAdsFilters } from '../lib/ads-query';
 
 assert.equal(
   adsCheckDisabledReason({ auditsOn: true, siteId: null, clientId: null, connectedCount: 0, siteError: ADS_CONNECT_NO_CLIENT }),
@@ -83,6 +83,12 @@ assert.equal(
   'This Scholarship includes 1 Meta ad account. Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts.',
 );
 assert.ok(!/tenant|entitlement|store_id|\bcap\b/i.test(oauthErrorMessage('plan_limit')));
+assert.equal(knownConnectError('plan_limit'), oauthErrorMessage('plan_limit'));
+assert.equal(
+  parseAdsFilters({ connect_error: '<img src=x onerror=alert(1)>', oauth_error: 'plan_limit' }).notice,
+  oauthErrorMessage('plan_limit'),
+);
+assert.equal(parseAdsFilters({ connect_error: 'not a real error' }).notice, undefined);
 
 assert.equal(findingLabel('low_ctr'), 'Ads not getting clicks');
 assert.equal(findingLabel('zero_conversion_spend'), 'Spend with no leads');

@@ -59,6 +59,22 @@ const PLATFORMS: { id: Platform; label: string }[] = [
 const REC_FILTERS = ["all", "proposed", "authorized", "denied", "snoozed"] as const;
 type RecFilter = (typeof REC_FILTERS)[number];
 
+function knownConnectCopy(value: string | null): string | null {
+  if (!value) return null;
+  if (
+    /^This Scholarship includes 1 .+ Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts\.$/.test(
+      value,
+    )
+  ) {
+    return value;
+  }
+  if (/^This account has more than one .+ before moving to the Scholarship\.$/.test(value)) return value;
+  if (value === "This Scholarship includes 1 location. Turn the current location off to switch, or move to the paid plan to add every location.") {
+    return value;
+  }
+  return null;
+}
+
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { killSwitch, canMutate, canApprove, modules, capabilities, loading: workspaceLoading } = useWorkspace();
@@ -151,8 +167,15 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     const search = new URLSearchParams(window.location.search);
     const connected = search.get("connected");
     const oauthError = search.get("oauth_error");
+    const connectError = search.get("connect_error");
     if (connected) setNotice(`${connected === "meta" ? "Meta" : "Google Ads"} connected. Tokens stay in the spine.`);
-    if (oauthError) setError(`OAuth did not finish (${oauthError}).`);
+    const limitCopy = knownConnectCopy(connectError);
+    if (limitCopy) setError(limitCopy);
+    else if (oauthError === "plan_limit") {
+      setError(
+        "This Scholarship includes 1 ad account on this platform. Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts.",
+      );
+    } else if (oauthError) setError(`OAuth did not finish (${oauthError}).`);
   }, []);
 
   const selectedAudit = useMemo(

@@ -1,11 +1,12 @@
 /**
  * Server-side plan checks. The tenant is the OS client id.
  *
- * getEntitlements reports the plan. precheckCanActivateStore and
- * precheckCanActivateAdAccount are unlocked UX pre-checks: they do not
- * lock the client row. The real guards are activateStore and
- * rejectAdAccountIfBlocked, which lock the client and check again
- * before writing. Monthly counters are not stored here.
+ * getEntitlements reports the plan. precheckCanActivateAdAccounts is an
+ * unlocked batch pre-check for the connect screen. It does not lock the
+ * client row. The real guards are activateStore and rejectAdAccountIfBlocked,
+ * which lock the client and check again before writing. setClientPlan refuses
+ * an over-limit move to Scholarship and turns nothing off. Monthly counters
+ * are not stored here.
  */
 import {
   SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM,
@@ -138,43 +139,6 @@ export async function getEntitlements(tenantId: string): Promise<TenantEntitleme
     },
     monthly: monthlyCapsFor(plan),
   };
-}
-
-/**
- * Unlocked UX pre-check. Does not lock the client row, so two callers can
- * both pass. activateStore is the real guard.
- */
-export async function precheckCanActivateStore(
-  tenantId: string,
-  storeId: string,
-  options?: { replacingStoreId?: string | null },
-): Promise<void> {
-  const db = getDb();
-  const client = await db.query.clients.findFirst({ where: eq(clients.id, tenantId) });
-  if (!client) throw new EntitlementError("Client not found", 404);
-  const active = await activeStoreIds(db, tenantId);
-  const decision = decideLocationActivation({
-    plan: planOf(client),
-    storeId,
-    activeStoreIds: active,
-    replacingStoreId: options?.replacingStoreId,
-  });
-  if (!decision.allowed) throw new EntitlementError(decision.message);
-}
-
-/**
- * Unlocked UX pre-check. Does not lock the client row.
- * rejectAdAccountIfBlocked is the real guard.
- */
-export async function precheckCanActivateAdAccount(
-  tenantId: string,
-  platform: string,
-  externalId: string,
-  options?: { replacingExternalId?: string | null },
-): Promise<void> {
-  await precheckCanActivateAdAccounts(tenantId, platform, [externalId], {
-    replacingExternalIds: options?.replacingExternalId ? [options.replacingExternalId] : [],
-  });
 }
 
 /**

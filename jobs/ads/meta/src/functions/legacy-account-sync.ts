@@ -15,6 +15,7 @@ export const metaAdsAccountSync = inngest.createFunction(
     id: LEGACY_ADS_FUNCTION_IDS.metaAdsAccountSync,
     name: "Meta ads account sync (legacy meta/ads/*)",
     triggers: [{ event: LEGACY_ADS_EVENTS.metaAdsAccountSync }],
+    concurrency: { limit: 1, key: "event.data.adAccountId" },
   },
   async ({ event, step }: any) => {
     const result = await step.run("pull-entities", async () => pullMetaAdAccount(event.data.adAccountId));

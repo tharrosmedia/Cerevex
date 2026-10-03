@@ -4,6 +4,8 @@ import { getDb } from "./db";
 import { oauthCredentials } from "./schema";
 import type { Platform, StoredOAuthTokens } from "./types";
 
+type TokenDb = Pick<ReturnType<typeof getDb>, "select" | "insert" | "update">;
+
 export function publicTokenView(tokens: StoredOAuthTokens | null): {
   hasCredentials: boolean;
   mock: boolean;
@@ -25,15 +27,14 @@ export async function storeTokens(input: {
   platform: Platform;
   label: string;
   tokens: StoredOAuthTokens;
-}): Promise<void> {
-  const db = getDb();
+}, db: TokenDb = getDb()): Promise<void> {
   const encryptedPayload = encryptSecret(JSON.stringify(input.tokens));
-  const existing = await db.query.oauthCredentials.findFirst({
-    where: and(
-      eq(oauthCredentials.adAccountId, input.adAccountId),
-      eq(oauthCredentials.platform, input.platform),
-    ),
-  });
+  const [existing] = await db
+    .select({ id: oauthCredentials.id })
+    .from(oauthCredentials)
+    .where(
+      and(eq(oauthCredentials.adAccountId, input.adAccountId), eq(oauthCredentials.platform, input.platform)),
+    );
   if (existing) {
     await db
       .update(oauthCredentials)

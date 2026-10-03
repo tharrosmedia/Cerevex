@@ -64,16 +64,30 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
     const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
     const connector = getAdPlatformConnector(account.platform);
     if (tokenNearExpiry(tokens)) {
-      const refreshed = await connector.refreshTokens(tokens);
-      if (refreshed.accessToken !== tokens.accessToken) {
-        await storeTokens({
-          workspaceId: account.workspaceId,
-          clientId: account.clientId,
-          adAccountId,
-          platform: account.platform,
-          label: tokens.mock ? "mock" : "live",
-          tokens: refreshed,
+      const currentTokens = tokens;
+      const refreshed = await connector.refreshTokens(currentTokens);
+      if (refreshed.accessToken !== currentTokens.accessToken) {
+        const stored = await db.transaction(async (tx) => {
+          const [locked] = await tx
+            .select({ connectionStatus: adAccounts.connectionStatus })
+            .from(adAccounts)
+            .where(eq(adAccounts.id, adAccountId))
+            .for("update");
+          if (!locked || locked.connectionStatus === "disconnected") return false;
+          await storeTokens(
+            {
+              workspaceId: account.workspaceId,
+              clientId: account.clientId,
+              adAccountId,
+              platform: account.platform,
+              label: currentTokens.mock ? "mock" : "live",
+              tokens: refreshed,
+            },
+            tx,
+          );
+          return true;
         });
+        if (!stored) return skippedSync(adAccountId);
         tokens = refreshed;
       }
     }
@@ -86,65 +100,68 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
       allowLive: connector.isLiveAllowed(tokens, capabilities),
     });
 
-    const current = await db.query.adAccounts.findFirst({
-      where: eq(adAccounts.id, adAccountId),
-    });
-    if (!current || current.connectionStatus === "disconnected") {
-      return skippedSync(adAccountId);
-    }
+    const wrote = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ connectionStatus: adAccounts.connectionStatus })
+        .from(adAccounts)
+        .where(eq(adAccounts.id, adAccountId))
+        .for("update");
+      if (!locked || locked.connectionStatus === "disconnected") return false;
 
-    await db.delete(adEntities).where(eq(adEntities.adAccountId, adAccountId));
+      await tx.delete(adEntities).where(eq(adEntities.adAccountId, adAccountId));
 
-    const inserted = [];
-    for (const entity of pulled.entities) {
-      const [row] = await db
-        .insert(adEntities)
-        .values({
+      const inserted = [];
+      for (const entity of pulled.entities) {
+        const [row] = await tx
+          .insert(adEntities)
+          .values({
+            workspaceId: account.workspaceId,
+            clientId: account.clientId,
+            adAccountId,
+            platform: account.platform,
+            entityType: entity.entityType,
+            externalId: entity.externalId,
+            name: entity.name,
+            status: entity.status,
+            parentExternalId: entity.parentExternalId,
+            rawJson: { source: pulled.mode, ...(entity.raw ?? {}) },
+          })
+          .returning();
+        inserted.push(row);
+      }
+
+      for (const metric of pulled.metrics) {
+        const entity = inserted.find(
+          (row) => row.externalId === metric.entityExternalId && row.entityType === metric.entityType,
+        );
+        if (!entity) continue;
+        await tx.insert(adMetrics).values({
           workspaceId: account.workspaceId,
           clientId: account.clientId,
           adAccountId,
-          platform: account.platform,
-          entityType: entity.entityType,
-          externalId: entity.externalId,
-          name: entity.name,
-          status: entity.status,
-          parentExternalId: entity.parentExternalId,
-          rawJson: { source: pulled.mode, ...(entity.raw ?? {}) },
+          entityId: entity.id,
+          window: metric.window,
+          spendUsd: metric.spendUsd,
+          impressions: metric.impressions,
+          clicks: metric.clicks,
+          conversions: metric.conversions,
+          rawJson: { source: pulled.mode },
+        });
+      }
+
+      const [connected] = await tx
+        .update(adAccounts)
+        .set({
+          connectionStatus: "connected",
+          lastSyncAt: new Date(),
+          lastError: null,
+          externalId: pulled.externalAccountId,
         })
-        .returning();
-      inserted.push(row);
-    }
-
-    for (const metric of pulled.metrics) {
-      const entity = inserted.find(
-        (row) => row.externalId === metric.entityExternalId && row.entityType === metric.entityType,
-      );
-      if (!entity) continue;
-      await db.insert(adMetrics).values({
-        workspaceId: account.workspaceId,
-        clientId: account.clientId,
-        adAccountId,
-        entityId: entity.id,
-        window: metric.window,
-        spendUsd: metric.spendUsd,
-        impressions: metric.impressions,
-        clicks: metric.clicks,
-        conversions: metric.conversions,
-        rawJson: { source: pulled.mode },
-      });
-    }
-
-    const [connected] = await db
-      .update(adAccounts)
-      .set({
-        connectionStatus: "connected",
-        lastSyncAt: new Date(),
-        lastError: null,
-        externalId: pulled.externalAccountId,
-      })
-      .where(and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected")))
-      .returning({ id: adAccounts.id });
-    if (!connected) return skippedSync(adAccountId);
+        .where(and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected")))
+        .returning({ id: adAccounts.id });
+      return Boolean(connected);
+    });
+    if (!wrote) return skippedSync(adAccountId);
 
     return {
       adAccountId,
