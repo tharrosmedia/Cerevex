@@ -51,6 +51,7 @@
     "drizzle-orm": "^0.44.7",
     "inngest": "^4.20.0",
     "pg": "^8.23.0",
+    "pg-connection-string": "^2.14.0",
     "zod": "^4.1.11"
   },
   "devDependencies": {

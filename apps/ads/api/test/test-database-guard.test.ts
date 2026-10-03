@@ -27,12 +27,54 @@ describe("test database guard", () => {
   it("allows a known test database and a marked Neon branch without the opt-in", () => {
     expect(assess("postgres://user:secret@db.internal.example:5432/cerevex_test").allowed).toBe(true);
     expect(assess("postgres://user:secret@db.internal.example:5432/cerevex-test").allowed).toBe(true);
+    expect(assess("postgres://user:secret@db.internal.example:5432/test").allowed).toBe(true);
     expect(assess("postgres://user:secret@ci.example.com:5432/app").allowed).toBe(true);
     expect(assess("postgres://user:secret@ep-branch-demo.us-east-2.aws.neon.tech/neondb").allowed).toBe(true);
     expect(assess("postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/preview").allowed).toBe(true);
     expect(
       assess("postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb?branch=dev").allowed,
     ).toBe(true);
+    expect(
+      assess("postgres://user:secret@br-cool-branch.us-east-2.aws.neon.tech/neondb").allowed,
+    ).toBe(true);
+    expect(
+      assess("postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb?branch=br-cool").allowed,
+    ).toBe(true);
+  });
+
+  it("refuses database names that only contain test as a substring", () => {
+    expect(assess("postgres://user:secret@db.example.com/contest").allowed).toBe(false);
+    expect(assess("postgres://user:secret@db.example.com/my_test_prod").allowed).toBe(false);
+    expect(assess("postgres://user:secret@db.example.com/latest").allowed).toBe(false);
+  });
+
+  it("uses the host node-postgres would connect to, including ?host= and multi-host lists", () => {
+    const remoteOverride = assess("postgres://user:pw@localhost/db?host=db.example.com");
+    expect(remoteOverride.allowed).toBe(false);
+    expect(remoteOverride.host).toBe("db.example.com");
+    expect(remoteOverride.message).not.toContain("pw");
+
+    const localOverride = assess("postgres://user:pw@db.example.com/db?host=localhost");
+    expect(localOverride.allowed).toBe(true);
+    expect(localOverride.host).toBe("localhost");
+
+    expect(assess("postgres://user:pw@localhost/db?host=127.0.0.1,db.example.com").allowed).toBe(false);
+    expect(assess("postgres://user:pw@localhost/db?host=localhost,127.0.0.1").allowed).toBe(true);
+    expect(assess("postgres://user:pw@localhost/db?host=/var/run/postgresql").allowed).toBe(true);
+
+    // This driver connects to `host`, not `hostaddr`.
+    expect(assess("postgres://user:pw@localhost/db?hostaddr=8.8.8.8").allowed).toBe(true);
+    expect(assess("postgres://user:pw@db.example.com/db?hostaddr=127.0.0.1").allowed).toBe(false);
+  });
+
+  it("does not treat a br- substring as a Neon branch marker", () => {
+    const hidden = assess(
+      "postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb?note=see-br-hidden",
+    );
+    expect(hidden.allowed).toBe(false);
+    expect(
+      assess("postgres://user:secret@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb-br-extra").allowed,
+    ).toBe(false);
   });
 
   it("refuses a remote host unless ALLOW_NONLOCAL_TEST_DB=1, and does not echo the password", () => {
@@ -65,6 +107,29 @@ describe("test database guard", () => {
     });
     expect(fromUrl.allowed).toBe(false);
     expect(fromUrl.message).not.toContain("other-secret");
+
+    const queryHost = assess(direct, {
+      ALLOW_NONLOCAL_TEST_DB: "1",
+      PRODUCTION_DATABASE_URL: `postgres://owner:other-secret@localhost/neondb?host=${prod}`,
+    });
+    expect(queryHost.allowed).toBe(false);
+    expect(queryHost.message).not.toContain("other-secret");
+  });
+
+  it("fails closed when PRODUCTION_DATABASE_URL is set but cannot be parsed", () => {
+    const broken = assess(CI_URL, { PRODUCTION_DATABASE_URL: "not a url" });
+    expect(broken.allowed).toBe(false);
+    expect(broken.message).toContain("PRODUCTION_DATABASE_URL is set but could not be parsed");
+    expect(broken.message).not.toContain("not a url");
+
+    const invalid = assess(CI_URL, {
+      PRODUCTION_DATABASE_URL: "postgres://user:super-secret@host1:5432,host2:5433/db",
+    });
+    expect(invalid.allowed).toBe(false);
+    expect(invalid.message).not.toContain("super-secret");
+
+    expect(assess(CI_URL, { PRODUCTION_DATABASE_URL: "" }).allowed).toBe(false);
+    expect(assess(CI_URL, {}).allowed).toBe(true);
   });
 
   it("treats a missing URL as safe for tests and unsafe for seed", () => {
