@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
-import { applyJobs, recommendations } from "@tharros/ads-shared/schema";
+import { applyJobs, recommendations, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
@@ -47,12 +47,17 @@ describe("M3 audit → findings → recommendations", () => {
 
   afterAll(async () => {
     if (ownerToken) {
-      await app.request("/workspace", {
+      const restore = await app.request("/workspace", {
         method: "PATCH",
         headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
         body: JSON.stringify({ applyKillSwitch: true }),
       });
+      expect(restore.status).toBe(200);
     }
+    const workspace = await getDb().query.workspaces.findFirst({
+      where: eq(workspaces.name, "Tharros Media"),
+    });
+    expect(workspace?.applyKillSwitch).toBe(true);
     await closeDb();
   });
 
@@ -168,11 +173,12 @@ describe("M3 audit → findings → recommendations", () => {
         .where(eq(applyJobs.authorizationId, String((decided.authorization as { id: string }).id)));
       expect(jobs[0]?.status).toBe("succeeded");
     } finally {
-      await app.request("/workspace", {
+      const restore = await app.request("/workspace", {
         method: "PATCH",
         headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
         body: JSON.stringify({ applyKillSwitch: true }),
       });
+      expect(restore.status).toBe(200);
     }
   });
 

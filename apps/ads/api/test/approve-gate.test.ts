@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
-import { memberships, users } from "@tharros/ads-shared/schema";
+import { memberships, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
 loadEnv();
@@ -26,7 +26,9 @@ describe("M5 Adam-only Approve + freeze", () => {
     ).token;
 
     const db = getDb();
-    const workspace = await db.query.workspaces.findFirst();
+    const workspace = await db.query.workspaces.findFirst({
+      where: eq(workspaces.name, "Tharros Media"),
+    });
     if (!workspace) throw new Error("workspace missing");
     const email = "operator@tharrosmedia.com";
     const passwordHash = await hash("operator-local-only", 10);
@@ -68,7 +70,30 @@ describe("M5 Adam-only Approve + freeze", () => {
   });
 
   afterAll(async () => {
-    await closeDb();
+    try {
+      if (ownerToken && accountId) {
+        const unfreeze = await app.request(`/ad-accounts/${accountId}`, {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ frozen: false }),
+        });
+        expect(unfreeze.status).toBe(200);
+      }
+    } finally {
+      if (ownerToken) {
+        const restore = await app.request("/workspace", {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ applyKillSwitch: true }),
+        });
+        expect(restore.status).toBe(200);
+      }
+      const workspace = await getDb().query.workspaces.findFirst({
+        where: eq(workspaces.name, "Tharros Media"),
+      });
+      expect(workspace?.applyKillSwitch).toBe(true);
+      await closeDb();
+    }
   });
 
   it("blocks a non-allowlist operator from Approve", async () => {
@@ -98,33 +123,44 @@ describe("M5 Adam-only Approve + freeze", () => {
   });
 
   it("blocks Approve when the ad account is frozen (after pause is off)", async () => {
-    await app.request("/workspace", {
-      method: "PATCH",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ applyKillSwitch: false }),
-    });
-    const freeze = await app.request(`/ad-accounts/${accountId}`, {
-      method: "PATCH",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ frozen: true }),
-    });
-    expect(freeze.status).toBe(200);
-    const res = await app.request(`/recommendations/${recommendationId}/decide`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ action: "approve" }),
-    });
-    expect(res.status).toBe(409);
-    expect(String((await json(res)).error)).toMatch(/frozen/i);
-    await app.request(`/ad-accounts/${accountId}`, {
-      method: "PATCH",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ frozen: false }),
-    });
-    await app.request("/workspace", {
-      method: "PATCH",
-      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ applyKillSwitch: true }),
-    });
+    try {
+      const pause = await app.request("/workspace", {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ applyKillSwitch: false }),
+      });
+      expect(pause.status).toBe(200);
+      const freeze = await app.request(`/ad-accounts/${accountId}`, {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ frozen: true }),
+      });
+      expect(freeze.status).toBe(200);
+      const res = await app.request(`/recommendations/${recommendationId}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      });
+      expect(res.status).toBe(409);
+      expect(String((await json(res)).error)).toMatch(/frozen/i);
+    } finally {
+      let unfreezeStatus = 0;
+      try {
+        const unfreeze = await app.request(`/ad-accounts/${accountId}`, {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ frozen: false }),
+        });
+        unfreezeStatus = unfreeze.status;
+      } finally {
+        const restore = await app.request("/workspace", {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ applyKillSwitch: true }),
+        });
+        expect(unfreezeStatus).toBe(200);
+        expect(restore.status).toBe(200);
+      }
+    }
   });
 });
