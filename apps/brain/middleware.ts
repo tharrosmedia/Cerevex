@@ -4,6 +4,7 @@ import { guardApi } from './lib/api-access';
 import { AUTH_COOKIE_NAME, setAuthCookie } from './lib/auth-cookie';
 import { publicLegalDecision } from './lib/public-paths';
 import { isProductionRuntime } from './lib/runtime-env';
+import { ADS_COLLECT_MAX_BODY_BYTES } from './lib/ads-collect';
 import { credentialsFrom, passwordMatches } from './lib/sensitive-auth';
 
 function withPathname(request: NextRequest, response: NextResponse) {
@@ -24,6 +25,12 @@ export function middleware(request: NextRequest) {
   }
 
   if (request.nextUrl.pathname.startsWith('/api')) {
+    if (request.nextUrl.pathname === '/api/ads/collect') {
+      const declared = Number(request.headers.get('content-length') || '0');
+      if (Number.isFinite(declared) && declared > ADS_COLLECT_MAX_BODY_BYTES) {
+        return NextResponse.json({ error: 'payload too large' }, { status: 413 });
+      }
+    }
     const creds = credentialsFrom({
       headers: request.headers,
       cookies: request.cookies,

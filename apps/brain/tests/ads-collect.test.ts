@@ -50,16 +50,37 @@ try {
   }
 
   resetAdsCollectLimits();
+  for (let i = 0; i < 32; i += 1) {
+    const allowed = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': `203.0.113.${i}, 10.0.0.8` }));
+    assert.equal(allowed.ok, true, `client ${i}`);
+  }
   for (let i = 0; i < 30; i += 1) {
-    const allowed = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': `spoof-${i}, 203.0.113.9` }));
+    const allowed = await inspectAdsCollectRequest(post('{"n":1}', {
+      'x-real-ip': '198.51.100.9',
+      'x-forwarded-for': `spoof-${i}, 10.0.0.8`,
+    }));
     assert.equal(allowed.ok, true, String(i));
   }
-  const limited = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': 'another-spoof, 203.0.113.9' }));
+  const limited = await inspectAdsCollectRequest(post('{"n":1}', {
+    'x-real-ip': '198.51.100.9',
+    'x-forwarded-for': 'another-spoof, 10.0.0.8',
+  }));
   assert.equal(limited.ok, false);
   if (!limited.ok) assert.equal(limited.status, 429);
-  const otherHop = await inspectAdsCollectRequest(post('{"n":1}', { 'x-forwarded-for': '203.0.113.9, 198.51.100.4' }));
-  assert.equal(otherHop.ok, true);
+  const otherReal = await inspectAdsCollectRequest(post('{"n":1}', {
+    'x-real-ip': '198.51.100.10',
+    'x-forwarded-for': '198.51.100.9, 10.0.0.8',
+  }));
+  assert.equal(otherReal.ok, true);
 
+  resetAdsCollectLimits();
+  for (let i = 0; i < 30; i += 1) assert.equal(allowAdsCollect('throttled-client', 1_000), true);
+  assert.equal(allowAdsCollect('throttled-client', 1_000), false);
+  for (let i = 0; i < ADS_COLLECT_MAX_BUCKETS - 1; i += 1) allowAdsCollect(`warm-${i}`, 1_000);
+  assert.equal(adsCollectBucketCount(), ADS_COLLECT_MAX_BUCKETS);
+  for (let i = 0; i < 50; i += 1) allowAdsCollect(`fresh-${i}`, 1_000);
+  assert.ok(adsCollectBucketCount() <= ADS_COLLECT_MAX_BUCKETS);
+  assert.equal(allowAdsCollect('throttled-client', 1_000), false);
   resetAdsCollectLimits();
   for (let i = 0; i < ADS_COLLECT_MAX_BUCKETS + 20; i += 1) allowAdsCollect(`203.0.113.${i}`);
   assert.ok(adsCollectBucketCount() <= ADS_COLLECT_MAX_BUCKETS);

@@ -35,13 +35,29 @@ export function adsCollectCorsHeaders(origin: string | null): Record<string, str
 }
 
 /**
- * Railway appends the connecting address. The leftmost hop is client-controlled, so the limit uses the rightmost hop.
+ * Railway sends X-Real-IP as the client and X-Forwarded-For as `client, <internal hop>`.
+ * Prefer X-Real-IP. Otherwise use the leftmost forwarded hop, which is the client in that shape.
  */
 export function adsCollectClientKey(headers: { get(name: string): string | null }): string {
+  const realIp = headers.get('x-real-ip')?.trim();
+  if (realIp) return realIp;
   const forwarded = headers.get('x-forwarded-for');
   const hops = forwarded?.split(',').map((hop) => hop.trim()).filter(Boolean) ?? [];
-  const trusted = hops.length ? hops[hops.length - 1] : '';
-  return trusted || headers.get('x-real-ip')?.trim() || 'unknown';
+  return hops[0] || 'unknown';
+}
+
+function isThrottled(row: Bucket, now: number): boolean {
+  return now < row.resetAt && row.count >= MAX_REQUESTS;
+}
+
+/** Drop the least-recently-used bucket that is not currently throttled. */
+function evictOneNonThrottled(now: number): boolean {
+  for (const [ip, row] of buckets) {
+    if (isThrottled(row, now)) continue;
+    buckets.delete(ip);
+    return true;
+  }
+  return false;
 }
 
 function evictBuckets(now: number): void {
@@ -49,9 +65,7 @@ function evictBuckets(now: number): void {
     if (row.resetAt <= now) buckets.delete(ip);
   }
   while (buckets.size > ADS_COLLECT_MAX_BUCKETS) {
-    const oldest = buckets.keys().next().value;
-    if (oldest === undefined) break;
-    buckets.delete(oldest);
+    if (!evictOneNonThrottled(now)) break;
   }
 }
 
@@ -63,9 +77,8 @@ export function allowAdsCollect(ip: string, now = Date.now()): boolean {
   evictBuckets(now);
   const row = buckets.get(ip);
   if (!row || now >= row.resetAt) {
-    if (buckets.size >= ADS_COLLECT_MAX_BUCKETS) {
-      const oldest = buckets.keys().next().value;
-      if (oldest !== undefined) buckets.delete(oldest);
+    if (!buckets.has(ip) && buckets.size >= ADS_COLLECT_MAX_BUCKETS && !evictOneNonThrottled(now)) {
+      return false;
     }
     buckets.set(ip, { count: 1, resetAt: now + ADS_COLLECT_WINDOW_MS });
     return true;
