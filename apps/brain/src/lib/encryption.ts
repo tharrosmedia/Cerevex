@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
-import { isProductionRuntime } from '../../lib/runtime-env';
+import { encryptionKeyProblem, isProductionRuntime } from '../../lib/runtime-env';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -48,16 +48,22 @@ export function plaintextSecretsAllowed(): boolean {
   return process.env.ALLOW_PLAINTEXT_SECRETS === '1';
 }
 
+const WHITESPACE_KEY =
+  'ENCRYPTION_KEY has leading or trailing whitespace. Refusing to trim it so existing ciphertexts stay byte-identical.';
+
 export function assertEncryptionConfigured(): void {
   if (!isProductionRuntime()) return;
-  if (!(process.env.ENCRYPTION_KEY || '').trim()) {
+  const problem = encryptionKeyProblem();
+  if (problem === 'whitespace') throw new Error(WHITESPACE_KEY);
+  if (problem === 'missing') {
     throw new Error('ENCRYPTION_KEY is required in production. Refusing to boot with a plaintext fallback.');
   }
 }
 
 export function resolveEncryptionSecret(secret?: string | null): string {
-  const key = (secret ?? '').trim() || (process.env.ENCRYPTION_KEY ?? '').trim();
-  if (key) return key;
+  const raw = secret != null && secret !== '' ? secret : (process.env.ENCRYPTION_KEY ?? '');
+  if (raw !== raw.trim()) throw new Error(WHITESPACE_KEY);
+  if (raw) return raw;
   if (plaintextSecretsAllowed()) return '';
   throw new Error('ENCRYPTION_KEY is required. Refusing to store or read secrets as plaintext.');
 }

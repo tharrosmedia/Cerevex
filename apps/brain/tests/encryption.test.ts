@@ -14,6 +14,7 @@ const env = process.env as Record<string, string | undefined>;
 const prev = {
   NODE_ENV: env.NODE_ENV,
   RAILWAY_ENVIRONMENT: env.RAILWAY_ENVIRONMENT,
+  RAILWAY_ENVIRONMENT_NAME: env.RAILWAY_ENVIRONMENT_NAME,
   ENCRYPTION_KEY: env.ENCRYPTION_KEY,
   ALLOW_PLAINTEXT_SECRETS: env.ALLOW_PLAINTEXT_SECRETS,
 };
@@ -27,6 +28,7 @@ function restore() {
 
 try {
   delete env.RAILWAY_ENVIRONMENT;
+  delete env.RAILWAY_ENVIRONMENT_NAME;
   delete env.ALLOW_PLAINTEXT_SECRETS;
   env.NODE_ENV = 'test';
   env.ENCRYPTION_KEY = 'test-encryption-key';
@@ -78,6 +80,23 @@ try {
   env.ALLOW_PLAINTEXT_SECRETS = '1';
   assert.equal(plaintextSecretsAllowed(), false);
   assert.throws(() => encrypt('token'));
+
+  delete env.RAILWAY_ENVIRONMENT;
+  env.RAILWAY_ENVIRONMENT_NAME = 'Production';
+  assert.equal(plaintextSecretsAllowed(), false);
+  assert.throws(() => assertEncryptionConfigured(), /ENCRYPTION_KEY is required in production/);
+
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.NODE_ENV = 'test';
+  const exactKey = 'abc';
+  const cipherExact = encrypt('secret-value', exactKey);
+  assert.equal(decrypt(cipherExact, exactKey), 'secret-value');
+  assert.throws(() => decrypt(cipherExact, ' abc '), /leading or trailing whitespace/);
+  assert.throws(() => encrypt('secret-value', ' abc '), /leading or trailing whitespace/);
+  env.ENCRYPTION_KEY = ' abc ';
+  env.NODE_ENV = 'production';
+  assert.throws(() => assertEncryptionConfigured(), /leading or trailing whitespace/);
+  assert.throws(() => encrypt('secret-value'), /leading or trailing whitespace/);
 
   console.log('encryption: ok');
 } finally {
