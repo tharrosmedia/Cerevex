@@ -45,6 +45,7 @@
  * runners. Migrate scripts are intentional ops paths and are not guarded.
  */
 
+import "server-only";
 import { parse as parseConnectionString, type ConnectionOptions } from "pg-connection-string";
 
 export const TEST_DATABASE_OPT_IN_ENV = "ALLOW_NONLOCAL_TEST_DB";

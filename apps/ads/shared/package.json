@@ -38,12 +38,13 @@
     "./grok-creatives": "./src/grok-creatives.ts",
     "./attribution": "./src/attribution.ts",
     "./connector-settings": "./src/connector-settings.ts",
-    "./planning-settings": "./src/planning-settings.ts"
+    "./planning-settings": "./src/planning-settings.ts",
+    "./server": "./src/server.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts",
-    "import:skill-config": "tsx src/skill-config-import-cli.ts",
+    "seed": "tsx --conditions=react-server src/seed.ts",
+    "import:skill-config": "tsx --conditions=react-server src/skill-config-import-cli.ts",
     "drizzle:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit"
   },
@@ -56,6 +57,7 @@
     "inngest": "^4.20.0",
     "pg": "^8.23.0",
     "pg-connection-string": "^2.14.0",
+    "server-only": "0.0.1",
     "zod": "^4.1.11"
   },
   "devDependencies": {
