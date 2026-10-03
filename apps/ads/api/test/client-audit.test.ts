@@ -290,7 +290,7 @@ describe("client audit log", () => {
       "rec_created",
       "approved",
       "rejected",
-      "applied",
+      "apply_blocked",
       "mark_done",
       "rolled_back",
       "prompt_layer_approved",
