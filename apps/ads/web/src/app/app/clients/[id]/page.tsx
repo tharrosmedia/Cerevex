@@ -219,7 +219,9 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     try {
       const bundle = await startInlineAudit(id);
       setFindings(bundle.findings);
-      setRecommendations(bundle.recommendations);
+      setRecommendations(
+        [...bundle.recommendations].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      );
       setSelectedAuditId(bundle.audit.id);
       setAudits((current) => [bundle.audit, ...current.filter((row) => row.id !== bundle.audit.id)]);
       setNotice(
