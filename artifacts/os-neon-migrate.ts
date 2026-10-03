@@ -1,28 +1,37 @@
 #!/usr/bin/env bun
 /**
- * Railway-safe one-shot migrator for isolated schema `os` (Cerevex ads module).
- * Filename keeps os- prefix so existing Railway one-shot commands keep working.
+ * Bun-only local/non-production migrator for isolated schema `os`.
+ * Not a production path: it does not run the migrate journal guards.
+ * Filename keeps os- prefix so existing one-shot commands keep working.
  *
- * - Requires DATABASE_URL
+ * Self-contained. The ledger names are inlined so this file runs from a
+ * checkout with no npm install, and from a copy of artifacts/ alone.
+ * They must match apps/ads/shared/src/migration-ledger.ts.
+ *
+ * - Requires Bun and DATABASE_URL
  * - CREATE SCHEMA IF NOT EXISTS os
  * - SET search_path TO os, public
- * - Applies each Drizzle journal file exactly once via os.__drizzle_migrations
+ * - Applies each bundled journal file exactly once via os.__drizzle_migrations
  *   (hash + created_at, matching drizzle-orm/node-postgres)
  * - Does NOT seed
  * - Does NOT apply Brain public migrations
  * - Never logs DATABASE_URL
  *
- * Operator:
+ * artifacts/ alone:
  *   DATABASE_URL=... bun artifacts/os-neon-migrate.ts
  *
- * Repo smoke (reads apps/ads/shared/drizzle journal):
+ * Repo checkout (reads apps/ads/shared/drizzle journal):
  *   DATABASE_URL=... bun scripts/os-neon-smoke-migrate.ts
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "../apps/ads/shared/src/migration-ledger.ts";
+
+/** Inlined. Keep equal to migration-ledger.ts MIGRATIONS_SCHEMA. */
+export const MIGRATIONS_SCHEMA = "os";
+/** Inlined. Keep equal to migration-ledger.ts MIGRATIONS_TABLE. */
+export const MIGRATIONS_TABLE = "__drizzle_migrations";
 
 export type OsMigration = {
   tag: string;
@@ -57,8 +66,6 @@ type BunSqlLike = {
   close?: () => Promise<void>;
   end?: () => Promise<void>;
 };
-
-/** Same ledger `ads:db:migrate` writes. Filename keeps os- for Railway. Do not ALTER SCHEMA. */
 
 function hereDir(): string {
   return dirname(fileURLToPath(import.meta.url));
@@ -114,34 +121,16 @@ function readJournalMigrations(migrationsDir: string, journalPath: string): OsMi
 }
 
 function readEmbeddedMigrations(dir: string): OsMigration[] {
-  const extras: Array<{ tag: string; when: number }> = [
-    { tag: "0000_m1_spine", when: 1790048328345 },
-    { tag: "0001_m2_connect", when: 1790075682637 },
-    { tag: "0002_m5_apply", when: 1790200000000 },
-  ];
   const bundlePath = resolve(dir, "os-migrate-bundle.json");
-  const fromBundle: OsMigration[] = [];
-  if (existsSync(bundlePath)) {
-    const bundle = JSON.parse(readFileSync(bundlePath, "utf8")) as {
-      migrations: { filename: string; tag: string; when: number; sql: string }[];
-    };
-    for (const entry of bundle.migrations) {
-      const sibling = resolve(dir, entry.filename);
-      const sql = existsSync(sibling) ? readFileSync(sibling, "utf8") : entry.sql;
-      assertOsQualified(sql, entry.filename);
-      fromBundle.push({ tag: entry.tag, filename: entry.filename, when: entry.when, sql });
-    }
-  }
-  const seen = new Set(fromBundle.map((row) => row.tag));
-  const extraRows = extras
-    .filter((entry) => !seen.has(entry.tag))
-    .map((entry) => {
-      const filename = `${entry.tag}.sql`;
-      const sql = readFileSync(resolve(dir, filename), "utf8");
-      assertOsQualified(sql, filename);
-      return { ...entry, filename, sql };
-    });
-  return [...fromBundle, ...extraRows];
+  const bundle = JSON.parse(readFileSync(bundlePath, "utf8")) as {
+    migrations: { filename: string; tag: string; when: number; sql: string }[];
+  };
+  return bundle.migrations.map((entry) => {
+    const sibling = resolve(dir, entry.filename);
+    const sql = existsSync(sibling) ? readFileSync(sibling, "utf8") : entry.sql;
+    assertOsQualified(sql, entry.filename);
+    return { tag: entry.tag, filename: entry.filename, when: entry.when, sql };
+  });
 }
 
 export function loadOsMigrations(options: OsMigrateOptions = {}): OsMigration[] {
@@ -157,44 +146,30 @@ async function openClient(databaseUrl: string): Promise<SqlClient> {
       Bun?: { SQL?: new (options: string | { url: string; max?: number }) => BunSqlLike };
     }
   ).Bun;
-  if (BunGlobal?.SQL) {
-    // Single connection so SET search_path and BEGIN/COMMIT stay on the same session.
-    const sql = new BunGlobal.SQL({ url: databaseUrl, max: 1 });
-    return {
-      async query(text, params) {
-        const result = params?.length ? await sql.unsafe(text, params) : await sql.unsafe(text);
-        if (Array.isArray(result)) {
-          return { rows: result as Record<string, unknown>[] };
-        }
-        if (result && typeof result === "object" && "rows" in result) {
-          return { rows: (result as QueryResult).rows };
-        }
-        return { rows: [] };
-      },
-      async end() {
-        if (typeof sql.close === "function") {
-          await sql.close();
-          return;
-        }
-        if (typeof sql.end === "function") {
-          await sql.end();
-        }
-      },
-    };
+  if (!BunGlobal?.SQL) {
+    throw new Error("artifacts/os-neon-migrate.ts requires Bun. It does not import workspace packages.");
   }
-
-  const pg = await import("pg");
-  const Client = (pg as { default?: { Client: typeof import("pg").Client }; Client?: typeof import("pg").Client })
-    .default?.Client ?? (pg as { Client: typeof import("pg").Client }).Client;
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
+  // Single connection so SET search_path and BEGIN/COMMIT stay on the same session.
+  const sql = new BunGlobal.SQL({ url: databaseUrl, max: 1 });
   return {
-    query: async (text, params) => {
-      const res = await client.query(text, params);
-      return { rows: res.rows as Record<string, unknown>[] };
+    async query(text, params) {
+      const result = params?.length ? await sql.unsafe(text, params) : await sql.unsafe(text);
+      if (Array.isArray(result)) {
+        return { rows: result as Record<string, unknown>[] };
+      }
+      if (result && typeof result === "object" && "rows" in result) {
+        return { rows: (result as QueryResult).rows };
+      }
+      return { rows: [] };
     },
-    end: async () => {
-      await client.end();
+    async end() {
+      if (typeof sql.close === "function") {
+        await sql.close();
+        return;
+      }
+      if (typeof sql.end === "function") {
+        await sql.end();
+      }
     },
   };
 }

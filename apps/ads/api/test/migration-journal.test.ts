@@ -490,7 +490,12 @@ describe("migration journal", () => {
 
   it("refuses a populated schema whose ledger is missing or empty", async () => {
     expect(LEGACY_LEDGER_COPY_SQL).toBe(
-      "INSERT INTO os.__drizzle_migrations (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;",
+      `CREATE TABLE IF NOT EXISTS os.__drizzle_migrations (
+  id SERIAL PRIMARY KEY,
+  hash text NOT NULL,
+  created_at bigint
+);
+INSERT INTO os.__drizzle_migrations (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;`,
     );
     expect(readFileSync(resolve(repoRoot, "apps/ads/README.md"), "utf8")).toContain(LEGACY_LEDGER_COPY_SQL);
     expect(() =>
@@ -558,6 +563,9 @@ describe("migration journal", () => {
       expect(empty.stderr).toContain(LEGACY_LEDGER_COPY_SQL);
       const rows = await midway.query(`select count(*)::int as n from ${migrationsRelation()}`);
       expect(rows.rows[0]?.n).toBe(0);
+      await midway.query(`DROP TABLE ${migrationsRelation()}`);
+      const dropped = await midway.query(`select to_regclass('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}') as name`);
+      expect(dropped.rows[0]?.name).toBeNull();
       await midway.query(LEGACY_LEDGER_COPY_SQL);
     } finally {
       await midway.end();

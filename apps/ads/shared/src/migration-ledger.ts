@@ -16,4 +16,9 @@ export function migrationsRelation(): string {
  * One-time copy for a local or other non-production database whose rows are
  * still in `drizzle.__drizzle_migrations`. Do not run this against production.
  */
-export const LEGACY_LEDGER_COPY_SQL = `INSERT INTO ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE} (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;`;
+export const LEGACY_LEDGER_COPY_SQL = `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE} (
+  id SERIAL PRIMARY KEY,
+  hash text NOT NULL,
+  created_at bigint
+);
+INSERT INTO ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE} (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;`;
