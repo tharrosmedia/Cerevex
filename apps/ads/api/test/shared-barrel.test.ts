@@ -13,5 +13,8 @@ describe("@tharros/ads-shared root barrel", () => {
     expect(shared).not.toHaveProperty("importSkillConfigBundle");
     expect(shared).not.toHaveProperty("assessTestDatabase");
     expect(shared).not.toHaveProperty("SkillConfigImportError");
+    expect(shared).not.toHaveProperty("getEntitlements");
+    expect(shared).not.toHaveProperty("recordUsage");
+    expect(shared).not.toHaveProperty("recordUsageForStore");
   });
 });

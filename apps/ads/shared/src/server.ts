@@ -16,3 +16,17 @@ export {
   isLocalDatabaseHost,
 } from "./test-database";
 export type { AssessTestDatabaseInput, EnvLike, TestDatabaseVerdict } from "./test-database";
+export {
+  UsageLimitError,
+  assertWithinCap,
+  getUsage,
+  lockUsage,
+  recordUsage,
+  recordUsageForStore,
+} from "./usage";
+export type {
+  UsageRecordInput,
+  UsageRecordResult,
+  UsageSlice,
+  UsageSnapshot,
+} from "./usage";

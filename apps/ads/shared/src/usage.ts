@@ -1,6 +1,12 @@
 /**
  * Shared monthly usage counter for creative variations and SEO jobs.
  *
+ * Server-only. This module is not on the root barrel, so ads-web cannot
+ * import it through `@tharros/ads-shared`. The `./usage` export stays so
+ * Brain's server job writer and vitest can load it under Node. It does not
+ * import `server-only`: that package throws unless the react-server condition
+ * is set, and the SEO job writer runs in Node.
+ *
  * recordUsage / getUsage / assertWithinCap are the helpers. Creation paths
  * call recordUsage. It counts once per item id and does not block the create.
  * assertWithinCap is the check a later screen can call. Paid is unlimited and

@@ -147,6 +147,7 @@ describe("migration journal schema", () => {
       "0004_site_clients",
       "0005_skill_config",
       "0006_plan_entitlements",
+      "0008_monthly_usage",
     ];
     expect(entries.map((entry) => entry.tag).slice(0, prefix.length)).toEqual(prefix);
     const applied = entries.slice(0, 6);
@@ -201,7 +202,7 @@ describe("migration journal schema", () => {
       const rows = await client.query<{ id: number; hash: string; created_at: string }>(
         `select id, hash, created_at::text from ${migrationsRelation()} order by created_at`,
       );
-      expect(rows.rows).toHaveLength(7);
+      expect(rows.rows).toHaveLength(8);
       const stamped = rows.rows.find((row) => Number(row.created_at) === pending.when);
       expect(stamped?.hash).toBe(fileHash(pending.tag));
       expect(rows.rows.find((row) => row.hash === fileHash("0004_site_clients"))?.id).toBe(3);
@@ -209,6 +210,10 @@ describe("migration journal schema", () => {
         "skill_client_configs",
       );
       expect((await client.query(`select to_regclass('os.locations') as name`)).rows[0]?.name).toBe("locations");
+      expect((await client.query(`select to_regclass('os.usage_events') as name`)).rows[0]?.name).toBe("usage_events");
+      expect((await client.query(`select to_regclass('os.usage_counters') as name`)).rows[0]?.name).toBe(
+        "usage_counters",
+      );
       const beforeSecond = rows.rows.map((row) => `${row.id}:${row.hash}:${row.created_at}`);
       const second = await runMigrate(databaseUrl);
       expect(second.code, second.stderr).toBe(0);
