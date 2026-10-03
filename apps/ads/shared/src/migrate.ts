@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { closeDb, getPool } from "./db";
 import { loadEnv } from "./env";
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -18,7 +19,11 @@ async function main(): Promise<void> {
     await client.query("SET search_path TO os, public");
     const migrationsFolder = resolve(here, "../drizzle");
     const db = drizzle(client);
-    await migrate(db, { migrationsFolder });
+    await migrate(db, {
+      migrationsFolder,
+      migrationsSchema: MIGRATIONS_SCHEMA,
+      migrationsTable: MIGRATIONS_TABLE,
+    });
     console.log(`Applied OS migrations from ${migrationsFolder} into schema os`);
   } finally {
     client.release();
