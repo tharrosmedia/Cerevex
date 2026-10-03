@@ -99,23 +99,23 @@ Health:
 
 ## Production migrate
 
-One command applies pending `os` migrations to prod Neon. It does not seed, and it does not apply Brain `public` migrations. `npm run ads:db:migrate` and `bun artifacts/os-neon-migrate.ts` stay local or other non-production only.
+Adam, or an ops shell that already has the prod URL, runs this once before a deploy that needs a new `os` tag. Do not run it twice at once. It does not seed, and it does not apply Brain `public` migrations. `npm run ads:db:migrate` and `bun artifacts/os-neon-migrate.ts` stay local or other non-production only.
 
 ```bash
 PRODUCTION_NEON_HOST=<neon-host> DATABASE_URL='<prod-url>' npm run ads:db:migrate:prod -- --host <neon-host> --confirm
 ```
 
-`<neon-host>` is the hostname only (no user, password, or path). It must equal `PRODUCTION_NEON_HOST` and the host in `DATABASE_URL`. The command checks those three names before it connects. It never prints `DATABASE_URL`. Put the URL in the environment only. Do not commit it.
+`<neon-host>` is the hostname only (no user, password, or path). `DATABASE_URL` must set `sslmode=require` or stricter (`verify-ca`, `verify-full`). `sslmode=disable` is refused. The host node-postgres will connect to (parsed with `pg-connection-string`, the same parser as `pg`) must equal `--host` and `PRODUCTION_NEON_HOST`. The command checks that before it connects. It refuses a `host` or `hostaddr` query parameter, an `options` parameter (including `endpoint=`), more than one host, a unix-socket host, and `endpoint=` in the password. It never prints `DATABASE_URL`. Put the URL in the environment only. Do not commit it.
 
-Before any write it opens a read-only transaction, lists `os.__drizzle_migrations`, and prints JSON: `applied` tags and the `pending` tags it would apply. A bundled migration is applied only when `artifacts/<tag>.sql` and the `sql` field in `artifacts/os-migrate-bundle.json` share one sha256. A ledger row counts as that migration only when both `hash` and `created_at` match the bundle. Anything else is drift or an unknown row: a hash on the right `created_at` that is not the artifact hash, a known hash on the wrong `created_at`, a row that matches nothing, a duplicate, or a later tag applied while an earlier tag is missing. Those cases print the problem and refuse before any write. This command does not create `os.__drizzle_migrations`.
+Before any write it opens a read-only transaction, lists `os.__drizzle_migrations`, and prints JSON: `applied` tags and the `pending` tags it would apply. A bundled migration is applied only when `artifacts/<tag>.sql` and the `sql` field in `artifacts/os-migrate-bundle.json` share one sha256, and the SQL is schema-qualified to `os` rather than `public`. A ledger row counts as that migration only when both `hash` and `created_at` match the bundle. Anything else is drift or an unknown row: a hash on the right `created_at` that is not the artifact hash, a known hash on the wrong `created_at`, a row that matches nothing, a duplicate, or a later tag applied while an earlier tag is missing. Those cases print the problem and refuse before any write. This command does not create `os.__drizzle_migrations`.
 
-Each pending tag then runs in its own transaction: the SQL, then the ledger insert, then commit. A failure rolls that tag back. Tags already committed earlier in the same run stay applied. Running the command again applies only what the ledger still does not have. When every bundled tag is already applied, `--confirm` writes nothing.
+Each pending tag then runs in its own transaction. The transaction sets `lock_timeout` to 5s and `statement_timeout` to 120s, takes `pg_advisory_xact_lock`, and reads the ledger again before it runs the SQL. The SQL and the ledger insert commit together. A failure rolls that tag back. Tags already committed earlier in the same run stay applied. A second overlapping run either applies nothing or refuses. Running the command again after a success applies only what the ledger still does not have. When every bundled tag is already applied, `--confirm` writes nothing. Still do not start two runs at once.
 
-Replace `--confirm` with `--dry-run` to print the same listing and write nothing. Omitting both flags prints the listing and refuses to write.
+Replace `--confirm` with `--dry-run` to print the same listing and write nothing. Omitting both flags prints the listing and refuses to write. `--host` is required. It does not default.
 
 ### Rollback
 
-This command does not run down migrations and does not delete ledger rows. Undo for a migration this command has committed is a Neon point-in-time restore, or a new forward migration whose `when` is after every applied `created_at`. Do not edit applied SQL, do not apply files with `psql`, and do not change `os.__drizzle_migrations` on production. SQL in `apps/ads/shared/drizzle-rollbacks/` is not applied here.
+Note the Neon point-in-time restore timestamp before you run the command. This command does not run down migrations and does not delete ledger rows. Undo for a migration it has committed is that Neon restore, or a new forward migration whose `when` is after every applied `created_at`. A point-in-time restore rewinds the whole Neon branch, including Brain's `public` schema, not only `os`. Do not edit applied SQL, do not apply files with `psql`, and do not change `os.__drizzle_migrations` on production. SQL in `apps/ads/shared/drizzle-rollbacks/` is not applied here.
 
 ## Environment
 

@@ -3,11 +3,16 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { parse as parseConnectionString, type ConnectionOptions } from "pg-connection-string";
 import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultArtifactsDir = resolve(here, "../../../../artifacts");
 const TAG_NAME = /^[A-Za-z0-9_-]+$/;
+/** Held for one apply transaction so two --confirm runs cannot insert the same tag. */
+const LEDGER_ADVISORY_LOCK = 814675001;
+const STRICT_SSLMODE = new Set(["require", "verify-ca", "verify-full"]);
+const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 
 export class ProdMigrateError extends Error {
   readonly plan: ProdMigratePlan | null;
@@ -75,50 +80,127 @@ export function redactDatabaseUrl(value: string, databaseUrl?: string): string {
   return next;
 }
 
-function hostnameFromUrl(databaseUrl: string): string {
-  let parsed: URL;
+function normalizeHost(hostname: string): string {
+  let host = hostname.trim().toLowerCase();
+  if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+  if (!host.startsWith("/")) host = host.replace(/\.+$/, "");
+  return host;
+}
+
+function queryParamNames(value: string): Set<string> {
   try {
-    parsed = new URL(databaseUrl);
+    const url = new URL(value);
+    return new Set([...url.searchParams.keys()].map((key) => key.toLowerCase()));
   } catch {
-    throw new ProdMigrateError("Refusing to migrate. DATABASE_URL could not be parsed.");
+    return new Set();
   }
-  const host = parsed.hostname.replace(/\.$/, "").toLowerCase();
-  if (!host) {
-    throw new ProdMigrateError("Refusing to migrate. DATABASE_URL has no host.");
+}
+
+/**
+ * Host pg will open, using the same parser as node-postgres. Query overrides
+ * that can steer the session somewhere else are refused before any connection.
+ */
+export function connectionHost(databaseUrl: string, label = "DATABASE_URL"): string {
+  const trimmed = databaseUrl.trim();
+  if (!trimmed) {
+    throw new ProdMigrateError(`Refusing to migrate. ${label} is empty.`);
+  }
+  let config: ConnectionOptions;
+  try {
+    config = parseConnectionString(trimmed, { useLibpqCompat: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/sslmode=verify-ca/i.test(message)) {
+      throw new ProdMigrateError("Refusing to migrate. sslmode=verify-ca requires sslrootcert.");
+    }
+    throw new ProdMigrateError(`Refusing to migrate. ${label} could not be parsed.`);
+  }
+
+  const params = queryParamNames(trimmed);
+  if (params.has("host")) {
+    throw new ProdMigrateError(`Refusing to migrate. ${label} must not set the host query parameter.`);
+  }
+  if (params.has("hostaddr") || (config.hostaddr != null && String(config.hostaddr) !== "")) {
+    throw new ProdMigrateError(`Refusing to migrate. ${label} must not set hostaddr.`);
+  }
+  if (params.has("options") || (typeof config.options === "string" && config.options.trim() !== "")) {
+    throw new ProdMigrateError(`Refusing to migrate. ${label} must not set options.`);
+  }
+
+  const hostField = typeof config.host === "string" ? config.host : "";
+  if (!hostField) {
+    throw new ProdMigrateError(`Refusing to migrate. ${label} has no host.`);
+  }
+  if (hostField.startsWith("/") || hostField.includes(",")) {
+    if (hostField.startsWith("/")) {
+      throw new ProdMigrateError(`Refusing to migrate. ${label} must not use a unix socket host.`);
+    }
+    throw new ProdMigrateError(`Refusing to migrate. ${label} must name exactly one host.`);
+  }
+  const host = normalizeHost(hostField);
+  if (!host || host.startsWith("/")) {
+    throw new ProdMigrateError(`Refusing to migrate. ${label} must not use a unix socket host.`);
+  }
+
+  const password = typeof config.password === "string" ? config.password : "";
+  if (/endpoint=/i.test(password)) {
+    throw new ProdMigrateError(`Refusing to migrate. ${label} password must not contain endpoint=.`);
+  }
+
+  const sslmode = typeof config.sslmode === "string" ? config.sslmode.toLowerCase() : "";
+  if (sslmode === "disable") {
+    throw new ProdMigrateError("Refusing to migrate. sslmode=disable is not allowed.");
+  }
+  const strictSsl = STRICT_SSLMODE.has(sslmode);
+  if (!strictSsl && !(LOCAL_HOSTS.has(host) && sslmode === "")) {
+    throw new ProdMigrateError("Refusing to migrate. DATABASE_URL must set sslmode=require or stricter.");
   }
   return host;
 }
 
-function hostnameFromToken(token: string, label: string): string {
+function namedHost(token: string, label: string): string {
   const trimmed = token.trim();
   if (!trimmed) {
     throw new ProdMigrateError(`Refusing to migrate. ${label} is empty.`);
   }
+  if (/^(?:postgres|postgresql):\/\//i.test(trimmed)) {
+    return connectionHost(trimmed, label);
+  }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
-    return hostnameFromUrl(trimmed.replace(/^postgres(ql)?:/i, "http:"));
+    try {
+      const host = normalizeHost(new URL(trimmed).hostname);
+      if (!host || host.startsWith("/") || host.includes(",")) {
+        throw new Error("empty");
+      }
+      return host;
+    } catch {
+      throw new ProdMigrateError(`Refusing to migrate. ${label} is not a hostname.`);
+    }
   }
-  if (/[\s/]/.test(trimmed)) {
+  if (/[\s/?#]/.test(trimmed) || trimmed.includes("://")) {
     throw new ProdMigrateError(`Refusing to migrate. ${label} is not a hostname.`);
   }
-  const bare = trimmed.replace(/:\d+$/, "").replace(/\.$/, "").toLowerCase();
-  if (!bare || bare.includes(":")) {
+  const bare = trimmed.replace(/:\d+$/, "");
+  const host = normalizeHost(bare);
+  if (host === "::1") return host;
+  if (!host || host.includes(",") || host.startsWith("/") || host.includes(":")) {
     throw new ProdMigrateError(`Refusing to migrate. ${label} is not a hostname.`);
   }
-  return bare;
+  return host;
 }
 
 /**
- * The named `--host`, the DATABASE_URL host, and PRODUCTION_NEON_HOST must be
- * the same hostname. Checked before any connection.
+ * The host node-postgres would connect to, `--host`, and PRODUCTION_NEON_HOST
+ * must be the same hostname. Checked before any connection.
  */
 export function assertProdTarget(input: {
   databaseUrl: string;
   productionNeonHost: string;
   host: string;
 }): string {
-  const named = hostnameFromToken(input.host, "--host");
-  const target = hostnameFromUrl(input.databaseUrl);
-  const listed = hostnameFromToken(input.productionNeonHost, "PRODUCTION_NEON_HOST");
+  const named = namedHost(input.host, "--host");
+  const target = connectionHost(input.databaseUrl, "DATABASE_URL");
+  const listed = namedHost(input.productionNeonHost, "PRODUCTION_NEON_HOST");
   if (target !== named) {
     throw new ProdMigrateError("Refusing to migrate. DATABASE_URL host does not match --host.");
   }
@@ -128,11 +210,55 @@ export function assertProdTarget(input: {
   return named;
 }
 
+export function parseProdMigrateArgs(argv: string[]): { host: string; mode: ProdMigrateMode } {
+  let host: string | undefined;
+  let dryRun = false;
+  let confirm = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--host") {
+      host = argv[index + 1];
+      index += 1;
+      if (!host || host.startsWith("--")) {
+        throw new ProdMigrateError("Refusing to migrate. Name the prod host with --host <hostname>.");
+      }
+      continue;
+    }
+    if (arg === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (arg === "--confirm") {
+      confirm = true;
+      continue;
+    }
+    throw new ProdMigrateError(`Refusing to migrate. Unknown argument ${JSON.stringify(arg ?? "")}.`);
+  }
+  if (!host) {
+    throw new ProdMigrateError("Refusing to migrate. Name the prod host with --host <hostname>.");
+  }
+  if (dryRun && confirm) {
+    throw new ProdMigrateError("Refusing to migrate. Pass only one of --dry-run or --confirm.");
+  }
+  if (dryRun) return { host, mode: "dry-run" };
+  if (confirm) return { host, mode: "apply" };
+  return { host, mode: "unconfirmed" };
+}
+
 function splitStatements(sqlText: string): string[] {
   return sqlText
     .split("--> statement-breakpoint")
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
+}
+
+function assertOsOnly(sql: string, tag: string): void {
+  if (/"public"\s*\./i.test(sql) || /\bpublic\s*\./i.test(sql)) {
+    throw new ProdMigrateError(`Refusing to migrate. ${tag} targets the public schema.`);
+  }
+  if (!/"os"\s*\./i.test(sql)) {
+    throw new ProdMigrateError(`Refusing to migrate. ${tag} is not schema-qualified to os.`);
+  }
 }
 
 export function loadBundledMigrations(artifactsDir = defaultArtifactsDir): BundledMigration[] {
@@ -177,6 +303,7 @@ export function loadBundledMigrations(artifactsDir = defaultArtifactsDir): Bundl
         `Refusing to migrate. Artifact hash for ${tag} does not match the bundle. Expected ${recorded} found ${digest}.`,
       );
     }
+    assertOsOnly(sql, tag);
     migrations.push({ tag, filename, idx, when, sha256: digest, sql });
   }
   return migrations;
@@ -245,6 +372,10 @@ function ledgerRelation(): string {
 async function readLedger(client: pg.Client): Promise<LedgerRow[]> {
   await client.query("BEGIN READ ONLY");
   try {
+    const mode = await client.query(`SELECT current_setting('transaction_read_only') AS ro`);
+    if (String(mode.rows[0]?.ro) !== "on") {
+      throw new ProdMigrateError("Refusing to migrate. Ledger listing must be a read-only transaction.");
+    }
     const exists = await client.query(`SELECT to_regclass($1::text) AS rel`, [
       `${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}`,
     ]);
@@ -300,12 +431,28 @@ export async function runOsProdMigrate(request: ProdMigrateRequest): Promise<Pro
       );
     }
 
-    const pending = bundled.filter((migration) => plan.pending.includes(migration.tag));
+    let reportPlan = plan;
     const migrationsApplied: string[] = [];
-    for (const migration of pending) {
+    for (const migration of bundled.filter((entry) => plan.pending.includes(entry.tag))) {
       try {
         await client.query("BEGIN");
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query("SET LOCAL statement_timeout = '120s'");
         await client.query(`SET LOCAL search_path TO ${MIGRATIONS_SCHEMA}, public`);
+        await client.query("SELECT pg_advisory_xact_lock($1)", [LEDGER_ADVISORY_LOCK]);
+        const lockedRows = await client.query(
+          `SELECT hash, created_at FROM ${ledgerRelation()} ORDER BY id`,
+        );
+        const lockedPlan = planFromLedger(host, bundled, lockedRows.rows as LedgerRow[]);
+        if (lockedPlan.problems.length > 0) {
+          await client.query("ROLLBACK");
+          throw new ProdMigrateError(`Refusing to migrate. ${lockedPlan.problems.join(" ")}`, lockedPlan);
+        }
+        if (!lockedPlan.pending.includes(migration.tag)) {
+          await client.query("ROLLBACK");
+          reportPlan = lockedPlan;
+          continue;
+        }
         for (const statement of splitStatements(migration.sql)) {
           await client.query(statement);
         }
@@ -314,18 +461,24 @@ export async function runOsProdMigrate(request: ProdMigrateRequest): Promise<Pro
           migration.when,
         ]);
         await client.query("COMMIT");
+        migrationsApplied.push(migration.tag);
+        reportPlan = {
+          ...lockedPlan,
+          applied: [...lockedPlan.applied, migration.tag],
+          pending: lockedPlan.pending.filter((tag) => tag !== migration.tag),
+        };
       } catch (error) {
+        if (error instanceof ProdMigrateError) throw error;
         await client.query("ROLLBACK").catch(() => undefined);
         const message = error instanceof Error ? error.message : String(error);
         throw new ProdMigrateError(
           `Refusing to migrate. ${migration.tag} rolled back in its transaction. ${redactDatabaseUrl(message, request.databaseUrl)}`,
-          { ...plan, pending: plan.pending.slice(migrationsApplied.length) },
+          { ...reportPlan, pending: reportPlan.pending.slice(migrationsApplied.length) },
         );
       }
-      migrationsApplied.push(migration.tag);
     }
 
-    return { ...plan, ok: true, migrationsApplied };
+    return { ...reportPlan, ok: true, migrationsApplied };
   } finally {
     await client.end();
   }

@@ -7,47 +7,14 @@
  * Does not print DATABASE_URL. Does not seed. Does not apply Brain public migrations.
  */
 import {
+  parseProdMigrateArgs,
   ProdMigrateError,
   redactDatabaseUrl,
   runOsProdMigrate,
-  type ProdMigrateMode,
   type ProdMigratePlan,
 } from "./prod-migrate";
 
-export function parseProdMigrateArgs(argv: string[]): { host: string; mode: ProdMigrateMode } {
-  let host: string | undefined;
-  let dryRun = false;
-  let confirm = false;
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--host") {
-      host = argv[index + 1];
-      index += 1;
-      if (!host || host.startsWith("--")) {
-        throw new ProdMigrateError("Refusing to migrate. Name the prod host with --host <hostname>.");
-      }
-      continue;
-    }
-    if (arg === "--dry-run") {
-      dryRun = true;
-      continue;
-    }
-    if (arg === "--confirm") {
-      confirm = true;
-      continue;
-    }
-    throw new ProdMigrateError(`Refusing to migrate. Unknown argument ${JSON.stringify(arg ?? "")}.`);
-  }
-  if (!host) {
-    throw new ProdMigrateError("Refusing to migrate. Name the prod host with --host <hostname>.");
-  }
-  if (dryRun && confirm) {
-    throw new ProdMigrateError("Refusing to migrate. Pass only one of --dry-run or --confirm.");
-  }
-  if (dryRun) return { host, mode: "dry-run" };
-  if (confirm) return { host, mode: "apply" };
-  return { host, mode: "unconfirmed" };
-}
+export { parseProdMigrateArgs };
 
 function printResult(body: Record<string, unknown>): void {
   console.log(JSON.stringify(body));

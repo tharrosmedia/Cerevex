@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { assertProdTarget, ProdMigrateError, runOsProdMigrate } from "@tharros/ads-shared/prod-migrate";
+import {
+  assertProdTarget,
+  parseProdMigrateArgs,
+  ProdMigrateError,
+  redactDatabaseUrl,
+  runOsProdMigrate,
+} from "@tharros/ads-shared/prod-migrate";
 import { assertSafeTestDatabase } from "@tharros/ads-shared/test-database";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -40,9 +46,9 @@ function databaseUrlFor(database: string): string {
   assertLocalDatabase(raw);
   const scheme = raw.startsWith("postgresql:") ? "postgresql:" : "postgres:";
   const url = new URL(raw.replace(/^postgres(ql)?:/, "http:"));
-  url.protocol = "http:";
-  url.pathname = `/${database}`;
-  const next = url.toString().replace(/^http:/, scheme);
+  const auth = url.username ? `${url.username}:${url.password}@` : "";
+  const port = url.port ? `:${url.port}` : "";
+  const next = `${scheme}//${auth}${url.hostname}${port}/${database}`;
   assertLocalDatabase(next);
   return next;
 }
@@ -154,6 +160,27 @@ function baseDatabase(): Promise<string> {
 async function cloneBase(suffix: string): Promise<string> {
   await baseDatabase();
   return createDatabase(`cerevex_prod_mig_${process.pid}_${suffix}`, baseName);
+}
+
+function slowedArtifactDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "os-prod-race-"));
+  const bundle = JSON.parse(readFileSync(join(artifactsDir, "os-migrate-bundle.json"), "utf8")) as {
+    migrations: Array<{ filename: string; tag: string; sql: string; sha256: string }>;
+  };
+  for (const migration of bundle.migrations) {
+    const original = readFileSync(join(artifactsDir, migration.filename), "utf8");
+    const sql =
+      migration.tag === "0005_skill_config"
+        ? `SELECT pg_sleep(0.8);\n--> statement-breakpoint\n${original}`
+        : original;
+    writeFileSync(join(dir, migration.filename), sql);
+    if (migration.tag === "0005_skill_config") {
+      migration.sql = sql;
+      migration.sha256 = createHash("sha256").update(sql).digest("hex");
+    }
+  }
+  writeFileSync(join(dir, "os-migrate-bundle.json"), JSON.stringify(bundle));
+  return dir;
 }
 
 function request(databaseUrl: string, mode: "dry-run" | "apply" | "unconfirmed") {
@@ -306,7 +333,7 @@ describe("os production migrate", () => {
     expect(await ledgerCount(databaseUrl)).toBe(journal.migrations.length);
   });
 
-  it("the CLI refuses when PRODUCTION_NEON_HOST is missing", async () => {
+  it("the CLI refuses when DATABASE_URL is missing", async () => {
     const env = { ...process.env };
     delete env.PRODUCTION_NEON_HOST;
     delete env.DATABASE_URL;
@@ -338,4 +365,231 @@ describe("os production migrate", () => {
     expect(result.stdout).toContain("DATABASE_URL is required");
     expect(result.stdout).not.toContain("postgres://");
   });
+
+  it("the CLI refuses when PRODUCTION_NEON_HOST is missing", async () => {
+    const databaseUrl = "postgres://user:super-secret@127.0.0.1:5432/tharros";
+    const result = await runCli(["--host", host, "--dry-run"], {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      PRODUCTION_NEON_HOST: undefined,
+    });
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("Set PRODUCTION_NEON_HOST");
+    expect(result.stdout).not.toContain("super-secret");
+  });
+
+  it("requires --host and does not default it", () => {
+    expect(() => parseProdMigrateArgs(["--confirm"])).toThrow(/Name the prod host with --host/);
+    expect(() => parseProdMigrateArgs(["--host"])).toThrow(/Name the prod host with --host/);
+    expect(() => parseProdMigrateArgs(["--host", "--confirm"])).toThrow(/Name the prod host with --host/);
+    expect(parseProdMigrateArgs(["--host", "ep-prod.example", "--dry-run"])).toEqual({
+      host: "ep-prod.example",
+      mode: "dry-run",
+    });
+  });
+
+  it("redacts database URLs from error text", () => {
+    const databaseUrl = "postgres://user:super-secret@ep-prod.example/neondb";
+    const redacted = redactDatabaseUrl(`connect failed ${databaseUrl} and postgres://other:pw@host/db`, databaseUrl);
+    expect(redacted).not.toContain("super-secret");
+    expect(redacted).not.toContain("postgres://");
+    expect(redacted).not.toContain("ep-prod.example");
+    expect(redacted).toContain("[redacted-url]");
+  });
+
+  it("lists the ledger in a read-only transaction", () => {
+    const source = readFileSync(join(repoRoot, "apps/ads/shared/src/prod-migrate.ts"), "utf8");
+    expect(source).toContain("BEGIN READ ONLY");
+    expect(source).toContain("transaction_read_only");
+  });
+
+  it("refuses a duplicate ledger row for one tag", async () => {
+    const databaseUrl = await cloneBase("dup");
+    const first = journal.migrations[0]!;
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await client.query(`INSERT INTO "os"."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)`, [
+        first.sha256,
+        first.when,
+      ]);
+    } finally {
+      await client.end();
+    }
+    const before = await ledgerCount(databaseUrl);
+    await expect(request(databaseUrl, "apply")).rejects.toThrow(/0000_m1_spine is recorded 2 times/);
+    expect(await ledgerCount(databaseUrl)).toBe(before);
+    expect(await skillTable(databaseUrl)).toBeNull();
+  });
+
+  it("refuses a gap when a later tag is applied and an earlier tag is missing", async () => {
+    const databaseUrl = await cloneBase("gap");
+    const skipped = journal.migrations[2]!;
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await client.query(`DELETE FROM "os"."__drizzle_migrations" WHERE created_at = $1`, [skipped.when]);
+    } finally {
+      await client.end();
+    }
+    await expect(request(databaseUrl, "apply")).rejects.toThrow(
+      /0003_m51 is applied but earlier bundled migration 0002_m5_apply is not/,
+    );
+    expect(await skillTable(databaseUrl)).toBeNull();
+  });
+
+  it("refuses a known hash recorded at the wrong created_at", async () => {
+    const databaseUrl = await cloneBase("when");
+    const pending = journal.migrations[5]!;
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await client.query(`INSERT INTO "os"."__drizzle_migrations" (hash, created_at) VALUES ($1, $2)`, [
+        pending.sha256,
+        42,
+      ]);
+    } finally {
+      await client.end();
+    }
+    await expect(request(databaseUrl, "apply")).rejects.toThrow(
+      /hash of 0005_skill_config is recorded at created_at 42/,
+    );
+    expect(await skillTable(databaseUrl)).toBeNull();
+  });
+
+  it("two overlapping confirms leave exactly one ledger row per tag", async () => {
+    const databaseUrl = await cloneBase("race");
+    const dir = slowedArtifactDir();
+    const run = () =>
+      runOsProdMigrate({
+        databaseUrl,
+        productionNeonHost: host,
+        host,
+        mode: "apply",
+        artifactsDir: dir,
+      });
+    const results = await Promise.allSettled([run(), run()]);
+    let applied = 0;
+    for (const result of results) {
+      if (result.status === "rejected") {
+        expect(result.reason).toBeInstanceOf(ProdMigrateError);
+        continue;
+      }
+      if (result.value.migrationsApplied.includes("0005_skill_config")) applied += 1;
+      expect(result.value.migrationsApplied.filter((tag) => tag !== "0005_skill_config")).toEqual([]);
+    }
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const grouped = await client.query(
+        `SELECT hash, created_at, count(*)::int AS n FROM "os"."__drizzle_migrations" GROUP BY hash, created_at`,
+      );
+      expect(grouped.rows).toHaveLength(journal.migrations.length);
+      for (const row of grouped.rows) expect(Number(row.n)).toBe(1);
+    } finally {
+      await client.end();
+    }
+    expect(applied).toBe(1);
+    expect(await skillTable(databaseUrl)).toContain("skill_client_configs");
+  }, 30_000);
+
+  it("refuses host, hostaddr, options, multiple hosts, sockets, endpoint passwords, and weak ssl", () => {
+    const named = "ep-prod.region.aws.neon.tech";
+    const base = `postgres://user:secret@${named}/neondb`;
+    const target = { productionNeonHost: named, host: named };
+    expect(() => assertProdTarget({ ...target, databaseUrl: `${base}?host=127.0.0.1&sslmode=require` })).toThrow(
+      /must not set the host query parameter/,
+    );
+    expect(() => assertProdTarget({ ...target, databaseUrl: `${base}?hostaddr=10.0.0.5&sslmode=require` })).toThrow(
+      /must not set hostaddr/,
+    );
+    expect(() =>
+      assertProdTarget({
+        ...target,
+        databaseUrl: `${base}?options=-c%20endpoint%3Dep-other&sslmode=require`,
+      }),
+    ).toThrow(/must not set options/);
+    expect(() =>
+      assertProdTarget({
+        ...target,
+        databaseUrl: `postgres://user:secret@${named},ep-other.region.aws.neon.tech/neondb?sslmode=require`,
+      }),
+    ).toThrow(/exactly one host/);
+    expect(() =>
+      assertProdTarget({
+        ...target,
+        databaseUrl: "postgres://user:secret@%2Fvar%2Frun%2Fpostgresql/neondb?sslmode=require",
+      }),
+    ).toThrow(/unix socket/);
+    expect(() =>
+      assertProdTarget({
+        ...target,
+        databaseUrl: `postgres://user:endpoint=ep-other;secret@${named}/neondb?sslmode=require`,
+      }),
+    ).toThrow(/password must not contain endpoint=/);
+    expect(() => assertProdTarget({ ...target, databaseUrl: `${base}?sslmode=disable` })).toThrow(
+      /sslmode=disable is not allowed/,
+    );
+    expect(() => assertProdTarget({ ...target, databaseUrl: base })).toThrow(/sslmode=require or stricter/);
+    expect(() => assertProdTarget({ ...target, databaseUrl: `${base}?sslmode=prefer` })).toThrow(
+      /sslmode=require or stricter/,
+    );
+    expect(assertProdTarget({ ...target, databaseUrl: `${base}?sslmode=require` })).toBe(named);
+    expect(assertProdTarget({ ...target, databaseUrl: `${base}?sslmode=verify-full` })).toBe(named);
+  });
+
+  it("refuses bundled SQL that targets the public schema", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "os-prod-public-"));
+    const sql = 'CREATE TABLE "public"."leak" (\n\t"id" uuid PRIMARY KEY\n);\n';
+    const digest = createHash("sha256").update(sql).digest("hex");
+    writeFileSync(join(dir, "0000_leak.sql"), sql);
+    writeFileSync(
+      join(dir, "os-migrate-bundle.json"),
+      JSON.stringify({
+        migrations: [{ filename: "0000_leak.sql", tag: "0000_leak", idx: 0, when: 1, sha256: digest, sql }],
+      }),
+    );
+    await expect(
+      runOsProdMigrate({
+        databaseUrl: "postgres://tharros:tharros@127.0.0.1:1/cerevex_prod_mig_absent",
+        productionNeonHost: host,
+        host,
+        mode: "dry-run",
+        artifactsDir: dir,
+      }),
+    ).rejects.toThrow(/0000_leak targets the public schema/);
+  });
 });
+
+function runCli(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<{ code: number; stdout: string }> {
+  const childEnv = { ...env };
+  if (childEnv.PRODUCTION_NEON_HOST === undefined) delete childEnv.PRODUCTION_NEON_HOST;
+  if (childEnv.DATABASE_URL === undefined) delete childEnv.DATABASE_URL;
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(tsxBin, [cli, ...args], {
+      cwd: repoRoot,
+      env: childEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("prod migrate cli timed out"));
+    }, 20_000);
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolvePromise({ code: code ?? 1, stdout });
+    });
+  });
+}
