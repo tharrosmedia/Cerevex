@@ -23,9 +23,29 @@ const cli = resolve(repoRoot, "apps/ads/shared/src/prod-migrate-cli.ts");
 const createdDatabases: string[] = [];
 const host = "127.0.0.1";
 
+type BundleMigration = { tag: string; when: number; sha256: string; filename: string; idx: number };
+type JournalEntry = { tag: string; when: number; idx: number };
+
 const journal = JSON.parse(readFileSync(join(artifactsDir, "os-migrate-bundle.json"), "utf8")) as {
-  migrations: Array<{ tag: string; when: number; sha256: string }>;
+  migrations: BundleMigration[];
 };
+const drizzleJournal = JSON.parse(
+  readFileSync(join(repoRoot, "apps/ads/shared/drizzle/meta/_journal.json"), "utf8"),
+) as { entries: JournalEntry[] };
+
+if (journal.migrations.length === 0) {
+  throw new Error("artifacts/os-migrate-bundle.json has no migrations");
+}
+const pending = journal.migrations[journal.migrations.length - 1]!;
+const appliedTags = journal.migrations.slice(0, -1).map((migration) => migration.tag);
+
+function bundleMatchesJournal(): boolean {
+  if (journal.migrations.length !== drizzleJournal.entries.length) return false;
+  return journal.migrations.every((migration, index) => {
+    const entry = drizzleJournal.entries[index];
+    return entry?.tag === migration.tag && entry.when === migration.when && entry.idx === migration.idx;
+  });
+}
 
 function assertLocalDatabase(databaseUrl: string): void {
   assertSafeTestDatabase({
@@ -124,11 +144,18 @@ async function ledgerCount(databaseUrl: string): Promise<number> {
   }
 }
 
-async function skillTable(databaseUrl: string): Promise<string | null> {
+function pendingTableName(): string {
+  const match = artifactSql(pending.tag).match(/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+"os"\."([A-Za-z0-9_]+)"/i);
+  if (!match?.[1]) throw new Error(`pending tag ${pending.tag} creates no os table`);
+  return match[1];
+}
+
+async function pendingTable(databaseUrl: string): Promise<string | null> {
+  const name = pendingTableName();
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    const result = await client.query(`SELECT to_regclass('os.skill_client_configs') AS rel`);
+    const result = await client.query(`SELECT to_regclass($1) AS rel`, [`os.${name}`]);
     const rel = result.rows[0]?.rel;
     return rel ? String(rel) : null;
   } finally {
@@ -145,10 +172,7 @@ function baseDatabase(): Promise<string> {
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-      await applyTags(
-        client,
-        journal.migrations.slice(0, 5).map((migration) => migration.tag),
-      );
+      await applyTags(client, appliedTags);
     } finally {
       await client.end();
     }
@@ -170,11 +194,11 @@ function slowedArtifactDir(): string {
   for (const migration of bundle.migrations) {
     const original = readFileSync(join(artifactsDir, migration.filename), "utf8");
     const sql =
-      migration.tag === "0005_skill_config"
+      migration.tag === pending.tag
         ? `SELECT pg_sleep(0.8);\n--> statement-breakpoint\n${original}`
         : original;
     writeFileSync(join(dir, migration.filename), sql);
-    if (migration.tag === "0005_skill_config") {
+    if (migration.tag === pending.tag) {
       migration.sql = sql;
       migration.sha256 = createHash("sha256").update(sql).digest("hex");
     }
@@ -217,6 +241,12 @@ describe("os production migrate", () => {
     expect(root.scripts["ads:db:migrate:prod"]).toBe("npm run migrate:prod --workspace=@tharros/ads-shared --");
   });
 
+  it("derives the pending tag from the bundle and the journal", () => {
+    expect(bundleMatchesJournal()).toBe(true);
+    expect(pending.tag).toBe(drizzleJournal.entries[drizzleJournal.entries.length - 1]?.tag);
+    expect(appliedTags).toEqual(drizzleJournal.entries.slice(0, -1).map((entry) => entry.tag));
+  });
+
   it("refuses when PRODUCTION_NEON_HOST does not match the target", () => {
     expect(() =>
       assertProdTarget({
@@ -237,7 +267,7 @@ describe("os production migrate", () => {
   it("refuses a sibling artifact whose hash does not match the bundle", async () => {
     const dir = mkdtempSync(join(tmpdir(), "os-prod-migrate-"));
     const bundle = JSON.parse(readFileSync(join(artifactsDir, "os-migrate-bundle.json"), "utf8")) as {
-      migrations: Array<{ filename: string; sql: string }>;
+      migrations: Array<{ filename: string; tag: string; sql: string }>;
     };
     for (const migration of bundle.migrations) {
       writeFileSync(join(dir, migration.filename), readFileSync(join(artifactsDir, migration.filename)));
@@ -253,7 +283,7 @@ describe("os production migrate", () => {
         mode: "dry-run",
         artifactsDir: dir,
       }),
-    ).rejects.toThrow(/Artifact hash for 0005_skill_config does not match the bundle/);
+    ).rejects.toThrow(new RegExp(`Artifact hash for ${last.tag} does not match the bundle`));
   });
 
   it("refuses to write without --confirm", async () => {
@@ -267,20 +297,20 @@ describe("os production migrate", () => {
     );
     expect(error).toBeInstanceOf(ProdMigrateError);
     expect((error as Error).message).toContain("Pass --confirm");
-    expect((error as ProdMigrateError).plan?.pending).toEqual(["0005_skill_config"]);
+    expect((error as ProdMigrateError).plan?.pending).toEqual([pending.tag]);
     expect(await ledgerCount(databaseUrl)).toBe(before);
-    expect(await skillTable(databaseUrl)).toBeNull();
+    expect(await pendingTable(databaseUrl)).toBeNull();
   });
 
   it("dry-run lists the pending tag and writes nothing", async () => {
     const databaseUrl = await cloneBase("dry");
     const before = await ledgerCount(databaseUrl);
     const report = await request(databaseUrl, "dry-run");
-    expect(report.pending).toEqual(["0005_skill_config"]);
+    expect(report.pending).toEqual([pending.tag]);
     expect(report.migrationsApplied).toEqual([]);
     expect(report.problems).toEqual([]);
     expect(await ledgerCount(databaseUrl)).toBe(before);
-    expect(await skillTable(databaseUrl)).toBeNull();
+    expect(await pendingTable(databaseUrl)).toBeNull();
   });
 
   it("refuses ledger drift from an unknown row", async () => {
@@ -298,12 +328,11 @@ describe("os production migrate", () => {
     const before = await ledgerCount(databaseUrl);
     await expect(request(databaseUrl, "apply")).rejects.toThrow(/is not in the bundled artifacts/);
     expect(await ledgerCount(databaseUrl)).toBe(before);
-    expect(await skillTable(databaseUrl)).toBeNull();
+    expect(await pendingTable(databaseUrl)).toBeNull();
   });
 
   it("refuses a ledger hash that does not match the bundled artifact", async () => {
     const databaseUrl = await cloneBase("hash");
-    const pending = journal.migrations[5]!;
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
@@ -315,16 +344,16 @@ describe("os production migrate", () => {
       await client.end();
     }
     await expect(request(databaseUrl, "apply")).rejects.toThrow(
-      /Ledger hash for 0005_skill_config .* does not match the bundled artifact/,
+      new RegExp(`Ledger hash for ${pending.tag} .* does not match the bundled artifact`),
     );
-    expect(await skillTable(databaseUrl)).toBeNull();
+    expect(await pendingTable(databaseUrl)).toBeNull();
   });
 
   it("applies a pending migration once and is a no-op when it is already applied", async () => {
     const databaseUrl = await cloneBase("apply");
     const first = await request(databaseUrl, "apply");
-    expect(first.migrationsApplied).toEqual(["0005_skill_config"]);
-    expect(await skillTable(databaseUrl)).toContain("skill_client_configs");
+    expect(first.migrationsApplied).toEqual([pending.tag]);
+    expect(await pendingTable(databaseUrl)).toContain(pendingTableName());
     expect(await ledgerCount(databaseUrl)).toBe(journal.migrations.length);
 
     const second = await request(databaseUrl, "apply");
@@ -417,14 +446,17 @@ describe("os production migrate", () => {
       await client.end();
     }
     const before = await ledgerCount(databaseUrl);
-    await expect(request(databaseUrl, "apply")).rejects.toThrow(/0000_m1_spine is recorded 2 times/);
+    await expect(request(databaseUrl, "apply")).rejects.toThrow(
+      new RegExp(`${first.tag} is recorded 2 times`),
+    );
     expect(await ledgerCount(databaseUrl)).toBe(before);
-    expect(await skillTable(databaseUrl)).toBeNull();
+    expect(await pendingTable(databaseUrl)).toBeNull();
   });
 
   it("refuses a gap when a later tag is applied and an earlier tag is missing", async () => {
     const databaseUrl = await cloneBase("gap");
     const skipped = journal.migrations[2]!;
+    const later = journal.migrations[3]!;
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
@@ -433,14 +465,13 @@ describe("os production migrate", () => {
       await client.end();
     }
     await expect(request(databaseUrl, "apply")).rejects.toThrow(
-      /0003_m51 is applied but earlier bundled migration 0002_m5_apply is not/,
+      new RegExp(`${later.tag} is applied but earlier bundled migration ${skipped.tag} is not`),
     );
-    expect(await skillTable(databaseUrl)).toBeNull();
+    expect(await pendingTable(databaseUrl)).toBeNull();
   });
 
   it("refuses a known hash recorded at the wrong created_at", async () => {
     const databaseUrl = await cloneBase("when");
-    const pending = journal.migrations[5]!;
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
@@ -452,9 +483,9 @@ describe("os production migrate", () => {
       await client.end();
     }
     await expect(request(databaseUrl, "apply")).rejects.toThrow(
-      /hash of 0005_skill_config is recorded at created_at 42/,
+      new RegExp(`hash of ${pending.tag} is recorded at created_at 42`),
     );
-    expect(await skillTable(databaseUrl)).toBeNull();
+    expect(await pendingTable(databaseUrl)).toBeNull();
   });
 
   it("two overlapping confirms leave exactly one ledger row per tag", async () => {
@@ -475,8 +506,8 @@ describe("os production migrate", () => {
         expect(result.reason).toBeInstanceOf(ProdMigrateError);
         continue;
       }
-      if (result.value.migrationsApplied.includes("0005_skill_config")) applied += 1;
-      expect(result.value.migrationsApplied.filter((tag) => tag !== "0005_skill_config")).toEqual([]);
+      if (result.value.migrationsApplied.includes(pending.tag)) applied += 1;
+      expect(result.value.migrationsApplied.filter((tag) => tag !== pending.tag)).toEqual([]);
     }
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
@@ -490,7 +521,7 @@ describe("os production migrate", () => {
       await client.end();
     }
     expect(applied).toBe(1);
-    expect(await skillTable(databaseUrl)).toContain("skill_client_configs");
+    expect(await pendingTable(databaseUrl)).toContain(pendingTableName());
   }, 30_000);
 
   it("refuses host, hostaddr, options, multiple hosts, sockets, endpoint passwords, and weak ssl", () => {
