@@ -2,12 +2,15 @@ name: CI
 
 on:
   pull_request:
+    # `edited` covers a PR retargeted onto main. Other jobs skip that action.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
 jobs:
   changes:
     name: path filter
+    if: github.event_name != 'pull_request' || github.event.action != 'edited'
     runs-on: ubuntu-latest
     outputs:
       brain: ${{ steps.filter.outputs.brain }}
@@ -134,3 +137,21 @@ jobs:
       - name: Skip (no apps/ads / paid-job changes)
         if: needs.changes.outputs.ads != 'true'
         run: echo "Skipped — no apps/ads or paid-job changes. Brain + jobs/seo stay independently green."
+
+  ads-web:
+    name: apps/ads web build
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Build ads web
+        env:
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:43180
+          NEXT_PUBLIC_CONSOLE_ORIGIN: http://127.0.0.1:3000
+        run: npm run build --workspace=@tharros/ads-web

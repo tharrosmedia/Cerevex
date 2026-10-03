@@ -1,4 +1,4 @@
-import { assertSafeTestDatabase } from "./test-database";
+import { assertSafeTestDatabase } from "./server";
 import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import { closeDb, getDb } from "./db";
