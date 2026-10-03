@@ -1,10 +1,16 @@
 /**
  * Server-side plan checks. The tenant is the OS client id.
  *
- * getEntitlements, assertCanActivateStore, and assertCanActivateAdAccount
- * are the guards. Monthly counters are not stored here.
+ * getEntitlements reports the plan. precheckCanActivateStore and
+ * precheckCanActivateAdAccount are unlocked UX pre-checks: they do not
+ * lock the client row. The real guards are activateStore and
+ * rejectAdAccountIfBlocked, which lock the client and check again
+ * before writing. Monthly counters are not stored here.
  */
 import {
+  SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM,
+  SCHOLARSHIP_DOWNGRADE_LOCATION_MESSAGE,
+  SCHOLARSHIP_LOCATION_LIMIT,
   adAccountLimitPerPlatform,
   decideAdAccountActivation,
   decideAdAccountActivations,
@@ -13,6 +19,7 @@ import {
   isPlanId,
   locationLimit,
   monthlyCapsFor,
+  scholarshipDowngradeAdAccountMessage,
   type PlanId,
   type TenantEntitlements,
 } from "@cerevex/contracts";
@@ -133,7 +140,11 @@ export async function getEntitlements(tenantId: string): Promise<TenantEntitleme
   };
 }
 
-export async function assertCanActivateStore(
+/**
+ * Unlocked UX pre-check. Does not lock the client row, so two callers can
+ * both pass. activateStore is the real guard.
+ */
+export async function precheckCanActivateStore(
   tenantId: string,
   storeId: string,
   options?: { replacingStoreId?: string | null },
@@ -151,19 +162,27 @@ export async function assertCanActivateStore(
   if (!decision.allowed) throw new EntitlementError(decision.message);
 }
 
-export async function assertCanActivateAdAccount(
+/**
+ * Unlocked UX pre-check. Does not lock the client row.
+ * rejectAdAccountIfBlocked is the real guard.
+ */
+export async function precheckCanActivateAdAccount(
   tenantId: string,
   platform: string,
   externalId: string,
   options?: { replacingExternalId?: string | null },
 ): Promise<void> {
-  await assertCanActivateAdAccounts(tenantId, platform, [externalId], {
+  await precheckCanActivateAdAccounts(tenantId, platform, [externalId], {
     replacingExternalIds: options?.replacingExternalId ? [options.replacingExternalId] : [],
   });
 }
 
-/** Rejects the whole set before any account is connected. */
-export async function assertCanActivateAdAccounts(
+/**
+ * Unlocked UX pre-check for a whole connect batch. Does not lock the client
+ * row and writes nothing. rejectAdAccountIfBlocked, inside the connect
+ * write, is the real guard.
+ */
+export async function precheckCanActivateAdAccounts(
   tenantId: string,
   platform: string,
   externalIds: readonly string[],
@@ -189,55 +208,126 @@ export async function assertCanActivateAdAccounts(
   if (!decision.allowed) throw new EntitlementError(decision.message);
 }
 
+async function activateStoreLocked(
+  tx: Tx,
+  tenantId: string,
+  storeId: string,
+  options?: { replacingStoreId?: string | null },
+): Promise<typeof locations.$inferSelect> {
+  const client = await lockTenant(tx, tenantId);
+  const decision = decideLocationActivation({
+    plan: planOf(client),
+    storeId,
+    activeStoreIds: await activeStoreIds(tx, tenantId),
+    replacingStoreId: options?.replacingStoreId,
+  });
+  if (!decision.allowed) throw new EntitlementError(decision.message);
+
+  const replacing = options?.replacingStoreId;
+  if (replacing && replacing !== storeId) {
+    await tx
+      .update(locations)
+      .set({ status: "inactive", updatedAt: new Date() })
+      .where(and(eq(locations.clientId, tenantId), eq(locations.storeId, replacing)));
+  }
+
+  const [row] = await tx
+    .insert(locations)
+    .values({
+      workspaceId: client.workspaceId,
+      clientId: client.id,
+      storeId,
+      status: "active",
+    })
+    .onConflictDoUpdate({
+      target: [locations.clientId, locations.storeId],
+      set: { status: "active", updatedAt: new Date() },
+    })
+    .returning();
+  return row;
+}
+
+/** Locks the client row, then turns the location off. Clears site_id when it points at this store. */
+async function deactivateStoreLocked(
+  tx: Tx,
+  client: TenantRow,
+  storeId: string,
+): Promise<typeof locations.$inferSelect | null> {
+  const [row] = await tx
+    .update(locations)
+    .set({ status: "inactive", updatedAt: new Date() })
+    .where(and(eq(locations.clientId, client.id), eq(locations.storeId, storeId)))
+    .returning();
+  if (row && client.siteId === storeId) {
+    await tx.update(clients).set({ siteId: null }).where(eq(clients.id, client.id));
+  }
+  return row ?? null;
+}
+
 export async function activateStore(
   tenantId: string,
   storeId: string,
   options?: { replacingStoreId?: string | null },
 ): Promise<typeof locations.$inferSelect> {
-  const db = getDb();
-  return db.transaction(async (tx) => {
-    const client = await lockTenant(tx, tenantId);
-    const decision = decideLocationActivation({
-      plan: planOf(client),
-      storeId,
-      activeStoreIds: await activeStoreIds(tx, tenantId),
-      replacingStoreId: options?.replacingStoreId,
-    });
-    if (!decision.allowed) throw new EntitlementError(decision.message);
-
-    const replacing = options?.replacingStoreId;
-    if (replacing && replacing !== storeId) {
-      await tx
-        .update(locations)
-        .set({ status: "inactive", updatedAt: new Date() })
-        .where(and(eq(locations.clientId, tenantId), eq(locations.storeId, replacing)));
-    }
-
-    const [row] = await tx
-      .insert(locations)
-      .values({
-        workspaceId: client.workspaceId,
-        clientId: client.id,
-        storeId,
-        status: "active",
-      })
-      .onConflictDoUpdate({
-        target: [locations.clientId, locations.storeId],
-        set: { status: "active", updatedAt: new Date() },
-      })
-      .returning();
-    return row;
-  });
+  return getDb().transaction(async (tx) => activateStoreLocked(tx, tenantId, storeId, options));
 }
 
 export async function deactivateStore(
   tenantId: string,
   storeId: string,
 ): Promise<typeof locations.$inferSelect | null> {
-  const [row] = await getDb()
-    .update(locations)
-    .set({ status: "inactive", updatedAt: new Date() })
-    .where(and(eq(locations.clientId, tenantId), eq(locations.storeId, storeId)))
-    .returning();
-  return row ?? null;
+  return withTenantWriteLock(tenantId, (tx, client) => deactivateStoreLocked(tx, client, storeId));
+}
+
+/**
+ * Links or unlinks a site and the matching location in one transaction,
+ * holding the client row lock for both writes.
+ */
+export async function assignClientSite(tenantId: string, siteId: string | null): Promise<TenantRow> {
+  return withTenantWriteLock(tenantId, async (tx, client) => {
+    if (siteId) {
+      await activateStoreLocked(tx, tenantId, siteId, { replacingStoreId: client.siteId });
+    } else if (client.siteId) {
+      await deactivateStoreLocked(tx, client, client.siteId);
+    }
+    const [row] = await tx.update(clients).set({ siteId }).where(eq(clients.id, client.id)).returning();
+    return row;
+  });
+}
+
+/**
+ * Changes the plan. Refuses a move to Scholarship while the client is over
+ * the Scholarship limits. Does not turn locations or ad accounts off.
+ */
+export async function setClientPlan(tenantId: string, plan: PlanId): Promise<TenantRow> {
+  if (!isPlanId(plan)) throw new EntitlementError("This account's plan isn't recognized.");
+  return withTenantWriteLock(tenantId, async (tx, client) => {
+    if (client.plan === plan) return client;
+    if (plan === "scholarship") {
+      const activeLocations = await activeStoreIds(tx, tenantId);
+      if (activeLocations.length > SCHOLARSHIP_LOCATION_LIMIT) {
+        throw new EntitlementError(SCHOLARSHIP_DOWNGRADE_LOCATION_MESSAGE);
+      }
+      const accountRows = await tx
+        .select({
+          platform: adAccounts.platform,
+          connectionStatus: adAccounts.connectionStatus,
+        })
+        .from(adAccounts)
+        .where(eq(adAccounts.clientId, tenantId));
+      const activeByPlatform: Record<string, number> = {};
+      for (const row of accountRows) {
+        if (!isActiveAdAccountStatus(row.connectionStatus)) continue;
+        activeByPlatform[row.platform] = (activeByPlatform[row.platform] ?? 0) + 1;
+      }
+      const over = Object.entries(activeByPlatform)
+        .filter(([, count]) => count > SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM)
+        .sort(([left], [right]) => left.localeCompare(right));
+      if (over.length > 0) {
+        throw new EntitlementError(scholarshipDowngradeAdAccountMessage(over[0][0]));
+      }
+    }
+    const [row] = await tx.update(clients).set({ plan }).where(eq(clients.id, tenantId)).returning();
+    return row;
+  });
 }

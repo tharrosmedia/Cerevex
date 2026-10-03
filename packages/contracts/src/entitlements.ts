@@ -39,6 +39,9 @@ export const MONTHLY_CAP_RESET = "month_start_et" as const;
 export const SCHOLARSHIP_LOCATION_MESSAGE =
   "This Scholarship includes 1 location. Turn the current location off to switch, or move to the paid plan to add every location.";
 
+export const SCHOLARSHIP_DOWNGRADE_LOCATION_MESSAGE =
+  "This account has more than one location turned on. Turn the extra locations off before moving to the Scholarship.";
+
 export type MonthlyCapSpec = {
   id: MonthlyCapId;
   /** Null means this plan has no limit. */
@@ -129,6 +132,13 @@ export function adPlatformPlainName(platform: string): string {
   if (key === "meta") return "Meta";
   if (key === "google") return "Google Ads";
   return platform.trim() || "ad";
+}
+
+export function scholarshipDowngradeAdAccountMessage(platform: string): string {
+  const key = platform.trim().toLowerCase();
+  const accounts =
+    key === "google" ? "Google Ads account" : key === "meta" ? "Meta ad account" : `${adPlatformPlainName(platform)} ad account`;
+  return `This account has more than one ${accounts} connected. Disconnect the extra ones before moving to the Scholarship.`;
 }
 
 export function adAccountLimitMessage(platform: string): string {

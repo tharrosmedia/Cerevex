@@ -188,6 +188,11 @@ export async function enqueueAccountSync(auth: AuthContext, adAccountId: string)
     throw new HTTPException(404, { message: "Ad account not found" });
   }
   const client = await requireMutableClient(auth, account.clientId);
+  if (account.connectionStatus === "disconnected") {
+    throw new HTTPException(409, {
+      message: "That ad account is disconnected. Connect it again before syncing.",
+    });
+  }
   await requireWritableCapability(
     client.workspaceId,
     getAdPlatformConnector(account.platform).connectCapability,

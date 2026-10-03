@@ -80,14 +80,14 @@ Email/password only in M1. No Meta/Google OAuth.
 ### clients
 `id`, `workspace_id`, `name`, `pilot_flag`, `status`, `plan` (`paid` \| `scholarship`, default **paid**), `site_id`, `created_at`
 
-`plan` is the tenant plan. Existing rows default to `paid`, which has no location, ad-account, or usage limit. `scholarship` allows 1 active location and 1 active ad account per platform. Nothing is billed from this column.
+`plan` is the tenant plan. Existing rows default to `paid`, which has no location, ad-account, or usage limit. `scholarship` allows 1 active location and 1 active ad account per platform. Nothing is billed from this column. Triggers on `locations`, `ad_accounts`, and a plan change lock the client row and refuse a Scholarship write that would pass those limits, including a raw insert. Moving from paid to Scholarship is refused while the account is already over the limits. Nothing is turned off automatically.
 
 Unique `(workspace_id, name)`. Seed: Got Ductless, KC Prestige, Elmar HVAC with `pilot_flag=true` and `plan=paid`.
 
 ### locations
 `id`, `workspace_id`, `client_id`, `store_id`, `status` (`active` \| `inactive`), `created_at`, `updated_at`
 
-One location is one `store_id` (a Brain store id, no cross-schema foreign key). Only `active` rows count toward the Scholarship location limit. Unique `(client_id, store_id)`. Turning a location off and turning another on is allowed.
+One location is one `store_id` (a Brain store id, no cross-schema foreign key). Only `active` rows count toward the Scholarship location limit. Unique `(client_id, store_id)`. Turning a location off and turning another on is allowed. Turning off the location that matches `clients.site_id` clears `site_id` in the same locked transaction. Linking a site writes the location and `site_id` together under that lock.
 
 ### client_memberships
 `(user_id, client_id)` PK, `role`
@@ -97,7 +97,7 @@ Used to scope `client_readonly` users. Owners and operators do not need a row pe
 ### ad_accounts
 `id`, `workspace_id`, `client_id`, `platform` (`meta` \| `google`), `external_id`, `connection_status`, `last_sync_at`, `last_error`, `scopes_json`
 
-`connection_status`: `disconnected` | `pending` | `syncing` | `connected` | `needs_reconnect` | `error`. Any status other than `disconnected` counts as the active ad account for that platform. Scholarship allows one active account per platform value (`meta`, `google`, and any later enum value). Disconnecting frees the slot so another account can be connected. `frozen` (boolean, default false) blocks Approve per account. Sync is Inngest-only; HTTP never blocks on a platform pull.
+`connection_status`: `disconnected` | `pending` | `syncing` | `connected` | `needs_reconnect` | `error`. Any status other than `disconnected` counts as the active ad account for that platform. Scholarship allows one active account per platform value (`meta`, `google`, and any later enum value). Disconnecting frees the slot so another account can be connected. Sync does not write a disconnected account, and the Sync button refuses one. `frozen` (boolean, default false) blocks Approve per account. Sync is Inngest-only; HTTP never blocks on a platform pull.
 
 ### ad_entities / ad_metrics
 Pulled campaigns, ad sets / ad groups, ads, keywords, plus 7d/30d performance. Workspace- and client-scoped. No tokens.

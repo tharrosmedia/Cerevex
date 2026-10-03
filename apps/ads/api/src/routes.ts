@@ -32,6 +32,7 @@ import { exchangeCode } from "./oauth-exchange";
 import { signOAuthState, verifyOAuthState } from "./oauth-state";
 import { connectChosenAccounts, createPendingConnection } from "./pending-connect";
 import type { AccessibleAdAccount } from "@tharros/ads-shared";
+import { EntitlementError } from "@tharros/ads-shared/entitlements";
 import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
@@ -157,6 +158,11 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       choose.searchParams.set("pending", pendingId);
       return c.redirect(choose.toString());
     } catch (err) {
+      if (err instanceof EntitlementError) {
+        dest.searchParams.set("oauth_error", "plan_limit");
+        dest.searchParams.set("connect_error", err.message);
+        return c.redirect(dest.toString());
+      }
       if (err instanceof HTTPException && err.status === 409) {
         dest.searchParams.set("oauth_error", "capability_off");
         return c.redirect(dest.toString());

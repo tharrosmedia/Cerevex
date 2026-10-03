@@ -10,6 +10,8 @@ const OAUTH_ERROR_COPY: Record<string, string> = {
   list_failed: 'Signed in, but Cerevex could not load the ad accounts on that login. Try again in a minute.',
   no_accounts: 'That login has no ad accounts. Sign in with the login that manages this site’s ads.',
   choose_in_console: 'That login has several ad accounts. Connect from the Cerevex console to choose which ones belong to this site.',
+  plan_limit:
+    'This Scholarship includes 1 ad account on this platform. Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts.',
 };
 
 export function oauthErrorMessage(code: string | undefined): string {
