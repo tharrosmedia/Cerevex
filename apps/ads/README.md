@@ -75,6 +75,8 @@ See `apps/ads/.env.example`. Never commit `.env`. Brain env stays in `apps/brain
 
 Ads `DATABASE_URL` must resolve to schema `os`. Do not write ads tables into Brain `public` / pgvector. Local compose (`:54329`) is ads-only development and the default for M3 mock-mode smoke. Shared Neon smoke reuses the **existing Brain `DATABASE_URL`** (same Neon project) — see [SMOKE.md](./SMOKE.md). Do not provision a second Neon project. Do not run `ads:db:seed` against production Brain Neon.
 
+Tests and the seed script refuse a production Neon compute only when `PRODUCTION_NEON_HOST` or `PRODUCTION_DATABASE_URL` is set. Without either variable the guard cannot tell that compute from a branch compute: an unmarked Neon host is refused by default and allowed only with `ALLOW_NONLOCAL_TEST_DB=1`. Ops boxes set `PRODUCTION_NEON_HOST` to the hostname only (no scheme and no path) in a shell env file, for example `ep-….aws.neon.tech`. Do not commit that hostname.
+
 ## Inngest names (R5 / G7)
 
 Canonical names. Platform is payload data, not the event namespace. Legacy `os/*`, `meta/ads/*`, and `google/ads/*` listeners stay registered for one release.

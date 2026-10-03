@@ -106,6 +106,7 @@ One-release legacy aliases (same app; remove after in-flight jobs drain):
 | Var | Role |
 |---|---|
 | `DATABASE_URL` | **Same** Brain Neon URL (same project). Schema `os` isolates tables |
+| `PRODUCTION_NEON_HOST` | Hostname only of the production Neon compute, set in the ops shell env file. Not committed. Without this or `PRODUCTION_DATABASE_URL`, seed and tests cannot tell that compute from a branch and allow an unmarked Neon host only when `ALLOW_NONLOCAL_TEST_DB=1` |
 | `OS_INNGEST_APP_ID` | **Set to `cerevex-ads`.** Required in any env that also has `INNGEST_APP_ID=shopify-brain` |
 | `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | Reuse Brain Cloud keys. Do **not** create a second Inngest org |
 | `INNGEST_DEV` | Local Dev Server only (`http://127.0.0.1:43183`). Unset in Cloud |

@@ -244,6 +244,86 @@ describe("test database guard", () => {
     ).toBe(true);
   });
 
+  it("refuses a Neon password endpoint id on an IP, including a test-looking database name", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const prodId = "ep-cool-darkness-123456";
+    const dollar = `postgres://user:${encodeURIComponent(`endpoint=${prodId}$super-secret`)}@1.2.3.4/neondb`;
+    const semicolon = `postgres://user:${encodeURIComponent(`endpoint=${prodId};super-secret`)}@1.2.3.4/neondb`;
+    const env = { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: prod };
+    expect(assess(dollar, env).allowed).toBe(false);
+    expect(assess(dollar, env).message).not.toContain("super-secret");
+    expect(assess(semicolon, env).allowed).toBe(false);
+    const other = `postgres://user:${encodeURIComponent("endpoint=ep-other-branch$super-secret")}@1.2.3.4/x_test`;
+    expect(assess(other, { PRODUCTION_NEON_HOST: prod }).allowed).toBe(false);
+    expect(assess("postgres://user:pw@1.2.3.4/x_test").allowed).toBe(true);
+    expect(
+      assess(`postgres://user:${encodeURIComponent(`endpoint=${prodId}$super-secret`)}@127.0.0.1/cerevex_test`, env)
+        .allowed,
+    ).toBe(false);
+    expect(
+      assess(
+        `postgres://user:${encodeURIComponent("endpoint=ep-other-branch$pw")}@127.0.0.1/cerevex_test`,
+        { PRODUCTION_NEON_HOST: prod },
+      ).allowed,
+    ).toBe(true);
+    expect(assess("postgres://user:pw@127.0.0.1/cerevex_test").allowed).toBe(true);
+  });
+
+  it("reads PGOPTIONS and PGPASSWORD when the URL omits them", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const branch = `postgres://user@ep-branch-demo.us-east-2.aws.neon.tech/neondb`;
+    expect(
+      assess(branch, {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_NEON_HOST: prod,
+        PGOPTIONS: "endpoint=ep-cool-darkness-123456",
+      }).allowed,
+    ).toBe(false);
+    expect(
+      assess("postgres://user@1.2.3.4/neondb", {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_NEON_HOST: prod,
+        PGPASSWORD: "endpoint=ep-cool-darkness-123456$super-secret",
+      }).allowed,
+    ).toBe(false);
+    expect(
+      assess("postgres://user:ordinary@127.0.0.1/cerevex_test", {
+        PRODUCTION_NEON_HOST: prod,
+        PGPASSWORD: "endpoint=ep-cool-darkness-123456$super-secret",
+      }).allowed,
+    ).toBe(true);
+  });
+
+  it("folds fullwidth and ideographic-dot hosts into the production deny list", () => {
+    const prod = "ep-cool-darkness-123456.us-east-2.aws.neon.tech";
+    const fullwidth = prod.replace(/[a-z0-9]/g, (char) =>
+      String.fromCharCode(char >= "0" && char <= "9" ? 0xff10 + char.charCodeAt(0) - 48 : 0xff41 + char.charCodeAt(0) - 97),
+    );
+    const ideographic = prod.replaceAll(".", "。");
+    const target = `postgres://user:secret@${prod}/neondb`;
+    expect(assess(target, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: fullwidth }).allowed).toBe(false);
+    expect(assess(target, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_NEON_HOST: ideographic }).allowed).toBe(false);
+    expect(assess(`postgres://user:secret@${ideographic}/neondb`, { PRODUCTION_NEON_HOST: prod }).allowed).toBe(false);
+    expect(assess(CI_URL, { PRODUCTION_NEON_HOST: "xn--" }).allowed).toBe(false);
+  });
+
+  it("treats an options endpoint inside PRODUCTION_DATABASE_URL as the production endpoint", () => {
+    const prodId = "ep-cool-darkness-123456";
+    const prod = `${prodId}.us-east-2.aws.neon.tech`;
+    const configured = `postgres://owner:other-secret@ep-other.us-east-2.aws.neon.tech/neondb?options=${encodeURIComponent(`endpoint=${prodId}`)}`;
+    const target = `postgres://user:secret@${prod}/neondb`;
+    const blocked = assess(target, { ALLOW_NONLOCAL_TEST_DB: "1", PRODUCTION_DATABASE_URL: configured });
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.message).not.toContain("other-secret");
+    expect(assess(CI_URL, { PRODUCTION_DATABASE_URL: configured }).allowed).toBe(true);
+    expect(
+      assess(`postgres://user:secret@1.2.3.4/neondb?options=${encodeURIComponent(`endpoint=${prodId}`)}`, {
+        ALLOW_NONLOCAL_TEST_DB: "1",
+        PRODUCTION_DATABASE_URL: configured,
+      }).allowed,
+    ).toBe(false);
+  });
+
   it("treats a missing URL as safe for tests and unsafe for seed", () => {
     expect(assess(undefined).allowed).toBe(true);
     expect(assess(undefined, {}, { requireUrl: true }).allowed).toBe(false);
