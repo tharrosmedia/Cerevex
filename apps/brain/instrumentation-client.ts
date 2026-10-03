@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { scrubSentryBreadcrumb, scrubSentryEvent } from "./lib/sentry-scrub";
+import { sentryScrubHooks } from "./lib/sentry-scrub";
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -26,15 +26,7 @@ Sentry.init({
     // Sentry.feedbackIntegration({ colorScheme: "system" }),
   ],
 
-  beforeSend(event) {
-    return scrubSentryEvent(event);
-  },
-  beforeSendTransaction(event) {
-    return scrubSentryEvent(event);
-  },
-  beforeBreadcrumb(breadcrumb) {
-    return scrubSentryBreadcrumb(breadcrumb);
-  },
+  ...sentryScrubHooks(),
 });
 
 // Hook for App Router navigation transitions
