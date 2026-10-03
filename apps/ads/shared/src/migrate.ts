@@ -4,11 +4,19 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { closeDb, getPool } from "./db";
 import { loadEnv } from "./env";
-import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from "./migration-ledger";
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE, migrationsRelation } from "./migration-ledger";
+import { assertMigrationJournal, assertMigrationsApplied } from "./migration-journal";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+function migrationsFolder(): string {
+  const override = process.env.ADS_MIGRATIONS_FOLDER?.trim();
+  return override ? resolve(override) : resolve(here, "../drizzle");
+}
+
 async function main(): Promise<void> {
+  const folder = migrationsFolder();
+  const entries = assertMigrationJournal(folder);
   loadEnv();
   const pool = getPool();
   const client = await pool.connect();
@@ -17,14 +25,21 @@ async function main(): Promise<void> {
     // reference unprefixed "platform" — search_path must include os on this client.
     await client.query('CREATE SCHEMA IF NOT EXISTS "os"');
     await client.query("SET search_path TO os, public");
-    const migrationsFolder = resolve(here, "../drizzle");
     const db = drizzle(client);
     await migrate(db, {
-      migrationsFolder,
+      migrationsFolder: folder,
       migrationsSchema: MIGRATIONS_SCHEMA,
       migrationsTable: MIGRATIONS_TABLE,
     });
-    console.log(`Applied OS migrations from ${migrationsFolder} into schema os`);
+    const applied = await client.query<{ hash: string; created_at: string | number }>(
+      `select hash, created_at from ${migrationsRelation()}`,
+    );
+    assertMigrationsApplied(
+      folder,
+      entries,
+      applied.rows.map((row) => ({ hash: row.hash, createdAt: Number(row.created_at) })),
+    );
+    console.log(`Applied OS migrations from ${folder} into schema os`);
   } finally {
     client.release();
     await closeDb();

@@ -94,6 +94,11 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - name: Check migration journal order
+        if: needs.changes.outputs.ads == 'true'
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          node apps/ads/shared/scripts/check-migration-journal.mjs
       - uses: actions/setup-node@v4
         if: needs.changes.outputs.ads == 'true'
         with:
