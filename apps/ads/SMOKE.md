@@ -109,8 +109,8 @@ One-release legacy aliases (same app; remove after in-flight jobs drain):
 | `OS_INNGEST_APP_ID` | **Set to `cerevex-ads`.** Required in any env that also has `INNGEST_APP_ID=shopify-brain` |
 | `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | Reuse Brain Cloud keys. Do **not** create a second Inngest org |
 | `INNGEST_DEV` | Local Dev Server only (`http://127.0.0.1:43183`). Unset in Cloud |
-| `TOKEN_ENCRYPTION_KEY` | OS token-at-rest (not Brain `ENCRYPTION_KEY`) |
-| `JWT_SECRET` | OS auth (not Brain `APP_PASSWORD`) |
+| `TOKEN_ENCRYPTION_KEY` | OS token-at-rest on ads-api and ads-workers (not Brain `ENCRYPTION_KEY`). Raw value, no trim. Surrounding whitespace fails boot. |
+| `JWT_SECRET` | ads-api auth only (not Brain `APP_PASSWORD`, not required on ads-workers) |
 
 **Clobber rule:** Inngest Cloud **app sync replaces that app’s function set**. If the OS worker is synced to app id `shopify-brain`, SEO functions disappear.
 
@@ -286,7 +286,8 @@ Expected `os` tables include:
 Optional API health (needs OS process + same `DATABASE_URL`; no platform writes):
 
 ```bash
-# JWT_SECRET (32+ chars, not the placeholder) required to boot in any Railway environment; META_/GOOGLE_ stay empty
+# ads-api: JWT_SECRET (32+ code points, not the placeholder) and TOKEN_ENCRYPTION_KEY required in any Railway environment
+# ads-workers: TOKEN_ENCRYPTION_KEY only. Workers do not use JWT_SECRET. META_/GOOGLE_ stay empty
 npm run ads:dev
 # other terminal
 curl -sS http://127.0.0.1:43180/health

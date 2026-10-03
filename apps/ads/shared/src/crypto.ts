@@ -3,6 +3,8 @@ import { LOCAL_DEV_TOKEN_KEY, isProductionRuntime, signingSecretProblem } from "
 import { loadEnv } from "./env";
 
 function deriveTokenKey(value: string): Buffer {
+  // Historical derivation. `length` is UTF-16 units so a key that already round-trips stays the same.
+  // The production minimum is counted in Unicode code points and is applied before this runs.
   if (/^[0-9a-fA-F]{64}$/.test(value)) {
     return Buffer.from(value, "hex");
   }
@@ -15,13 +17,16 @@ function deriveTokenKey(value: string): Buffer {
 function encryptionKey(): Buffer {
   loadEnv();
   const raw = process.env.TOKEN_ENCRYPTION_KEY;
+  if (raw && raw !== raw.trim() && isProductionRuntime()) {
+    throw new Error("TOKEN_ENCRYPTION_KEY has leading or trailing whitespace in production");
+  }
   const problem = signingSecretProblem(raw, [LOCAL_DEV_TOKEN_KEY]);
   if (isProductionRuntime() && problem) {
     throw new Error(`TOKEN_ENCRYPTION_KEY is ${problem} in production`);
   }
   // The example placeholder is 30 chars, so the unset dev key is scrypt(placeholder), same as setting it.
-  if (problem === "missing") return deriveTokenKey(LOCAL_DEV_TOKEN_KEY);
-  return deriveTokenKey((raw ?? "").trim());
+  if (!raw || problem === "missing") return deriveTokenKey(LOCAL_DEV_TOKEN_KEY);
+  return deriveTokenKey(raw);
 }
 
 export function encryptSecret(plaintext: string): string {

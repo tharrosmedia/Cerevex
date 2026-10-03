@@ -134,8 +134,13 @@ assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help 
 assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help || '', /shorter than 32/);
 assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help || '', /any case/);
 assert.doesNotMatch(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help || '', /does not fail closed/i);
-assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.requiredInProduction, 'ads');
-assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'TOKEN_ENCRYPTION_KEY')?.requiredInProduction, 'ads');
+assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.requiredInProduction, 'ads-api');
+assert.deepEqual(OPS_ENV_REGISTRY.find((entry) => entry.env === 'TOKEN_ENCRYPTION_KEY')?.requiredInProduction, [
+  'ads-api',
+  'ads-workers',
+]);
+assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'JWT_SECRET')?.help || '', /workers do not read it/i);
+assert.match(OPS_ENV_REGISTRY.find((entry) => entry.env === 'APP_PASSWORD')?.help || '', /change-this-to-secure-password/);
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'APP_PASSWORD')?.requiredInProduction, 'brain');
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ADS_INTERNAL_KEY')?.requiredInProduction, 'brain');
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'GSC_OAUTH_STATE_SECRET')?.requiredInProduction, 'brain');
@@ -145,10 +150,11 @@ assert.deepEqual(
   opsEnvRequiredInProduction('brain').map((entry) => entry.env).sort(),
   ['ADS_INTERNAL_KEY', 'APP_PASSWORD', 'ENCRYPTION_KEY', 'GSC_OAUTH_STATE_SECRET'],
 );
-assert.deepEqual(opsEnvRequiredInProduction('ads').map((entry) => entry.env).sort(), [
+assert.deepEqual(opsEnvRequiredInProduction('ads-api').map((entry) => entry.env).sort(), [
   'JWT_SECRET',
   'TOKEN_ENCRYPTION_KEY',
 ]);
+assert.deepEqual(opsEnvRequiredInProduction('ads-workers').map((entry) => entry.env), ['TOKEN_ENCRYPTION_KEY']);
 assert.deepEqual(approveOperatorEmails({}), [DEFAULT_APPROVE_OPERATOR_EMAIL]);
 assert.equal(canApproveApply('adam@tharrosmedia.com', {}), true);
 assert.equal(canApproveApply('other@tharrosmedia.com', { SEED_OWNER_EMAIL: 'other@tharrosmedia.com' }), false);

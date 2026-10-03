@@ -201,6 +201,7 @@ export {
   MIN_SIGNING_SECRET_LENGTH,
   JWT_LOCAL_FALLBACK,
   LOCAL_DEV_TOKEN_KEY,
+  APP_PASSWORD_PLACEHOLDER,
   isProductionRuntime,
   signingSecretProblem,
 } from "./runtime-env";

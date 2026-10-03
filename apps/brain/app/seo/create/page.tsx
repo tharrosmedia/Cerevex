@@ -6,6 +6,7 @@ import { listStores, getActiveStoreId } from '@/src/lib/db/stores';
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/page-header';
 import { SeoSubnav } from '@/components/seo-subnav';
+import { isProductionRuntime } from '@/lib/runtime-env';
 
 async function triggerSeoJob(formData: FormData) {
   'use server';
@@ -27,7 +28,7 @@ async function triggerSeoJob(formData: FormData) {
   }
   const c = await cookies();
   if (storeId) {
-    c.set('activeStoreId', storeId, { path: '/', secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
+    c.set('activeStoreId', storeId, { path: '/', secure: isProductionRuntime(), sameSite: 'lax' });
   }
   const job = await createJob({ storeId, domain: 'seo', type, input: { keyword, platform, brandVoice, seoRules }, status: 'queued' });
   console.log('[INNGEST] sending seo/job.requested from /seo/create', { jobId: job.id });
