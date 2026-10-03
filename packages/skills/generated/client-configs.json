@@ -1,0 +1,2671 @@
+{
+  "snapshotId": "2026-10-03-0720",
+  "libraryVersion": "4.1.0",
+  "generatedFrom": "vendored-profiles",
+  "clients": [
+    {
+      "slug": "hvac-usa",
+      "displayName": "HVAC USA",
+      "snapshotId": "2026-10-03-0720",
+      "profileHash": "00752292af091b68af630a1667bec465b8fe9b8bb01e091a60c47dc3ae3a1695",
+      "profileUpdatedAt": "2026-09-29",
+      "pilot": true,
+      "marketingGate": "off",
+      "scopeAllowed": true,
+      "forbidClientNamesAndResults": false,
+      "engagement": {
+        "state": "known",
+        "value": "owned (the agency owner's own store)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "owned (the agency owner's own store)"
+      },
+      "profileStatus": {
+        "state": "known",
+        "value": "active (partial)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "active (partial)"
+      },
+      "approvalOwner": {
+        "state": "known",
+        "value": "agency owner",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "agency owner"
+      },
+      "approvalOwnerResolved": {
+        "name": "Adam",
+        "email": "adam@tharrosmedia.com",
+        "role": "approver-and-admin",
+        "resolvedFrom": "agency-owner"
+      },
+      "packs": [
+        {
+          "id": "ecommerce-dtc",
+          "version": "4.1.0",
+          "role": "primary",
+          "sections": []
+        },
+        {
+          "id": "home-service",
+          "version": "4.1.0",
+          "role": "rule-set",
+          "sections": [
+            "equipment"
+          ]
+        }
+      ],
+      "dormantPackId": null,
+      "businessModel": {
+        "state": "known",
+        "value": "e-com, phone-assisted (phone trust → draft order/estimate → customer buys online)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "e-com, phone-assisted (phone trust → draft order/estimate → customer buys online)"
+      },
+      "offer": {
+        "state": "known",
+        "value": "residential HVAC equipment online (furnaces, AC, heat pumps, air handlers, coils)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "residential HVAC equipment online (furnaces, AC, heat pumps, air handlers, coils)"
+      },
+      "qualifiedOutcome": {
+        "state": "known",
+        "value": "purchase (online order, including paid draft orders)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "purchase (online order, including paid draft orders)"
+      },
+      "secondaryOutcome": {
+        "state": "known",
+        "value": "qualified sizing call; draft order created",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "qualified sizing call; draft order created"
+      },
+      "valueModel": {
+        "state": "known",
+        "value": "order value and gross margin by product line",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "order value and gross margin by product line; AOV TBD; repeat/contractor LTV TBD"
+      },
+      "segments": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "product lines (condensers/heat pumps, furnaces, air handlers/coils, accessories) TBD"
+      },
+      "qualifyingRules": null,
+      "voice": {
+        "state": "assumption",
+        "value": "See `voice.md`. Client-only copy rules: `copy-rules.md` (binding). - protected lines: Default CTA: \"Call (913) 364-0070 — we'll size it, draft your order, then you buy online.\" Short CTA: \"Call (913) 364-0070 for sizing help.\" - phone (913) 364-0070 · email info@hvacusa.store · hours Monday–Friday 9am–5pm CST - never say: any prior brand name; a physical location for customer visits (CONFIRM whether one exists); the Baltimore / Timonium / Lutherville showroom or Deereco Road addresses from the legacy v1 files (they belong to Got Ductless, agency owner 2026-09-29)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "See `voice.md`. Client-only copy rules: `copy-rules.md` (binding).\n- protected lines: Default CTA: \"Call (913) 364-0070 — we'll size it, draft your order, then you buy online.\" Short CTA: \"Call (913) 364-0070 for sizing help.\"\n- phone (913) 364-0070 · email info@hvacusa.store · hours Monday–Friday 9am–5pm CST\n- never say: any prior brand name; a physical location for customer visits (**CONFIRM** whether one exists); the Baltimore / Timonium / Lutherville showroom or Deereco Road addresses from the legacy v1 files (they belong to Got Ductless, agency owner 2026-09-29)"
+      },
+      "protectedLines": {
+        "state": "known",
+        "value": "Default CTA: \"Call (913) 364-0070 — we'll size it, draft your order, then you buy online.\" Short CTA: \"Call (913) 364-0070 for sizing help.\"",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "Default CTA: \"Call (913) 364-0070 — we'll size it, draft your order, then you buy online.\" Short CTA: \"Call (913) 364-0070 for sizing help.\""
+      },
+      "neverSay": {
+        "state": "assumption",
+        "value": "any prior brand name; a physical location for customer visits (CONFIRM whether one exists); the Baltimore / Timonium / Lutherville showroom or Deereco Road addresses from the legacy v1 files (they belong to Got Ductless, agency owner 2026-09-29)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "any prior brand name; a physical location for customer visits (**CONFIRM** whether one exists); the Baltimore / Timonium / Lutherville showroom or Deereco Road addresses from the legacy v1 files (they belong to Got Ductless, agency owner 2026-09-29)"
+      },
+      "complianceRules": {
+        "state": "known",
+        "value": "`copy-rules.md`",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "`copy-rules.md`"
+      },
+      "copyRules": {
+        "state": "known",
+        "value": "# HVAC USA: copy rules (binding for every writer)\n\nMoved from the v2 no-slop-copy skill body and `brand/hvac-usa/about.md`. `/home/box/agent-data/workflows/no-slop-copy/references/house-style.md` carries the same rules for `hvac-copy-pipeline` compatibility; keep them in sync.\n\n1. Do not invent prices, stock, rebate amounts, warranty years, excluded shipping states, hours, or installer availability. Write \"confirm with owner\" and keep moving.\n2. Do not tell a homeowner to DIY a non-DIY refrigerant system. Pre-charged DIY systems are a different category from systems that need a licensed install and startup; never blur the two. (**CONFIRM** which DIY lines, if any, the store sells.)\n3. Do not promise manufacturer warranty on internet-sold equipment without the Pro-Install / authorized-channel caveat.\n4. Multi-zone outdoor capacity is not the sum of indoor nameplates. Flag diversity and send complex jobs to a human designer.\n5. Sizing copy may use square footage as a starting point only. Insulation, sun, ceiling height, and climate matter, especially for heating in cold climates.\n6. Do not attack competitors with claims we cannot defend.\n7. Do not write medical-grade air claims. \"Filters allergens\" is fine.\n8. Do not publish policy language that conflicts with site shipping or refund policy.\n9. Do not invent sources, stats, reviews, or case studies.\n10. No federal tax-credit (25C) language for equipment installed in 2026 or later (`/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/compliance.md`).\n11. Advertised equipment prices follow the brand's current MAP/UPP policy; product schema never shows a lower price than the page or cart policy allows.\n12. Brands carried: Lennox and Trane only (agency owner, 2026-09-29). Do not name any other brand as carried or imply a relationship with one. No brand-vs-brand price claims; prices only with a source and within MAP.\n13. Keep the protected CTA lines in `profile.md` exactly. Do not drop the phone. Do not invent a third CTA line, other phone numbers, or emails. Prefer https://hvacusa.store/ pages confirmed live before linking.\n14. Never mention the legacy Baltimore / Timonium / Lutherville showroom or Deereco Road addresses. They belong to Got Ductless, not HVAC USA.",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "copy-rules.md"
+      },
+      "voiceDetail": {
+        "state": "known",
+        "value": "# HVAC USA: voice\n\nMigrated from live no-slop-copy v1.1. The legacy Baltimore / Timonium / Lutherville showroom references belong to Got Ductless (agency owner, 2026-09-29) and never appear in HVAC USA copy.\n\n- Who we sound like: a specialist who will pick up the phone, size the job, and ship the right boxes.\n- Tone: practical, specific, product-literate. Informal is fine. Not cute, not agency-poetic, not corporate ESG. Phone-forward when a human should design the system. Confident about shipping and authorized-channel warranty, never \"#1 in America.\"\n- Vocabulary: BTU, SEER2, hyper-heat, line set, cassette, R32, R454B, matchup, draft order.\n- Reader segments: homeowner one-room, whole-home, DIY, contractor, property, federal. Default assumption: the reader is buying equipment, not hiring a local contractor.\n- One action options: call, request a design, add to cart, pay a draft.\n\nGood: Call (913) 364-0070 and we will size the system before you buy.\nBad: Unlock next-level comfort with our curated ecosystem of innovative climate solutions.\n\n## Format overrides\n| Mode | Shape | CTA |\n|---|---|---|\n| pdp | What is in the box, matchup, refrigerant, voltage, heat performance, warranty path. | Call + add to cart |\n| collection / landing | Range + filter first screen. Series and styles from our catalog. Install BOM, not attach-poetry. Title Case H2s allowed. | Call or design request |\n| quote-followup | Restate rooms / BTUs / what ships. Next step and date. | Pay or answer one question |\n\n## Portable-filler fix\nA line that could run on HVACDirect, eComfort, or ACWholesalers unchanged gets one of our facts attached: Kansas City warehouse (**CONFIRM**), conventional systems, phone trust → draft order/estimate → online purchase, Lennox and Trane, (913) 364-0070.\n\n## Before / after\nBefore: `The launch of this system marks a pivotal moment for homeowners seeking efficiency.`\nAfter: `This line uses R32. Confirm the indoor and outdoor are the same refrigerant before you order.`\n\nBefore: `Feel free to reach out with any questions!`\nAfter: `Reply with rooms, approx. sq ft, and whether you need heat below freezing. Or call (913) 364-0070.`\n\n## Customer vocabulary\n(empty until `review-mining` output is accepted)",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "voice.md"
+      },
+      "installs": null,
+      "brands": {
+        "state": "known",
+        "value": "Lennox and Trane, sold online (agency owner, 2026-09-29); Open to more brands later, but Lennox + Trane only for now (manufacturer relationships); Do not name any other brand as carried",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "Lennox and Trane, sold online (agency owner, 2026-09-29). Open to more brands later, but Lennox + Trane only for now (manufacturer relationships). Do not name any other brand as carried"
+      },
+      "licenses": null,
+      "dealerAuthorization": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "**TBD** (needed by claims-check before any price ad)"
+      },
+      "planningNote": {
+        "state": "inference",
+        "value": "Lennox is more competitive on price online than Trane. Use it only for planning, e.g. budget weighting by brand. Never turn it into a price claim or a brand-vs-brand price comparison, and never state a price without a source",
+        "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "Lennox is more competitive on price online than Trane. Use it only for planning, e.g. budget weighting by brand. Never turn it into a price claim or a brand-vs-brand price comparison, and never state a price without a source"
+      },
+      "factsRegister": [
+        {
+          "fact": "Phone, email, hours, protected CTAs",
+          "source": "live no-slop-copy house style v1.1",
+          "date": "carried 2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Ships from Kansas City",
+          "source": "agency-owner roster",
+          "date": "2026-09-29 (unconfirmed detail)",
+          "state": "assumption"
+        },
+        {
+          "fact": "Brands: Lennox and Trane (online); Lennox + Trane only for now",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "No Cage number (do not state one)",
+          "source": "agency owner",
+          "date": "2026-09-30",
+          "state": "known"
+        },
+        {
+          "fact": "`/pages/local-ductless-stores` is Got Ductless's page, not HVAC USA's",
+          "source": "agency owner",
+          "date": "2026-09-30",
+          "state": "known"
+        }
+      ],
+      "openQuestions": [
+        "Dealer tier and MAP/UPP documents (Lennox and Trane)",
+        "Any physical location customers can visit? (the legacy Maryland showroom references were Got Ductless's)",
+        "Which DIY lines, if any, are sold"
+      ],
+      "stores": [
+        {
+          "storeKey": "hvac-usa/web",
+          "role": "web",
+          "brainStoreId": null,
+          "site": {
+            "state": "known",
+            "value": "https://hvacusa.store/",
+            "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+            "asOf": "2026-09-29",
+            "raw": "https://hvacusa.store/"
+          },
+          "cms": null,
+          "geo": {
+            "state": "assumption",
+            "value": "ships from Kansas City (per roster). Ship-to regions: lower 48 per v1 house style. CONFIRM both",
+            "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+            "asOf": "2026-09-29",
+            "raw": "ships from Kansas City (per roster). Ship-to regions: lower 48 per v1 house style. **CONFIRM** both"
+          },
+          "channels": [
+            {
+              "channel": "SEO / site content",
+              "status": {
+                "state": "known",
+                "value": "live",
+                "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "live"
+              },
+              "access": {
+                "state": "known",
+                "value": "owned",
+                "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "owned"
+              },
+              "notes": {
+                "state": "known",
+                "value": "via hvac-copy-pipeline",
+                "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "via hvac-copy-pipeline"
+              }
+            },
+            {
+              "channel": "Google Ads (Search, Shopping/PMax)",
+              "status": {
+                "state": "known",
+                "value": "planned \"soon\"",
+                "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "planned \"soon\""
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "needs Merchant Center + MAP check",
+                "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "needs Merchant Center + MAP check"
+              }
+            },
+            {
+              "channel": "Meta",
+              "status": {
+                "state": "known",
+                "value": "planned \"soon\"",
+                "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "planned \"soon\""
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "",
+                "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": ""
+              }
+            }
+          ],
+          "channelsDeclaredNone": false,
+          "measurement": {
+            "summary": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "E-com platform TBD · call tracking TBD · pixels TBD · conversion-tracking-audit: not run"
+            },
+            "conversionTrackingAudit": {
+              "state": "known",
+              "value": "not_run",
+              "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+              "asOf": "2026-09-29",
+              "raw": "not run"
+            },
+            "callTracking": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "crm": null,
+            "clickIdCapture": null,
+            "pixels": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "ecommercePlatform": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            }
+          },
+          "capacity": {
+            "state": "assumption",
+            "value": "not capacity-bound for ads except phone sizing staff hours (Mon–Fri 9am–5pm CST); confirm inventory constraints",
+            "source": "agency-owner roster, live no-slop-copy house style v1.1, 2026-09-29 profile answers",
+            "asOf": "2026-09-29",
+            "raw": "not capacity-bound for ads except phone sizing staff hours (Mon–Fri 9am–5pm CST); confirm inventory constraints"
+          },
+          "lag": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD (phone-assisted orders may take days)"
+          },
+          "valueModelOverride": null,
+          "segmentsOverride": null,
+          "notes": [
+            {
+              "state": "known",
+              "value": "No Cage number (do not state one)",
+              "source": "agency owner",
+              "asOf": "2026-09-30",
+              "raw": "No Cage number (do not state one)"
+            },
+            {
+              "state": "known",
+              "value": "Never link, cite, or add /pages/local-ductless-stores. That page is Got Ductless only.",
+              "source": "agency owner",
+              "asOf": "2026-09-30",
+              "raw": "/pages/local-ductless-stores is Got Ductless only"
+            }
+          ],
+          "promptLayer": {
+            "seeded": false,
+            "version": null
+          }
+        }
+      ],
+      "extras": [
+        {
+          "field": "valueModel.aov",
+          "layer": "client",
+          "storeKey": null,
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "AOV TBD"
+          }
+        },
+        {
+          "field": "valueModel.repeat/contractor_ltv",
+          "layer": "client",
+          "storeKey": null,
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "repeat/contractor LTV TBD"
+          }
+        }
+      ],
+      "promptLayer": {
+        "seeded": false,
+        "version": null
+      }
+    },
+    {
+      "slug": "got-ductless",
+      "displayName": "Got Ductless",
+      "snapshotId": "2026-10-03-0720",
+      "profileHash": "a3b2196a6ecc5c2a544fe80d20e0d8596f63c4ccbd19340aa73f3db29a04026f",
+      "profileUpdatedAt": "2026-09-29",
+      "pilot": false,
+      "marketingGate": "off",
+      "scopeAllowed": true,
+      "forbidClientNamesAndResults": false,
+      "engagement": {
+        "state": "known",
+        "value": "direct",
+        "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+        "asOf": "2026-09-29",
+        "raw": "direct"
+      },
+      "profileStatus": {
+        "state": "known",
+        "value": "stub",
+        "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+        "asOf": "2026-09-29",
+        "raw": "stub"
+      },
+      "approvalOwner": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "approvalOwnerResolved": {
+        "name": "Adam",
+        "email": "adam@tharrosmedia.com",
+        "role": "approver-and-admin",
+        "resolvedFrom": "tbd-default"
+      },
+      "packs": [
+        {
+          "id": "ecommerce-dtc",
+          "version": "4.1.0",
+          "role": "primary",
+          "sections": []
+        },
+        {
+          "id": "home-service",
+          "version": "4.1.0",
+          "role": "rule-set",
+          "sections": [
+            "equipment"
+          ]
+        }
+      ],
+      "dormantPackId": null,
+      "businessModel": {
+        "state": "known",
+        "value": "e-com + local store (online retailer with a physical store in Maryland; agency owner, 2026-09-29)",
+        "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+        "asOf": "2026-09-29",
+        "raw": "e-com + local store (online retailer with a physical store in Maryland; agency owner, 2026-09-29)"
+      },
+      "offer": {
+        "state": "known",
+        "value": "ductless / mini-split equipment (from the name",
+        "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+        "asOf": "2026-09-29",
+        "raw": "ductless / mini-split equipment (from the name; product lines TBD)"
+      },
+      "qualifiedOutcome": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "purchase (online order), plus store visit or store sale if it can be tracked (TBD)"
+      },
+      "secondaryOutcome": {
+        "state": "known",
+        "value": "qualified call or sizing request; direction and call clicks on GBP",
+        "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+        "asOf": "2026-09-29",
+        "raw": "qualified call or sizing request; direction and call clicks on GBP"
+      },
+      "valueModel": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "order value and margin by product line (TBD)"
+      },
+      "segments": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": ""
+      },
+      "qualifyingRules": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "voice": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD (run `voice-profile`)."
+      },
+      "protectedLines": null,
+      "neverSay": null,
+      "complianceRules": {
+        "state": "known",
+        "value": "- packs: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/ecommerce-dtc/compliance.md` + `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/compliance.md` §equipment - market overlap: Elmar HVAC also serves Baltimore. Keep the two clients' data, audiences, and copy separate (`competitor-profile` rule).",
+        "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+        "asOf": "2026-09-29",
+        "raw": "- packs: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/ecommerce-dtc/compliance.md` + `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/compliance.md` §equipment\n- market overlap: Elmar HVAC also serves Baltimore. Keep the two clients' data, audiences, and copy separate (`competitor-profile` rule)."
+      },
+      "copyRules": null,
+      "voiceDetail": null,
+      "installs": {
+        "state": "known",
+        "value": "do not claim installation or LSA eligibility until confirmed)",
+        "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+        "asOf": "2026-09-29",
+        "raw": "TBD (the owner described a retailer; do not claim installation or LSA eligibility until confirmed)"
+      },
+      "brands": null,
+      "licenses": null,
+      "dealerAuthorization": null,
+      "planningNote": null,
+      "factsRegister": [
+        {
+          "fact": "Channels Meta, Google, OpenAI Ads, SEO",
+          "source": "agency-owner roster",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Online retailer with a physical store in Maryland (exact address TBD)",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "tbd"
+        },
+        {
+          "fact": "`/pages/local-ductless-stores` is a Got Ductless page (legacy URL seen on hvacusa.store link lists; GD only)",
+          "source": "agency owner",
+          "date": "2026-09-30",
+          "state": "known"
+        },
+        {
+          "fact": "Baltimore/Timonium/Lutherville showroom and mini-split brand list probably belong here",
+          "source": "agency owner (inference from legacy files)",
+          "date": "2026-09-29",
+          "state": "inference"
+        }
+      ],
+      "openQuestions": [
+        "Confirm the legacy showroom and warehouse addresses, the brand list, phone, site URL, and ship-to regions",
+        "Does it install, or only sell? This decides LSA and the licensed-install copy.",
+        "Dealer authorization and MAP documents per brand; approval owner"
+      ],
+      "stores": [
+        {
+          "storeKey": "got-ductless/web",
+          "role": "web",
+          "brainStoreId": null,
+          "site": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD"
+          },
+          "cms": null,
+          "geo": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "online ship-to regions TBD; local store trade area TBD"
+          },
+          "channels": [
+            {
+              "channel": "Meta",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": ""
+              }
+            },
+            {
+              "channel": "Google Ads",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "Shopping/PMax needs Merchant Center and a MAP check",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "Shopping/PMax needs Merchant Center and a MAP check"
+              }
+            },
+            {
+              "channel": "OpenAI (ChatGPT) Ads",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "see `/home/box/agent-data/workflows/paid-media/references/openai-ads.md`",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "see `/home/box/agent-data/workflows/paid-media/references/openai-ads.md`"
+              }
+            },
+            {
+              "channel": "SEO",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "site plus local store SEO",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "site plus local store SEO"
+              }
+            }
+          ],
+          "channelsDeclaredNone": false,
+          "measurement": {
+            "summary": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "E-com platform TBD · call tracking TBD · OpenAI Ads pixel/CAPI status TBD · conversion-tracking-audit: not run"
+            },
+            "conversionTrackingAudit": {
+              "state": "known",
+              "value": "not_run",
+              "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+              "asOf": "2026-09-29",
+              "raw": "not run"
+            },
+            "callTracking": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "crm": null,
+            "clickIdCapture": null,
+            "pixels": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "ecommercePlatform": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            }
+          },
+          "capacity": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "inventory, fulfillment, and phone or store staff hours (TBD)"
+          },
+          "lag": null,
+          "valueModelOverride": null,
+          "segmentsOverride": null,
+          "notes": [],
+          "promptLayer": {
+            "seeded": false,
+            "version": null
+          }
+        },
+        {
+          "storeKey": "got-ductless/maryland",
+          "role": "storefront",
+          "brainStoreId": null,
+          "site": {
+            "state": "known",
+            "value": "/pages/local-ductless-stores",
+            "source": "agency owner",
+            "asOf": "2026-09-30",
+            "raw": "`/pages/local-ductless-stores` is a Got Ductless page (legacy URL seen on hvacusa.store link lists; GD only)"
+          },
+          "cms": null,
+          "geo": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "Maryland; exact address **TBD** (see legacy candidate below)"
+          },
+          "channels": [
+            {
+              "channel": "Google Business Profile",
+              "status": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD (the Maryland store)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "storefront GBP via `lsa-gbp-optimizer` (GBP checklist only; LSA only if installs are confirmed)",
+                "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+                "asOf": "2026-09-29",
+                "raw": "storefront GBP via `lsa-gbp-optimizer` (GBP checklist only; LSA only if installs are confirmed)"
+              }
+            }
+          ],
+          "channelsDeclaredNone": false,
+          "measurement": {
+            "summary": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "E-com platform TBD · call tracking TBD · OpenAI Ads pixel/CAPI status TBD · conversion-tracking-audit: not run"
+            },
+            "conversionTrackingAudit": {
+              "state": "known",
+              "value": "not_run",
+              "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+              "asOf": "2026-09-29",
+              "raw": "not run"
+            },
+            "callTracking": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "crm": null,
+            "clickIdCapture": null,
+            "pixels": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "ecommercePlatform": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            }
+          },
+          "capacity": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "inventory, fulfillment, and phone or store staff hours (TBD)"
+          },
+          "lag": null,
+          "valueModelOverride": null,
+          "segmentsOverride": null,
+          "notes": [
+            {
+              "state": "known",
+              "value": "`/pages/local-ductless-stores` is a Got Ductless page (legacy URL seen on hvacusa.store link lists; GD only)",
+              "source": "agency owner",
+              "asOf": "2026-09-30",
+              "raw": "`/pages/local-ductless-stores` is a Got Ductless page (legacy URL seen on hvacusa.store link lists; GD only)"
+            },
+            {
+              "state": "known",
+              "value": "These came from the live v1 skills (no-slop-copy v1 and seo-research, read 2026-09-29). They were filed under HVAC USA there but very likely belong to Got Ductless (agency owner, 2026-09-29). Do not use any of them in copy, schema, listings, or ads until confirmed. They never belong in HVAC USA files. - Showroom area: Baltimore / Timonium / Lutherville. Legacy local-SEO scope limited city pages to these three places. - Showroom address (legacy seo-research): 9582 Deereco Road, Lutherville, MD 21",
+              "source": "agency-owner roster and 2026-09-29 profile answers; legacy items marked",
+              "asOf": "2026-09-29",
+              "raw": "These came from the live v1 skills (no-slop-copy v1 and seo-research, read 2026-09-29). They were filed under HVAC USA there but very likely belong to Got Ductless (agency owner, 2026-09-29). Do not use any of them in copy, schema, listings, or ads until confirmed. They never belong in HVAC USA files.\n- Showroom area: Baltimore / Timonium / Lutherville. Legacy local-SEO scope limited city pages to these three places.\n- Showroom address (legacy seo-research): 9582 Deereco Road, Lutherville, MD 21"
+            }
+          ],
+          "promptLayer": {
+            "seeded": false,
+            "version": null
+          }
+        }
+      ],
+      "extras": [
+        {
+          "field": "offer.product_lines",
+          "layer": "client",
+          "storeKey": null,
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "product lines TBD)"
+          }
+        },
+        {
+          "field": "installs.the_owner_described_a_retailer",
+          "layer": "client",
+          "storeKey": null,
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD (the owner described a retailer"
+          }
+        }
+      ],
+      "promptLayer": {
+        "seeded": false,
+        "version": null
+      }
+    },
+    {
+      "slug": "kc-prestige-hvac",
+      "displayName": "KC Prestige HVAC",
+      "snapshotId": "2026-10-03-0720",
+      "profileHash": "1afb68f6bd3aafdecc963eac374c0fe5dd268a3881dbc77d71ca2632321fa414",
+      "profileUpdatedAt": "2026-09-29",
+      "pilot": false,
+      "marketingGate": "off",
+      "scopeAllowed": true,
+      "forbidClientNamesAndResults": false,
+      "engagement": {
+        "state": "known",
+        "value": "direct",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "direct"
+      },
+      "profileStatus": {
+        "state": "known",
+        "value": "stub",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "stub"
+      },
+      "approvalOwner": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "approvalOwnerResolved": {
+        "name": "Adam",
+        "email": "adam@tharrosmedia.com",
+        "role": "approver-and-admin",
+        "resolvedFrom": "tbd-default"
+      },
+      "packs": [
+        {
+          "id": "home-service",
+          "version": "4.1.0",
+          "role": "primary",
+          "sections": []
+        }
+      ],
+      "dormantPackId": null,
+      "businessModel": {
+        "state": "known",
+        "value": "booked-service (HVAC contractor; agency owner, 2026-09-29)",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "booked-service (HVAC contractor; agency owner, 2026-09-29)"
+      },
+      "offer": {
+        "state": "known",
+        "value": "new installs of heat pumps, air conditioners, and furnaces; repair and service of existing HVAC equipment",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "new installs of heat pumps, air conditioners, and furnaces; repair and service of existing HVAC equipment"
+      },
+      "qualifiedOutcome": {
+        "state": "known",
+        "value": "booked job; sold job for installs; Source of truth: HCP CRM (Tharros's internal CRM)",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "booked job; sold job for installs. Source of truth: HCP CRM (Tharros's internal CRM)"
+      },
+      "secondaryOutcome": null,
+      "valueModel": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "job values TBD (per `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/pack.md`; client numbers TBD)"
+      },
+      "segments": {
+        "state": "known",
+        "value": "install (heat pump, AC, furnace) · repair/service",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "install (heat pump, AC, furnace) · repair/service"
+      },
+      "qualifyingRules": {
+        "state": "known",
+        "value": "in the Kansas City service area; wants an install or repair/service",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "in the Kansas City service area; wants an install or repair/service (TBD beyond that)"
+      },
+      "voice": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD (run `voice-profile`)."
+      },
+      "protectedLines": {
+        "state": "known",
+        "value": "phone (816) 307-1427 (per roster).",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "phone (816) 307-1427 (per roster)."
+      },
+      "neverSay": null,
+      "complianceRules": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "license number display TBD"
+      },
+      "copyRules": null,
+      "voiceDetail": null,
+      "installs": null,
+      "brands": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "licenses": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "dealerAuthorization": null,
+      "planningNote": null,
+      "factsRegister": [
+        {
+          "fact": "Channels Meta, Google",
+          "source": "agency-owner roster",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Phone (816) 307-1427",
+          "source": "agency-owner roster",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "HVAC contractor serving Kansas City",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Job types: installs (heat pumps, AC, furnaces) and repair/service",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "CRM: HCP CRM (Tharros's internal CRM)",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        }
+      ],
+      "openQuestions": [
+        "Job values; exact service-area boundary; license numbers; call tracking; approval owner; site URL",
+        "Does HCP CRM store click ids (GCLID, fbclid, MSCLKID) for offline import?"
+      ],
+      "stores": [
+        {
+          "storeKey": "kc-prestige-hvac/service",
+          "role": "service-area",
+          "brainStoreId": null,
+          "site": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD"
+          },
+          "cms": null,
+          "geo": {
+            "state": "known",
+            "value": "Kansas City (agency owner, 2026-09-29)",
+            "source": "agency-owner roster and 2026-09-29 profile answers",
+            "asOf": "2026-09-29",
+            "raw": "Kansas City (agency owner, 2026-09-29). Exact boundary (cities, ZIPs, Missouri and/or Kansas side) TBD"
+          },
+          "channels": [
+            {
+              "channel": "Meta",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": ""
+              }
+            },
+            {
+              "channel": "Google Ads",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "LSA/GBP status TBD"
+              }
+            }
+          ],
+          "channelsDeclaredNone": false,
+          "measurement": {
+            "summary": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "- CRM: HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`). - Click-id capture into HCP CRM: TBD - Call tracking: TBD - conversion-tracking-audit: not run"
+            },
+            "conversionTrackingAudit": {
+              "state": "known",
+              "value": "not_run",
+              "source": "agency-owner roster and 2026-09-29 profile answers",
+              "asOf": "2026-09-29",
+              "raw": "not run"
+            },
+            "callTracking": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD - conversion-tracking-audit: not run"
+            },
+            "crm": {
+              "state": "known",
+              "value": "HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`).",
+              "source": "agency-owner roster and 2026-09-29 profile answers",
+              "asOf": "2026-09-29",
+              "raw": "HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`)."
+            },
+            "clickIdCapture": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "pixels": null,
+            "ecommercePlatform": null
+          },
+          "capacity": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "crews and booking board (TBD)"
+          },
+          "lag": null,
+          "valueModelOverride": null,
+          "segmentsOverride": null,
+          "notes": [],
+          "promptLayer": {
+            "seeded": false,
+            "version": null
+          }
+        }
+      ],
+      "extras": [
+        {
+          "field": "geo.exact_boundary_cities,_zips,_missouri_and/or_kansas_side",
+          "layer": "store",
+          "storeKey": "kc-prestige-hvac/service",
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "Exact boundary (cities, ZIPs, Missouri and/or Kansas side) TBD"
+          }
+        },
+        {
+          "field": "qualifyingRules.beyond_that",
+          "layer": "client",
+          "storeKey": null,
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD beyond that"
+          }
+        }
+      ],
+      "promptLayer": {
+        "seeded": false,
+        "version": null
+      }
+    },
+    {
+      "slug": "elmar-hvac",
+      "displayName": "Elmar HVAC",
+      "snapshotId": "2026-10-03-0720",
+      "profileHash": "30371e6f073c85e3a24f7100dd35f86a43d89ec1822c7f51c448430ed92bfdf6",
+      "profileUpdatedAt": "2026-09-29",
+      "pilot": false,
+      "marketingGate": "off",
+      "scopeAllowed": true,
+      "forbidClientNamesAndResults": false,
+      "engagement": {
+        "state": "known",
+        "value": "direct",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "direct"
+      },
+      "profileStatus": {
+        "state": "known",
+        "value": "stub",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "stub"
+      },
+      "approvalOwner": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "approvalOwnerResolved": {
+        "name": "Adam",
+        "email": "adam@tharrosmedia.com",
+        "role": "approver-and-admin",
+        "resolvedFrom": "tbd-default"
+      },
+      "packs": [
+        {
+          "id": "home-service",
+          "version": "4.1.0",
+          "role": "primary",
+          "sections": []
+        }
+      ],
+      "dormantPackId": null,
+      "businessModel": {
+        "state": "known",
+        "value": "booked-service (HVAC contractor; agency owner, 2026-09-29)",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "booked-service (HVAC contractor; agency owner, 2026-09-29)"
+      },
+      "offer": {
+        "state": "known",
+        "value": "new installs of heat pumps, air conditioners, and furnaces; repair and service of existing HVAC equipment",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "new installs of heat pumps, air conditioners, and furnaces; repair and service of existing HVAC equipment"
+      },
+      "qualifiedOutcome": {
+        "state": "known",
+        "value": "booked job; sold job for installs; Source of truth: HCP CRM (Tharros's internal CRM)",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "booked job; sold job for installs. Source of truth: HCP CRM (Tharros's internal CRM)"
+      },
+      "secondaryOutcome": null,
+      "valueModel": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "job values TBD (per `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/pack.md`; client numbers TBD)"
+      },
+      "segments": {
+        "state": "known",
+        "value": "install (heat pump, AC, furnace) · repair/service",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "install (heat pump, AC, furnace) · repair/service"
+      },
+      "qualifyingRules": {
+        "state": "known",
+        "value": "in the Baltimore service area; wants an install or repair/service",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "in the Baltimore service area; wants an install or repair/service (TBD beyond that)"
+      },
+      "voice": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD (run `voice-profile`)."
+      },
+      "protectedLines": null,
+      "neverSay": null,
+      "complianceRules": {
+        "state": "known",
+        "value": "- packs: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/compliance.md` - market overlap: Got Ductless has a Maryland store (legacy files point to the Baltimore area). Keep the two clients' data, audiences, and copy separate. The legacy Baltimore / Timonium / Lutherville showroom references belong to Got Ductless, not Elmar.",
+        "source": "agency-owner roster and 2026-09-29 profile answers",
+        "asOf": "2026-09-29",
+        "raw": "- packs: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/compliance.md`\n- market overlap: Got Ductless has a Maryland store (legacy files point to the Baltimore area). Keep the two clients' data, audiences, and copy separate. The legacy Baltimore / Timonium / Lutherville showroom references belong to Got Ductless, not Elmar."
+      },
+      "copyRules": null,
+      "voiceDetail": null,
+      "installs": null,
+      "brands": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "licenses": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "dealerAuthorization": null,
+      "planningNote": null,
+      "factsRegister": [
+        {
+          "fact": "Channels Meta, Google, SEO",
+          "source": "agency-owner roster",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "HVAC contractor serving Baltimore",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Job types: installs (heat pumps, AC, furnaces) and repair/service",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "CRM: HCP CRM (Tharros's internal CRM)",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        }
+      ],
+      "openQuestions": [
+        "Job values; exact service-area boundary; phone; license numbers; call tracking; approval owner; site URL",
+        "Does HCP CRM store click ids for offline import?"
+      ],
+      "stores": [
+        {
+          "storeKey": "elmar-hvac/service",
+          "role": "service-area",
+          "brainStoreId": null,
+          "site": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD"
+          },
+          "cms": null,
+          "geo": {
+            "state": "known",
+            "value": "Baltimore (agency owner, 2026-09-29)",
+            "source": "agency-owner roster and 2026-09-29 profile answers",
+            "asOf": "2026-09-29",
+            "raw": "Baltimore (agency owner, 2026-09-29). Exact boundary (city, county, ZIPs) TBD"
+          },
+          "channels": [
+            {
+              "channel": "Meta",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": ""
+              }
+            },
+            {
+              "channel": "Google Ads",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "LSA/GBP status TBD"
+              }
+            },
+            {
+              "channel": "SEO",
+              "status": {
+                "state": "known",
+                "value": "live (per roster)",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": "live (per roster)"
+              },
+              "access": {
+                "state": "tbd",
+                "value": null,
+                "source": null,
+                "asOf": null,
+                "raw": "TBD"
+              },
+              "notes": {
+                "state": "known",
+                "value": "",
+                "source": "agency-owner roster and 2026-09-29 profile answers",
+                "asOf": "2026-09-29",
+                "raw": ""
+              }
+            }
+          ],
+          "channelsDeclaredNone": false,
+          "measurement": {
+            "summary": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "- CRM: HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`). - Click-id capture into HCP CRM: TBD - Call tracking: TBD - conversion-tracking-audit: not run"
+            },
+            "conversionTrackingAudit": {
+              "state": "known",
+              "value": "not_run",
+              "source": "agency-owner roster and 2026-09-29 profile answers",
+              "asOf": "2026-09-29",
+              "raw": "not run"
+            },
+            "callTracking": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD - conversion-tracking-audit: not run"
+            },
+            "crm": {
+              "state": "known",
+              "value": "HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`).",
+              "source": "agency-owner roster and 2026-09-29 profile answers",
+              "asOf": "2026-09-29",
+              "raw": "HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`)."
+            },
+            "clickIdCapture": {
+              "state": "tbd",
+              "value": null,
+              "source": null,
+              "asOf": null,
+              "raw": "TBD"
+            },
+            "pixels": null,
+            "ecommercePlatform": null
+          },
+          "capacity": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD"
+          },
+          "lag": null,
+          "valueModelOverride": null,
+          "segmentsOverride": null,
+          "notes": [],
+          "promptLayer": {
+            "seeded": false,
+            "version": null
+          }
+        }
+      ],
+      "extras": [
+        {
+          "field": "geo.exact_boundary_city,_county,_zips",
+          "layer": "store",
+          "storeKey": "elmar-hvac/service",
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "Exact boundary (city, county, ZIPs) TBD"
+          }
+        },
+        {
+          "field": "qualifyingRules.beyond_that",
+          "layer": "client",
+          "storeKey": null,
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD beyond that"
+          }
+        }
+      ],
+      "promptLayer": {
+        "seeded": false,
+        "version": null
+      }
+    },
+    {
+      "slug": "tharros-media",
+      "displayName": "Tharros Media (agency brand)",
+      "snapshotId": "2026-10-03-0720",
+      "profileHash": "e3f8dd0ff69a08ffc6a2f5e8bd29b86754be7b7d89c8127cd2d2bb748922e8f5",
+      "profileUpdatedAt": "2026-09-29",
+      "pilot": false,
+      "marketingGate": "off",
+      "scopeAllowed": true,
+      "forbidClientNamesAndResults": true,
+      "engagement": {
+        "state": "known",
+        "value": "internal (the agency's own brand)",
+        "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+        "asOf": "2026-09-29",
+        "raw": "internal (the agency's own brand)"
+      },
+      "profileStatus": {
+        "state": "known",
+        "value": "stub",
+        "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+        "asOf": "2026-09-29",
+        "raw": "stub"
+      },
+      "approvalOwner": {
+        "state": "known",
+        "value": "agency owner",
+        "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+        "asOf": "2026-09-29",
+        "raw": "agency owner"
+      },
+      "approvalOwnerResolved": {
+        "name": "Adam",
+        "email": "adam@tharrosmedia.com",
+        "role": "approver-and-admin",
+        "resolvedFrom": "agency-owner"
+      },
+      "packs": [
+        {
+          "id": "saas-b2b",
+          "version": "4.1.0",
+          "role": "primary",
+          "sections": []
+        },
+        {
+          "id": "local-other",
+          "version": "4.1.0",
+          "role": "fallback",
+          "sections": []
+        }
+      ],
+      "dormantPackId": null,
+      "businessModel": {
+        "state": "inference",
+        "value": "TBD (likely lead-gen for agency services: inference, confirm)",
+        "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+        "asOf": "2026-09-29",
+        "raw": "TBD (likely lead-gen for agency services: inference, confirm)"
+      },
+      "offer": {
+        "state": "known",
+        "value": "marketing agency services",
+        "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+        "asOf": "2026-09-29",
+        "raw": "marketing agency services (offer, niches, and pricing TBD). Current clients are HVAC businesses, so that niche is likely: inference, confirm before any copy says so"
+      },
+      "qualifiedOutcome": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD (e.g. qualified discovery call booked)"
+      },
+      "secondaryOutcome": null,
+      "valueModel": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD (retainer value, term)"
+      },
+      "segments": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD"
+      },
+      "qualifyingRules": null,
+      "voice": {
+        "state": "tbd",
+        "value": null,
+        "source": null,
+        "asOf": null,
+        "raw": "TBD (run `voice-profile` before any site copy)."
+      },
+      "protectedLines": null,
+      "neverSay": null,
+      "complianceRules": {
+        "state": "known",
+        "value": "- packs: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/saas-b2b/compliance.md` (B2B claims, FTC endorsements and reviews) - Hard rule: no client names, no client results (agency owner, 2026-09-29). Tharros Media and Cerevex marketing must not name any client, and must not cite, show, or imply any client's results. That covers: - names, logos, screenshots, quotes, reviews, numbers, case studies, and \"clients like X\" - HVAC USA, KC Prestige HVAC, Got Ductless, and Elmar HVAC - website and SEO copy, ads, social and LinkedIn posts, sales emails, proposals, and pitch decks Permission from a client does not lift the rule; only the agency owner can, by editing this section. `claims-check` marks any such claim `fail` with the fix \"remove.\" Generic, unattributed statements of what the agency does are fine (\"we manage Google and Meta ads for HVAC contractors\" once the niche is confirmed). Results claims (\"our clients get X\") are also out, because they cite client results.",
+        "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+        "asOf": "2026-09-29",
+        "raw": "- packs: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/saas-b2b/compliance.md` (B2B claims, FTC endorsements and reviews)\n- **Hard rule: no client names, no client results (agency owner, 2026-09-29).** Tharros Media and Cerevex marketing must not name any client, and must not cite, show, or imply any client's results. That covers:\n  - names, logos, screenshots, quotes, reviews, numbers, case studies, and \"clients like X\"\n  - HVAC USA, KC Prestige HVAC, Got Ductless, and Elmar HVAC\n  - website and SEO copy, ads, social and LinkedIn posts, sales emails, proposals, and pitch decks\n\n  Permission from a client does not lift the rule; only the agency owner can, by editing this section. `claims-check` marks any such claim `fail` with the fix \"remove.\" Generic, unattributed statements of what the agency does are fine (\"we manage Google and Meta ads for HVAC contractors\" once the niche is confirmed). Results claims (\"our clients get X\") are also out, because they cite client results."
+      },
+      "copyRules": null,
+      "voiceDetail": null,
+      "installs": null,
+      "brands": null,
+      "licenses": null,
+      "dealerAuthorization": null,
+      "planningNote": null,
+      "factsRegister": [
+        {
+          "fact": "No site live, no channels",
+          "source": "agency-owner roster",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Cerevex is Tharros's SaaS product, internal-only for now",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Tharros and Cerevex marketing may not name clients or cite client results yet",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        }
+      ],
+      "openQuestions": [
+        "Positioning, target clients, offer, qualified outcome, site plan"
+      ],
+      "stores": [
+        {
+          "storeKey": "tharros-media/web",
+          "role": "web",
+          "brainStoreId": null,
+          "site": {
+            "state": "known",
+            "value": "none live yet",
+            "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+            "asOf": "2026-09-29",
+            "raw": "none live yet"
+          },
+          "cms": null,
+          "geo": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "TBD"
+          },
+          "channels": [],
+          "channelsDeclaredNone": true,
+          "measurement": {
+            "summary": {
+              "state": "known",
+              "value": "None yet. conversion-tracking-audit: not run (no site).",
+              "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+              "asOf": "2026-09-29",
+              "raw": "None yet. conversion-tracking-audit: not run (no site)."
+            },
+            "conversionTrackingAudit": {
+              "state": "known",
+              "value": "not_run",
+              "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+              "asOf": "2026-09-29",
+              "raw": "not run (no site)."
+            },
+            "callTracking": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "crm": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "clickIdCapture": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "pixels": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "ecommercePlatform": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency-owner roster, 2026-09-29 scope correction and profile answers",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            }
+          },
+          "capacity": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "agency delivery capacity TBD (new clients the team can onboard per month)"
+          },
+          "lag": null,
+          "valueModelOverride": null,
+          "segmentsOverride": null,
+          "notes": [],
+          "promptLayer": {
+            "seeded": false,
+            "version": null
+          }
+        }
+      ],
+      "extras": [
+        {
+          "field": "offer.offer,_niches,_and_pricing",
+          "layer": "client",
+          "storeKey": null,
+          "fact": {
+            "state": "tbd",
+            "value": null,
+            "source": null,
+            "asOf": null,
+            "raw": "offer, niches, and pricing TBD"
+          }
+        }
+      ],
+      "promptLayer": {
+        "seeded": false,
+        "version": null
+      }
+    },
+    {
+      "slug": "cerevex",
+      "displayName": "Cerevex",
+      "snapshotId": "2026-10-03-0720",
+      "profileHash": "3f5c039e4ab72c6cc7b1229200ba24bdfecbbc480784923158a9ddc6716e9e79",
+      "profileUpdatedAt": "2026-09-29",
+      "pilot": false,
+      "marketingGate": "on",
+      "scopeAllowed": true,
+      "forbidClientNamesAndResults": true,
+      "engagement": {
+        "state": "known",
+        "value": "internal (Tharros Media's own SaaS product, used internally)",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "internal (Tharros Media's own SaaS product, used internally)"
+      },
+      "profileStatus": {
+        "state": "known",
+        "value": "internal tool, not marketed",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "internal tool, not marketed"
+      },
+      "approvalOwner": {
+        "state": "known",
+        "value": "agency owner",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "agency owner"
+      },
+      "approvalOwnerResolved": {
+        "name": "Adam",
+        "email": "adam@tharrosmedia.com",
+        "role": "approver-and-admin",
+        "resolvedFrom": "agency-owner"
+      },
+      "packs": [],
+      "dormantPackId": "saas-b2b",
+      "businessModel": {
+        "state": "known",
+        "value": "internal tool (not sold or marketed today)",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "internal tool (not sold or marketed today)"
+      },
+      "offer": {
+        "state": "known",
+        "value": "a client OS for HVAC and home-service businesses; Positioning the agency owner gave for any future launch: professionally managed ads made affordable for any HVAC or home-service operator (not to be used in copy while the gate is on)",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "a client OS for HVAC and home-service businesses. Positioning the agency owner gave for any future launch: professionally managed ads made affordable for any HVAC or home-service operator (not to be used in copy while the gate is on)"
+      },
+      "qualifiedOutcome": {
+        "state": "known",
+        "value": "none (not marketed)",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "none (not marketed)"
+      },
+      "secondaryOutcome": null,
+      "valueModel": {
+        "state": "known",
+        "value": "n/a while the gate is on",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "n/a while the gate is on"
+      },
+      "segments": {
+        "state": "known",
+        "value": "n/a while the gate is on",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "n/a while the gate is on"
+      },
+      "qualifyingRules": null,
+      "voice": {
+        "state": "known",
+        "value": "- product UI tone: warm, professional, plain-language (per the agency owner). Use it only for internal UI or help-text edits - never say (if marketing ever starts): guaranteed results or leads; any promised return on ad spend; \"AI does it all\" claims",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "- product UI tone: warm, professional, plain-language (per the agency owner). Use it only for internal UI or help-text edits\n- never say (if marketing ever starts): guaranteed results or leads; any promised return on ad spend; \"AI does it all\" claims"
+      },
+      "protectedLines": null,
+      "neverSay": null,
+      "complianceRules": {
+        "state": "known",
+        "value": "- If marketing is switched on: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/saas-b2b/compliance.md`, plus the tharros-media rule that no client is named and no client result is cited.",
+        "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+        "asOf": "2026-09-29",
+        "raw": "- If marketing is switched on: `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/saas-b2b/compliance.md`, plus the tharros-media rule that no client is named and no client result is cited."
+      },
+      "copyRules": null,
+      "voiceDetail": null,
+      "installs": null,
+      "brands": null,
+      "licenses": null,
+      "dealerAuthorization": null,
+      "planningNote": null,
+      "factsRegister": [
+        {
+          "fact": "Product name Cerevex; client OS for HVAC/home-service businesses",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Internal use only for now: no marketing, no qualified outcome, no channels",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Positioning for a future launch: professionally managed ads made affordable for any HVAC/home-service operator",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Intended customer: HVAC/home-service operators, including early-stage",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "UI tone: warm, professional, plain-language",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        },
+        {
+          "fact": "Site cerevex.store",
+          "source": "agency owner",
+          "date": "2026-09-29",
+          "state": "known"
+        }
+      ],
+      "openQuestions": [
+        "None while the gate is on. If marketing starts: sales motion and qualified outcome, pricing, what \"professionally managed\" includes, first channels."
+      ],
+      "stores": [
+        {
+          "storeKey": "cerevex/product",
+          "role": "product",
+          "brainStoreId": null,
+          "site": {
+            "state": "known",
+            "value": "https://cerevex.store (per the agency owner). Not a marketing target while the gate is on",
+            "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+            "asOf": "2026-09-29",
+            "raw": "https://cerevex.store (per the agency owner). Not a marketing target while the gate is on"
+          },
+          "cms": null,
+          "geo": null,
+          "channels": [],
+          "channelsDeclaredNone": true,
+          "measurement": {
+            "summary": {
+              "state": "known",
+              "value": "n/a (not marketed). conversion-tracking-audit: not applicable.",
+              "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+              "asOf": "2026-09-29",
+              "raw": "n/a (not marketed). conversion-tracking-audit: not applicable."
+            },
+            "conversionTrackingAudit": {
+              "state": "known",
+              "value": "not_applicable",
+              "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+              "asOf": "2026-09-29",
+              "raw": "not applicable."
+            },
+            "callTracking": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "crm": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "clickIdCapture": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "pixels": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            },
+            "ecommercePlatform": {
+              "state": "known",
+              "value": "n/a",
+              "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+              "asOf": "2026-09-29",
+              "raw": "n/a"
+            }
+          },
+          "capacity": {
+            "state": "known",
+            "value": "n/a while the gate is on",
+            "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+            "asOf": "2026-09-29",
+            "raw": "n/a while the gate is on"
+          },
+          "lag": {
+            "state": "known",
+            "value": "n/a while the gate is on",
+            "source": "agency owner (2026-09-29 scope correction; 2026-09-29 profile answers)",
+            "asOf": "2026-09-29",
+            "raw": "n/a while the gate is on"
+          },
+          "valueModelOverride": null,
+          "segmentsOverride": null,
+          "notes": [],
+          "promptLayer": {
+            "seeded": false,
+            "version": null
+          }
+        }
+      ],
+      "extras": [],
+      "promptLayer": {
+        "seeded": false,
+        "version": null
+      }
+    }
+  ],
+  "missingFacts": {
+    "hvac-usa": [
+      {
+        "field": "segments",
+        "layer": "client",
+        "storeKey": null,
+        "label": "product lines (condensers/heat pumps, furnaces, air handlers/coils, accessories) TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "dealerAuthorization",
+        "layer": "client",
+        "storeKey": null,
+        "label": "**TBD** (needed by claims-check before any price ad)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "valueModel.aov",
+        "layer": "client",
+        "storeKey": null,
+        "label": "AOV TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "valueModel.repeat/contractor_ltv",
+        "layer": "client",
+        "storeKey": null,
+        "label": "repeat/contractor LTV TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "lag",
+        "layer": "store",
+        "storeKey": "hvac-usa/web",
+        "label": "TBD (phone-assisted orders may take days)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.summary",
+        "layer": "store",
+        "storeKey": "hvac-usa/web",
+        "label": "E-com platform TBD · call tracking TBD · pixels TBD · conversion-tracking-audit: not run",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.callTracking",
+        "layer": "store",
+        "storeKey": "hvac-usa/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.pixels",
+        "layer": "store",
+        "storeKey": "hvac-usa/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.ecommercePlatform",
+        "layer": "store",
+        "storeKey": "hvac-usa/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.1.Google Ads (Search, Shopping/PMax).access",
+        "layer": "store",
+        "storeKey": "hvac-usa/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.2.Meta.access",
+        "layer": "store",
+        "storeKey": "hvac-usa/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Dealer tier and MAP/UPP documents (Lennox and Trane)",
+        "origin": "open-question"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Any physical location customers can visit? (the legacy Maryland showroom references were Got Ductless's)",
+        "origin": "open-question"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Which DIY lines, if any, are sold",
+        "origin": "open-question"
+      }
+    ],
+    "got-ductless": [
+      {
+        "field": "approvalOwner",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "qualifiedOutcome",
+        "layer": "client",
+        "storeKey": null,
+        "label": "purchase (online order), plus store visit or store sale if it can be tracked (TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "valueModel",
+        "layer": "client",
+        "storeKey": null,
+        "label": "order value and margin by product line (TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "segments",
+        "layer": "client",
+        "storeKey": null,
+        "label": "segments",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "qualifyingRules",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "voice",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD (run `voice-profile`).",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "offer.product_lines",
+        "layer": "client",
+        "storeKey": null,
+        "label": "product lines TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "installs.the_owner_described_a_retailer",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD (the owner described a retailer",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "site",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "geo",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "online ship-to regions TBD; local store trade area TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "capacity",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "inventory, fulfillment, and phone or store staff hours (TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.summary",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "E-com platform TBD · call tracking TBD · OpenAI Ads pixel/CAPI status TBD · conversion-tracking-audit: not run",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.callTracking",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.pixels",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.ecommercePlatform",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.0.Meta.access",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.1.Google Ads.access",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.2.OpenAI (ChatGPT) Ads.access",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.3.SEO.access",
+        "layer": "store",
+        "storeKey": "got-ductless/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "geo",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "Maryland; exact address **TBD** (see legacy candidate below)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "capacity",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "inventory, fulfillment, and phone or store staff hours (TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.summary",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "E-com platform TBD · call tracking TBD · OpenAI Ads pixel/CAPI status TBD · conversion-tracking-audit: not run",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.callTracking",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.pixels",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.ecommercePlatform",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.0.Google Business Profile.status",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "TBD (the Maryland store)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.0.Google Business Profile.access",
+        "layer": "store",
+        "storeKey": "got-ductless/maryland",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Confirm the legacy showroom and warehouse addresses, the brand list, phone, site URL, and ship-to regions",
+        "origin": "open-question"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Does it install, or only sell? This decides LSA and the licensed-install copy.",
+        "origin": "open-question"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Dealer authorization and MAP documents per brand; approval owner",
+        "origin": "open-question"
+      }
+    ],
+    "kc-prestige-hvac": [
+      {
+        "field": "approvalOwner",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "valueModel",
+        "layer": "client",
+        "storeKey": null,
+        "label": "job values TBD (per `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/pack.md`; client numbers TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "voice",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD (run `voice-profile`).",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "complianceRules",
+        "layer": "client",
+        "storeKey": null,
+        "label": "license number display TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "brands",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "licenses",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "geo.exact_boundary_cities,_zips,_missouri_and/or_kansas_side",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "Exact boundary (cities, ZIPs, Missouri and/or Kansas side) TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "qualifyingRules.beyond_that",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD beyond that",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "site",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "capacity",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "crews and booking board (TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.summary",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "- CRM: HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`). - Click-id capture into HCP CRM: TBD - Call tracking: TBD - conversion-tracking-audit: not run",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.callTracking",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "TBD - conversion-tracking-audit: not run",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.clickIdCapture",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.0.Meta.access",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.1.Google Ads.access",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.1.Google Ads.notes",
+        "layer": "store",
+        "storeKey": "kc-prestige-hvac/service",
+        "label": "LSA/GBP status TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Job values; exact service-area boundary; license numbers; call tracking; approval owner; site URL",
+        "origin": "open-question"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Does HCP CRM store click ids (GCLID, fbclid, MSCLKID) for offline import?",
+        "origin": "open-question"
+      }
+    ],
+    "elmar-hvac": [
+      {
+        "field": "approvalOwner",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "valueModel",
+        "layer": "client",
+        "storeKey": null,
+        "label": "job values TBD (per `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/pack.md`; client numbers TBD)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "voice",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD (run `voice-profile`).",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "brands",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "licenses",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "geo.exact_boundary_city,_county,_zips",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "Exact boundary (city, county, ZIPs) TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "qualifyingRules.beyond_that",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD beyond that",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "site",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "capacity",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.summary",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "- CRM: HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`). - Click-id capture into HCP CRM: TBD - Call tracking: TBD - conversion-tracking-audit: not run",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.callTracking",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "TBD - conversion-tracking-audit: not run",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "measurement.clickIdCapture",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.0.Meta.access",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.1.Google Ads.access",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.1.Google Ads.notes",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "LSA/GBP status TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "channels.2.SEO.access",
+        "layer": "store",
+        "storeKey": "elmar-hvac/service",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Job values; exact service-area boundary; phone; license numbers; call tracking; approval owner; site URL",
+        "origin": "open-question"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Does HCP CRM store click ids for offline import?",
+        "origin": "open-question"
+      }
+    ],
+    "tharros-media": [
+      {
+        "field": "qualifiedOutcome",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD (e.g. qualified discovery call booked)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "valueModel",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD (retainer value, term)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "segments",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "voice",
+        "layer": "client",
+        "storeKey": null,
+        "label": "TBD (run `voice-profile` before any site copy).",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "offer.offer,_niches,_and_pricing",
+        "layer": "client",
+        "storeKey": null,
+        "label": "offer, niches, and pricing TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "geo",
+        "layer": "store",
+        "storeKey": "tharros-media/web",
+        "label": "TBD",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "capacity",
+        "layer": "store",
+        "storeKey": "tharros-media/web",
+        "label": "agency delivery capacity TBD (new clients the team can onboard per month)",
+        "origin": "tbd-field"
+      },
+      {
+        "field": "openQuestion",
+        "layer": "client",
+        "storeKey": null,
+        "label": "Positioning, target clients, offer, qualified outcome, site plan",
+        "origin": "open-question"
+      }
+    ],
+    "cerevex": []
+  },
+  "missingFactsMarkdown": {
+    "hvac-usa": "# Missing facts: HVAC USA\n\n## TBD fields\n\n- [ ] segments (client) — product lines (condensers/heat pumps, furnaces, air handlers/coils, accessories) TBD\n- [ ] dealerAuthorization (client) — **TBD** (needed by claims-check before any price ad)\n- [ ] valueModel.aov (client) — AOV TBD\n- [ ] valueModel.repeat/contractor_ltv (client) — repeat/contractor LTV TBD\n- [ ] lag (store hvac-usa/web) — TBD (phone-assisted orders may take days)\n- [ ] measurement.summary (store hvac-usa/web) — E-com platform TBD · call tracking TBD · pixels TBD · conversion-tracking-audit: not run\n- [ ] measurement.callTracking (store hvac-usa/web) — TBD\n- [ ] measurement.pixels (store hvac-usa/web) — TBD\n- [ ] measurement.ecommercePlatform (store hvac-usa/web) — TBD\n- [ ] channels.1.Google Ads (Search, Shopping/PMax).access (store hvac-usa/web) — TBD\n- [ ] channels.2.Meta.access (store hvac-usa/web) — TBD\n\n## Open questions\n\n- [ ] Dealer tier and MAP/UPP documents (Lennox and Trane)\n- [ ] Any physical location customers can visit? (the legacy Maryland showroom references were Got Ductless's)\n- [ ] Which DIY lines, if any, are sold\n",
+    "got-ductless": "# Missing facts: Got Ductless\n\n## TBD fields\n\n- [ ] approvalOwner (client) — TBD\n- [ ] qualifiedOutcome (client) — purchase (online order), plus store visit or store sale if it can be tracked (TBD)\n- [ ] valueModel (client) — order value and margin by product line (TBD)\n- [ ] segments (client) — segments\n- [ ] qualifyingRules (client) — TBD\n- [ ] voice (client) — TBD (run `voice-profile`).\n- [ ] offer.product_lines (client) — product lines TBD)\n- [ ] installs.the_owner_described_a_retailer (client) — TBD (the owner described a retailer\n- [ ] site (store got-ductless/web) — TBD\n- [ ] geo (store got-ductless/web) — online ship-to regions TBD; local store trade area TBD\n- [ ] capacity (store got-ductless/web) — inventory, fulfillment, and phone or store staff hours (TBD)\n- [ ] measurement.summary (store got-ductless/web) — E-com platform TBD · call tracking TBD · OpenAI Ads pixel/CAPI status TBD · conversion-tracking-audit: not run\n- [ ] measurement.callTracking (store got-ductless/web) — TBD\n- [ ] measurement.pixels (store got-ductless/web) — TBD\n- [ ] measurement.ecommercePlatform (store got-ductless/web) — TBD\n- [ ] channels.0.Meta.access (store got-ductless/web) — TBD\n- [ ] channels.1.Google Ads.access (store got-ductless/web) — TBD\n- [ ] channels.2.OpenAI (ChatGPT) Ads.access (store got-ductless/web) — TBD\n- [ ] channels.3.SEO.access (store got-ductless/web) — TBD\n- [ ] geo (store got-ductless/maryland) — Maryland; exact address **TBD** (see legacy candidate below)\n- [ ] capacity (store got-ductless/maryland) — inventory, fulfillment, and phone or store staff hours (TBD)\n- [ ] measurement.summary (store got-ductless/maryland) — E-com platform TBD · call tracking TBD · OpenAI Ads pixel/CAPI status TBD · conversion-tracking-audit: not run\n- [ ] measurement.callTracking (store got-ductless/maryland) — TBD\n- [ ] measurement.pixels (store got-ductless/maryland) — TBD\n- [ ] measurement.ecommercePlatform (store got-ductless/maryland) — TBD\n- [ ] channels.0.Google Business Profile.status (store got-ductless/maryland) — TBD (the Maryland store)\n- [ ] channels.0.Google Business Profile.access (store got-ductless/maryland) — TBD\n\n## Open questions\n\n- [ ] Confirm the legacy showroom and warehouse addresses, the brand list, phone, site URL, and ship-to regions\n- [ ] Does it install, or only sell? This decides LSA and the licensed-install copy.\n- [ ] Dealer authorization and MAP documents per brand; approval owner\n",
+    "kc-prestige-hvac": "# Missing facts: KC Prestige HVAC\n\n## TBD fields\n\n- [ ] approvalOwner (client) — TBD\n- [ ] valueModel (client) — job values TBD (per `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/pack.md`; client numbers TBD)\n- [ ] voice (client) — TBD (run `voice-profile`).\n- [ ] complianceRules (client) — license number display TBD\n- [ ] brands (client) — TBD\n- [ ] licenses (client) — TBD\n- [ ] geo.exact_boundary_cities,_zips,_missouri_and/or_kansas_side (store kc-prestige-hvac/service) — Exact boundary (cities, ZIPs, Missouri and/or Kansas side) TBD\n- [ ] qualifyingRules.beyond_that (client) — TBD beyond that\n- [ ] site (store kc-prestige-hvac/service) — TBD\n- [ ] capacity (store kc-prestige-hvac/service) — crews and booking board (TBD)\n- [ ] measurement.summary (store kc-prestige-hvac/service) — - CRM: HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`). - Click-id capture into HCP CRM: TBD - Call tracking: TBD - conversion-tracking-audit: not run\n- [ ] measurement.callTracking (store kc-prestige-hvac/service) — TBD - conversion-tracking-audit: not run\n- [ ] measurement.clickIdCapture (store kc-prestige-hvac/service) — TBD\n- [ ] channels.0.Meta.access (store kc-prestige-hvac/service) — TBD\n- [ ] channels.1.Google Ads.access (store kc-prestige-hvac/service) — TBD\n- [ ] channels.1.Google Ads.notes (store kc-prestige-hvac/service) — LSA/GBP status TBD\n\n## Open questions\n\n- [ ] Job values; exact service-area boundary; license numbers; call tracking; approval owner; site URL\n- [ ] Does HCP CRM store click ids (GCLID, fbclid, MSCLKID) for offline import?\n",
+    "elmar-hvac": "# Missing facts: Elmar HVAC\n\n## TBD fields\n\n- [ ] approvalOwner (client) — TBD\n- [ ] valueModel (client) — job values TBD (per `/home/box/agent-data/workflows/tharros-shared-references/references/verticals/home-service/pack.md`; client numbers TBD)\n- [ ] voice (client) — TBD (run `voice-profile`).\n- [ ] brands (client) — TBD\n- [ ] licenses (client) — TBD\n- [ ] geo.exact_boundary_city,_county,_zips (store elmar-hvac/service) — Exact boundary (city, county, ZIPs) TBD\n- [ ] qualifyingRules.beyond_that (client) — TBD beyond that\n- [ ] site (store elmar-hvac/service) — TBD\n- [ ] capacity (store elmar-hvac/service) — TBD\n- [ ] measurement.summary (store elmar-hvac/service) — - CRM: HCP CRM (Tharros's internal CRM), the system of record for booked and sold jobs. Offline conversion import (Google, Meta, Microsoft) sends booked and sold stages from HCP CRM (`/home/box/agent-data/workflows/paid-media/references/offline-conversions.md`). - Click-id capture into HCP CRM: TBD - Call tracking: TBD - conversion-tracking-audit: not run\n- [ ] measurement.callTracking (store elmar-hvac/service) — TBD - conversion-tracking-audit: not run\n- [ ] measurement.clickIdCapture (store elmar-hvac/service) — TBD\n- [ ] channels.0.Meta.access (store elmar-hvac/service) — TBD\n- [ ] channels.1.Google Ads.access (store elmar-hvac/service) — TBD\n- [ ] channels.1.Google Ads.notes (store elmar-hvac/service) — LSA/GBP status TBD\n- [ ] channels.2.SEO.access (store elmar-hvac/service) — TBD\n\n## Open questions\n\n- [ ] Job values; exact service-area boundary; phone; license numbers; call tracking; approval owner; site URL\n- [ ] Does HCP CRM store click ids for offline import?\n",
+    "tharros-media": "# Missing facts: Tharros Media (agency brand)\n\n## TBD fields\n\n- [ ] qualifiedOutcome (client) — TBD (e.g. qualified discovery call booked)\n- [ ] valueModel (client) — TBD (retainer value, term)\n- [ ] segments (client) — TBD\n- [ ] voice (client) — TBD (run `voice-profile` before any site copy).\n- [ ] offer.offer,_niches,_and_pricing (client) — offer, niches, and pricing TBD\n- [ ] geo (store tharros-media/web) — TBD\n- [ ] capacity (store tharros-media/web) — agency delivery capacity TBD (new clients the team can onboard per month)\n\n## Open questions\n\n- [ ] Positioning, target clients, offer, qualified outcome, site plan\n",
+    "cerevex": "# Missing facts: Cerevex\n\nNo TBD fields.\n"
+  }
+}

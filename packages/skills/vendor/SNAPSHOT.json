@@ -1,0 +1,30 @@
+{
+  "snapshotId": "2026-10-03-0720",
+  "snapshotTimestamp": "2026-10-03T07:20:00-04:00",
+  "timezone": "America/New_York",
+  "recordedFrom": "Vendored from the box library /home/box/agent-data/workflows/ as of the snapshot stamp in America/New_York. Cerevex does not read the box or Drive at runtime.",
+  "sources": [
+    {
+      "kind": "tharros-shared-references",
+      "archiveName": "tharros-shared-references-2026-10-03-0720.tar.gz",
+      "upstreamPath": "/home/box/agent-data/workflows/tharros-shared-references",
+      "vendoredPath": "packages/skills/vendor/tharros-shared-references",
+      "status": "accepted"
+    },
+    {
+      "kind": "skills",
+      "archiveName": "skills-six-2026-10-03-0720-accepted.tar.gz",
+      "upstreamPath": "/home/box/agent-data/workflows/{paid-media,seo-audit,seo-research,claims-check,no-slop-copy,account-review-loop}",
+      "vendoredPath": "packages/skills/vendor/skills",
+      "status": "accepted"
+    },
+    {
+      "kind": "skill-overlay",
+      "skill": "no-slop-copy",
+      "archiveName": "no-slop-copy-2026-10-03-0718.tar.gz",
+      "upstreamPath": "/home/box/agent-data/workflows/no-slop-copy",
+      "vendoredPath": "packages/skills/vendor/skills/no-slop-copy",
+      "status": "accepted"
+    }
+  ]
+}

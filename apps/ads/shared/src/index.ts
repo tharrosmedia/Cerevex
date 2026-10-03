@@ -154,6 +154,7 @@ export type {
   BookedJobSignalRecDraft,
 } from "./lead-lifecycle";
 export { evaluateApplyGate, applyBlockMessage, APPLY_BLOCK_REASONS } from "./apply-gate";
+export { assertLocalDatabase, importSkillConfigBundle } from "./skill-config-import";
 export {
   findingDraftSchema,
   recommendationDraftSchema,

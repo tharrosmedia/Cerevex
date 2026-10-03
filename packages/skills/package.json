@@ -1,0 +1,25 @@
+{
+  "name": "@cerevex/skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pinned read-only Tharros skill templates and one-way client profile import. Runtime never reads the box or Drive.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/fact.test.ts && tsx tests/gates.test.ts && tsx tests/profiles.test.ts && tsx tests/manifest.test.ts && tsx tests/recommendation.test.ts && tsx tests/staleness.test.ts",
+    "manifest": "tsx scripts/build-manifest.ts",
+    "import": "tsx scripts/import-profiles.ts",
+    "resync": "tsx scripts/resync.ts"
+  },
+  "dependencies": {
+    "@cerevex/contracts": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  }
+}

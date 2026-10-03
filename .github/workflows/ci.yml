@@ -24,6 +24,7 @@ jobs:
               - 'packages/contracts/**'
               - 'packages/db/**'
               - 'packages/shared/**'
+              - 'packages/skills/**'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
@@ -33,6 +34,7 @@ jobs:
               - 'jobs/meta/**'
               - 'jobs/google/**'
               - 'packages/contracts/**'
+              - 'packages/skills/**'
 
   brain:
     name: apps/brain + jobs/seo
@@ -57,6 +59,11 @@ jobs:
       - name: Typecheck contracts
         if: needs.changes.outputs.brain == 'true'
         run: npm run typecheck --workspace=@cerevex/contracts
+      - name: Typecheck and test skills package
+        if: needs.changes.outputs.brain == 'true'
+        run: |
+          npm run typecheck --workspace=@cerevex/skills
+          npm run test --workspace=@cerevex/skills
       - name: Test Brain
         if: needs.changes.outputs.brain == 'true'
         run: npm run test --workspace=@cerevex/brain

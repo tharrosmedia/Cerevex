@@ -547,3 +547,42 @@ export const adMetrics = osSchema.table(
     uniqueIndex("ad_metrics_entity_window_idx").on(table.entityId, table.window),
   ],
 );
+
+/**
+ * Imported skill config (Brief 1.0 §3). Slug is the scope gate.
+ * `clientId` optionally links os.clients. `brainStoreId` is a Brain store id
+ * with no FK into public.stores.
+ */
+export const skillClientConfigs = osSchema.table(
+  "skill_client_configs",
+  {
+    slug: text("slug").primaryKey(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    displayName: text("display_name").notNull(),
+    snapshotId: text("snapshot_id").notNull(),
+    profileHash: text("profile_hash").notNull(),
+    marketingGate: text("marketing_gate").notNull(),
+    scopeAllowed: boolean("scope_allowed").notNull().default(true),
+    pilot: boolean("pilot").notNull().default(false),
+    approvalOwnerResolved: text("approval_owner_resolved").notNull(),
+    configJson: jsonb("config_json").notNull(),
+    missingFactsJson: jsonb("missing_facts_json").notNull(),
+    importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("skill_client_configs_client_idx").on(table.clientId)],
+);
+
+export const skillStoreConfigs = osSchema.table(
+  "skill_store_configs",
+  {
+    clientSlug: text("client_slug")
+      .notNull()
+      .references(() => skillClientConfigs.slug, { onDelete: "cascade" }),
+    storeKey: text("store_key").notNull(),
+    brainStoreId: text("brain_store_id"),
+    role: text("role").notNull(),
+    configJson: jsonb("config_json").notNull(),
+    importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.clientSlug, table.storeKey] })],
+);
