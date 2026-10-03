@@ -10,6 +10,7 @@
     "./inngest": "./src/inngest.ts",
     "./env": "./src/env.ts",
     "./test-database": "./src/test-database.ts",
+    "./migration-journal": "./src/migration-journal.ts",
     "./crypto": "./src/crypto.ts",
     "./oauth": "./src/oauth.ts",
     "./credentials": "./src/credentials.ts",
