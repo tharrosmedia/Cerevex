@@ -1,5 +1,11 @@
+import {
+  SCHOLARSHIP_DOWNGRADE_LOCATION_MESSAGE,
+  SCHOLARSHIP_LOCATION_MESSAGE,
+  scholarshipDowngradeAdAccountMessage,
+  adAccountLimitMessage,
+} from '@cerevex/contracts';
 import { adsApi, type AdsAccount, type AdsAudit, type AdsClient, type AdsSuggestion } from './ads-bff';
-import { platformFromRecord } from './ads-copy';
+import { ADS_CHECK_NO_SITE, ADS_CONNECT_NO_CLIENT, ADS_SITE_CLIENT_UNAVAILABLE, platformFromRecord } from './ads-copy';
 import type { AdsFilterState } from '@/components/ads/ads-filters';
 
 const OAUTH_ERROR_COPY: Record<string, string> = {
@@ -19,6 +25,37 @@ export function oauthErrorMessage(code: string | undefined): string {
   return OAUTH_ERROR_COPY[code] ?? `Could not finish connecting that account (${code.replace(/_/g, ' ')}).`;
 }
 
+const KNOWN_CONNECT_SENTENCES = new Set([
+  'Choose Meta or Google.',
+  'Could not start Meta connect.',
+  'Could not start Google connect.',
+  'Could not load your sites.',
+  ADS_CHECK_NO_SITE,
+  ADS_CONNECT_NO_CLIENT,
+  ADS_SITE_CLIENT_UNAVAILABLE,
+  SCHOLARSHIP_LOCATION_MESSAGE,
+  SCHOLARSHIP_DOWNGRADE_LOCATION_MESSAGE,
+  OAUTH_ERROR_COPY.plan_limit,
+  adAccountLimitMessage('meta'),
+  adAccountLimitMessage('google'),
+  scholarshipDowngradeAdAccountMessage('meta'),
+  scholarshipDowngradeAdAccountMessage('google'),
+]);
+
+const SCHOLARSHIP_ACCOUNT_SENTENCE =
+  /^This Scholarship includes 1 .+ Disconnect the current one to switch, or move to the paid plan for unlimited ad accounts\.$/;
+const SCHOLARSHIP_DOWNGRADE_SENTENCE =
+  /^This account has more than one .+ before moving to the Scholarship\.$/;
+
+/** Query text is shown only when it is one of our own sentences or error codes. */
+export function knownConnectError(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (OAUTH_ERROR_COPY[value]) return OAUTH_ERROR_COPY[value];
+  if (KNOWN_CONNECT_SENTENCES.has(value)) return value;
+  if (SCHOLARSHIP_ACCOUNT_SENTENCE.test(value) || SCHOLARSHIP_DOWNGRADE_SENTENCE.test(value)) return value;
+  return undefined;
+}
+
 export function parseAdsFilters(input: {
   client?: string;
   platform?: string;
@@ -32,8 +69,9 @@ export function parseAdsFilters(input: {
   const platform = input.platform === 'meta' || input.platform === 'google' ? input.platform : undefined;
   const count = Number(input.count);
   const connectedName = input.connected === 'google' ? 'Google Ads' : 'Meta';
-  const notice = input.connect_error || input.oauth_error
-    ? input.connect_error || oauthErrorMessage(input.oauth_error)
+  const connectError = knownConnectError(input.connect_error);
+  const notice = connectError || input.oauth_error
+    ? connectError || oauthErrorMessage(input.oauth_error)
     : input.connected
       ? count > 1
         ? `Connected ${count} ${connectedName} accounts. Their first sync is running.`

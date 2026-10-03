@@ -52,6 +52,10 @@ DECLARE
   client_plan text;
   active_count integer;
 BEGIN
+  -- Same key in every Scholarship trigger. READ COMMITTED (the app default)
+  -- takes a fresh snapshot after this wait, so the count sees the other write.
+  PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
+
   SELECT plan INTO client_plan
   FROM os.clients
   WHERE id = NEW.client_id
@@ -65,7 +69,8 @@ BEGIN
   FROM os.locations
   WHERE client_id = NEW.client_id
     AND status = 'active'
-    AND id IS DISTINCT FROM NEW.id;
+    AND id IS DISTINCT FROM NEW.id
+    AND store_id IS DISTINCT FROM NEW.store_id;
 
   IF active_count >= 1 THEN
     RAISE EXCEPTION 'This Scholarship includes 1 location. Turn the current location off to switch, or move to the paid plan to add every location.'
@@ -92,6 +97,8 @@ DECLARE
   active_count integer;
   platform_key text;
 BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.client_id::text));
+
   SELECT plan INTO client_plan
   FROM os.clients
   WHERE id = NEW.client_id
@@ -106,7 +113,8 @@ BEGIN
   WHERE client_id = NEW.client_id
     AND platform = NEW.platform
     AND connection_status <> 'disconnected'
-    AND id IS DISTINCT FROM NEW.id;
+    AND id IS DISTINCT FROM NEW.id
+    AND (platform, external_id) IS DISTINCT FROM (NEW.platform, NEW.external_id);
 
   IF active_count >= 1 THEN
     platform_key := lower(NEW.platform::text);
@@ -145,6 +153,8 @@ BEGIN
   IF NEW.plan IS DISTINCT FROM 'scholarship' OR OLD.plan = 'scholarship' THEN
     RETURN NEW;
   END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtext('os.scholarship'), hashtext(NEW.id::text));
 
   SELECT count(*)::integer INTO loc_count
   FROM os.locations

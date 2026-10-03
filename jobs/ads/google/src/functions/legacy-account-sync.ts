@@ -15,6 +15,7 @@ export const googleAdsAccountSync = inngest.createFunction(
     id: LEGACY_ADS_FUNCTION_IDS.googleAdsAccountSync,
     name: "Google ads account sync (legacy google/ads/*)",
     triggers: [{ event: LEGACY_ADS_EVENTS.googleAdsAccountSync }],
+    concurrency: { limit: 1, key: "event.data.adAccountId" },
   },
   async ({ event, step }: any) => {
     const result = await step.run("pull-entities", async () => pullGoogleAdAccount(event.data.adAccountId));

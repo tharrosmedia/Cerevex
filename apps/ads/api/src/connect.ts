@@ -134,16 +134,19 @@ export async function disconnectAccount(auth: AuthContext, adAccountId: string) 
     account.workspaceId,
     getAdPlatformConnector(account.platform).connectCapability,
   );
-  const db = getDb();
-  await db.delete(oauthCredentials).where(eq(oauthCredentials.adAccountId, account.id));
-  const [updated] = await db
-    .update(adAccounts)
-    .set({
-      connectionStatus: "disconnected",
-      lastError: null,
-    })
-    .where(eq(adAccounts.id, account.id))
-    .returning();
+  const [updated] = await getDb().transaction(async (tx) => {
+    await tx.select({ id: adAccounts.id }).from(adAccounts).where(eq(adAccounts.id, account.id)).for("update");
+    const [row] = await tx
+      .update(adAccounts)
+      .set({
+        connectionStatus: "disconnected",
+        lastError: null,
+      })
+      .where(eq(adAccounts.id, account.id))
+      .returning();
+    await tx.delete(oauthCredentials).where(eq(oauthCredentials.adAccountId, account.id));
+    return [row];
+  });
   await writeAuditEvent({
     workspaceId: account.workspaceId,
     actorType: "user",

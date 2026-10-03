@@ -14,6 +14,7 @@ import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { setClientPlan } from "@tharros/ads-shared/entitlements";
 import { adAccounts, clients, locations, workspaces } from "@tharros/ads-shared/schema";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
+import { checkViolationMessage } from "../src/db-errors";
 import { createPendingConnection } from "../src/pending-connect";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
@@ -227,6 +228,7 @@ describe("plan and location entitlements", () => {
 
   it("blocks a second active scholarship location with a plain message", async () => {
     expect((await activate(scholarshipId, "scholar-store-a")).status).toBe(200);
+    expect((await activate(scholarshipId, "scholar-store-a")).status).toBe(200);
     const blocked = await activate(scholarshipId, "scholar-store-b");
     expect(blocked.status).toBe(409);
     const body = await json(blocked);
@@ -352,6 +354,7 @@ describe("plan and location entitlements", () => {
     expect((await link("scholar-site-a")).status).toBe(200);
     const swapped = await link("scholar-site-b");
     expect(swapped.status).toBe(200);
+    expect((await link("scholar-site-b")).status).toBe(200);
     expect((await json(swapped)).client).toMatchObject({ siteId: "scholar-site-b", plan: "scholarship" });
 
     const rows = await getDb().select().from(locations).where(eq(locations.clientId, scholarshipId));
@@ -366,6 +369,7 @@ describe("plan and location entitlements", () => {
 
   it("refuses a raw insert that would pass the Scholarship limits", async () => {
     const db = getDb();
+    let locationViolation: unknown;
     await expect(
       db.insert(locations).values({
         workspaceId,
@@ -373,7 +377,11 @@ describe("plan and location entitlements", () => {
         storeId: "scholar-raw-extra",
         status: "active",
       }),
-    ).rejects.toSatisfy((error: unknown) => /Scholarship includes 1 location/.test(databaseMessage(error)));
+    ).rejects.toSatisfy((error: unknown) => {
+      locationViolation = error;
+      return /Scholarship includes 1 location/.test(databaseMessage(error));
+    });
+    expect(checkViolationMessage(locationViolation)).toMatch(/Scholarship includes 1 location/);
 
     await expect(
       db.insert(adAccounts).values({
@@ -385,6 +393,38 @@ describe("plan and location entitlements", () => {
         scopesJson: [],
       }),
     ).rejects.toSatisfy((error: unknown) => /1 Meta ad account/.test(databaseMessage(error)));
+
+    const sameLocation = await db
+      .insert(locations)
+      .values({
+        workspaceId,
+        clientId: scholarshipId,
+        storeId: "scholar-site-b",
+        status: "active",
+      })
+      .onConflictDoUpdate({
+        target: [locations.clientId, locations.storeId],
+        set: { status: "active" },
+      })
+      .returning();
+    expect(sameLocation[0]?.status).toBe("active");
+
+    const sameAccount = await db
+      .insert(adAccounts)
+      .values({
+        workspaceId,
+        clientId: scholarshipId,
+        platform: "meta",
+        externalId: "act_scholar_2",
+        connectionStatus: "connected",
+        scopesJson: [],
+      })
+      .onConflictDoUpdate({
+        target: [adAccounts.clientId, adAccounts.platform, adAccounts.externalId],
+        set: { connectionStatus: "connected" },
+      })
+      .returning();
+    expect(sameAccount[0]?.connectionStatus).toBe("connected");
 
     const paidInsert = await db
       .insert(locations)

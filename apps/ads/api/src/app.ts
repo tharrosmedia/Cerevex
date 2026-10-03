@@ -17,6 +17,7 @@ import { registerLpIntelligenceRoutes } from "./lp-intelligence";
 import { registerOfflineRoutes } from "./offline";
 import { registerInMarketRoutes } from "./in-market";
 import { registerPlanningRoutes } from "./planning";
+import { checkViolationMessage } from "./db-errors";
 import { registerConnectRoutes } from "./routes";
 import { registerPendingConnectRoutes } from "./pending-connect";
 import { registerSiteRoutes } from "./sites";
@@ -131,6 +132,10 @@ export function createApp() {
     }
     if (error instanceof HTTPException) {
       return c.json({ error: error.message, requestId }, error.status);
+    }
+    const planLimit = checkViolationMessage(error);
+    if (planLimit) {
+      return c.json({ error: planLimit, requestId }, 409);
     }
     childLogger(requestId).error({ err: error, msg: "unhandled_error" });
     return c.json({ error: "Internal server error", requestId }, 500);
