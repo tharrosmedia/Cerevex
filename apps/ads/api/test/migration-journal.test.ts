@@ -7,9 +7,16 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  LEGACY_LEDGER_COPY_SQL,
+  MIGRATIONS_SCHEMA,
+  MIGRATIONS_TABLE,
+  migrationsRelation,
+} from "@tharros/ads-shared/migration-ledger";
+import {
   assertMigrationJournal,
   assertMigrationsApplied,
   assertNoSkippedBeforeMigrate,
+  assertPopulatedSchemaHasLedger,
   migrationSqlHash,
   MigrationJournalError,
 } from "@tharros/ads-shared/migration-journal";
@@ -210,7 +217,7 @@ describe("migration journal", () => {
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-      const rows = await client.query<{ hash: string }>(`select hash from "os"."__drizzle_migrations"`);
+      const rows = await client.query<{ hash: string }>(`select hash from ${migrationsRelation()}`);
       expect(rows.rows).toHaveLength(assertMigrationJournal(realMigrations).length);
       const table = await client.query(`select to_regclass('os.skill_client_configs') as name`);
       expect(table.rows[0]?.name).toBe("skill_client_configs");
@@ -249,7 +256,7 @@ describe("migration journal", () => {
     });
     expect(second.code).not.toBe(0);
     expect(second.stderr).toContain("0004_site_clients");
-    expect(second.stderr).toContain("os.__drizzle_migrations");
+    expect(second.stderr).toContain(`${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}`);
     expect(second.stderr).toContain("Refusing to migrate");
     rmSync(folder, { recursive: true, force: true });
   }, 60_000);
@@ -366,7 +373,7 @@ describe("migration journal", () => {
       DATABASE_URL: databaseUrl,
     });
     expect(missing.code).not.toBe(0);
-    expect(missing.stderr).toContain("os.__drizzle_migrations does not exist");
+    expect(missing.stderr).toContain(`${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE} does not exist`);
 
     const migrated = await runMigrate({
       ...process.env,
@@ -377,15 +384,15 @@ describe("migration journal", () => {
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-      const before = await client.query(`select count(*)::int as n from "os"."__drizzle_migrations"`);
+      const before = await client.query(`select count(*)::int as n from ${migrationsRelation()}`);
       const listed = await runNode([tsxBin, ledgerScript], {
         ...process.env,
         NODE_ENV: "test",
         DATABASE_URL: databaseUrl,
       });
       expect(listed.code, listed.stderr).toBe(0);
-      expect(listed.stdout).toContain(`os.__drizzle_migrations rows: ${before.rows[0]?.n}`);
-      const after = await client.query(`select count(*)::int as n from "os"."__drizzle_migrations"`);
+      expect(listed.stdout).toContain(`${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE} rows: ${before.rows[0]?.n}`);
+      const after = await client.query(`select count(*)::int as n from ${migrationsRelation()}`);
       expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
     } finally {
       await client.end();
@@ -480,4 +487,188 @@ describe("migration journal", () => {
     expect(removed.stderr).toContain("0000_base is on origin/main but missing");
     rmSync(root, { recursive: true, force: true });
   }, 30_000);
+
+  it("refuses a populated schema whose ledger is missing or empty", async () => {
+    expect(LEGACY_LEDGER_COPY_SQL).toBe(
+      `CREATE TABLE IF NOT EXISTS os.__drizzle_migrations (
+  id SERIAL PRIMARY KEY,
+  hash text NOT NULL,
+  created_at bigint
+);
+INSERT INTO os.__drizzle_migrations (hash, created_at) SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;`,
+    );
+    expect(readFileSync(resolve(repoRoot, "apps/ads/README.md"), "utf8")).toContain(LEGACY_LEDGER_COPY_SQL);
+    expect(() =>
+      assertPopulatedSchemaHasLedger({ otherOsTables: 0, ledgerRows: null, legacyLedgerRows: 0 }),
+    ).not.toThrow();
+    expect(() =>
+      assertPopulatedSchemaHasLedger({ otherOsTables: 1, ledgerRows: null, legacyLedgerRows: 0 }),
+    ).toThrow(/schema os already has tables/);
+    expect(() =>
+      assertPopulatedSchemaHasLedger({ otherOsTables: 0, ledgerRows: 0, legacyLedgerRows: 2 }),
+    ).toThrow(/drizzle\.__drizzle_migrations has rows/);
+
+    const folder = mkdtempSync(join(tmpdir(), "cerevex-journal-populated-"));
+    mkdirSync(join(folder, "meta"), { recursive: true });
+    const markerSql = 'CREATE TABLE "os"."legacy_copy_marker" (id integer);\n';
+    writeFileSync(join(folder, "0000_marker.sql"), markerSql);
+    writeFileSync(
+      join(folder, "meta", "_journal.json"),
+      JSON.stringify({
+        version: "7",
+        dialect: "postgresql",
+        entries: [{ idx: 0, version: "7", when: 100, tag: "0000_marker", breakpoints: true }],
+      }),
+    );
+    const databaseUrl = await createDatabase(`cerevex_migrate_test_${process.pid}_pop`);
+    const hash = migrationSqlHash(markerSql);
+    const setup = new pg.Client({ connectionString: databaseUrl });
+    await setup.connect();
+    try {
+      await setup.query(`CREATE SCHEMA ${MIGRATIONS_SCHEMA}`);
+      await setup.query(markerSql);
+      await setup.query(`CREATE SCHEMA drizzle`);
+      await setup.query(
+        `CREATE TABLE drizzle.__drizzle_migrations (id serial primary key, hash text, created_at bigint)`,
+      );
+      await setup.query(`INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)`, [hash, 100]);
+    } finally {
+      await setup.end();
+    }
+
+    const env = {
+      ...process.env,
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+      ADS_MIGRATIONS_FOLDER: folder,
+    };
+    const missing = await runMigrate(env);
+    expect(missing.code).not.toBe(0);
+    expect(missing.stderr).toContain("is missing");
+    expect(missing.stderr).toContain("already has tables");
+    expect(missing.stderr).toContain(LEGACY_LEDGER_COPY_SQL);
+    expect(missing.stdout).not.toContain("Applied OS migrations");
+
+    const midway = new pg.Client({ connectionString: databaseUrl });
+    await midway.connect();
+    try {
+      const ledger = await midway.query(`select to_regclass('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}') as name`);
+      expect(ledger.rows[0]?.name).toBeNull();
+      await midway.query(
+        `CREATE TABLE ${migrationsRelation()} (id serial primary key, hash text, created_at bigint)`,
+      );
+      const empty = await runMigrate(env);
+      expect(empty.code).not.toBe(0);
+      expect(empty.stderr).toContain("is empty");
+      expect(empty.stderr).toContain(LEGACY_LEDGER_COPY_SQL);
+      const rows = await midway.query(`select count(*)::int as n from ${migrationsRelation()}`);
+      expect(rows.rows[0]?.n).toBe(0);
+      await midway.query(`DROP TABLE ${migrationsRelation()}`);
+      const dropped = await midway.query(`select to_regclass('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}') as name`);
+      expect(dropped.rows[0]?.name).toBeNull();
+      await midway.query(LEGACY_LEDGER_COPY_SQL);
+    } finally {
+      await midway.end();
+    }
+
+    const copied = await runMigrate(env);
+    expect(copied.code, copied.stderr).toBe(0);
+    const again = await runMigrate(env);
+    expect(again.code, again.stderr).toBe(0);
+    const after = new pg.Client({ connectionString: databaseUrl });
+    await after.connect();
+    try {
+      const rows = await after.query(`select hash, created_at::text from ${migrationsRelation()}`);
+      expect(rows.rows).toEqual([{ hash, created_at: "100" }]);
+    } finally {
+      await after.end();
+    }
+    rmSync(folder, { recursive: true, force: true });
+  }, 60_000);
+
+  it("exits non-zero when the ledger cannot be read", async () => {
+    const database = `cerevex_migrate_test_${process.pid}_perm`;
+    const databaseUrl = await createDatabase(database);
+    const role = `cerevex_nosel_${process.pid}`;
+    const password = "local_only_nosel";
+    await withAdmin(async (client) => {
+      await client.query(`DROP ROLE IF EXISTS "${role}"`);
+      await client.query(`CREATE ROLE "${role}" LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE`);
+    });
+    const owner = new pg.Client({ connectionString: databaseUrl });
+    await owner.connect();
+    try {
+      await owner.query(`CREATE SCHEMA ${MIGRATIONS_SCHEMA}`);
+      await owner.query(
+        `CREATE TABLE ${migrationsRelation()} (id serial primary key, hash text, created_at bigint)`,
+      );
+      await owner.query(`REVOKE ALL ON SCHEMA ${MIGRATIONS_SCHEMA} FROM PUBLIC`);
+      await owner.query(`REVOKE ALL ON TABLE ${migrationsRelation()} FROM PUBLIC`);
+      await owner.query(`GRANT USAGE ON SCHEMA ${MIGRATIONS_SCHEMA} TO "${role}"`);
+      await owner.query(`GRANT CONNECT, CREATE ON DATABASE "${database}" TO "${role}"`);
+    } finally {
+      await owner.end();
+    }
+    const raw = process.env.DATABASE_URL ?? "";
+    const scheme = raw.startsWith("postgresql:") ? "postgresql:" : "postgres:";
+    const url = new URL(raw.replace(/^postgres(ql)?:/, "http:"));
+    url.protocol = "http:";
+    url.username = role;
+    url.password = password;
+    url.pathname = `/${database}`;
+    const roleUrl = url.toString().replace(/^http:/, scheme);
+    assertLocalDatabase(roleUrl);
+    try {
+      const result = await runMigrate({
+        ...process.env,
+        NODE_ENV: "test",
+        DATABASE_URL: roleUrl,
+      });
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("42501");
+      expect(result.stderr).toContain(`Cannot read ${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}`);
+      expect(result.stdout).not.toContain("Applied OS migrations");
+    } finally {
+      const cleanup = new pg.Client({ connectionString: databaseUrl });
+      await cleanup.connect();
+      try {
+        await cleanup.query(`REVOKE ALL ON SCHEMA ${MIGRATIONS_SCHEMA} FROM "${role}"`);
+        await cleanup.query(`REVOKE ALL ON TABLE ${migrationsRelation()} FROM "${role}"`);
+      } finally {
+        await cleanup.end();
+      }
+      await withAdmin(async (client) => {
+        await client.query(`REVOKE ALL ON DATABASE "${database}" FROM "${role}"`);
+        await client.query(`DROP ROLE IF EXISTS "${role}"`);
+      });
+    }
+  }, 60_000);
+
+  it("fails the post-check when an applied row is not in the journal", async () => {
+    const databaseUrl = await createDatabase(`cerevex_migrate_test_${process.pid}_post`);
+    const first = await runMigrate({
+      ...process.env,
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+    });
+    expect(first.code, first.stderr).toBe(0);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await client.query(`insert into ${migrationsRelation()} (hash, created_at) values ($1, $2)`, [
+        "a".repeat(64),
+        9_999_999_999_999,
+      ]);
+    } finally {
+      await client.end();
+    }
+    const second = await runMigrate({
+      ...process.env,
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+    });
+    expect(second.code).not.toBe(0);
+    expect(second.stderr).toContain("is not in the journal");
+    expect(second.stdout).not.toContain("Applied OS migrations");
+  }, 60_000);
 });

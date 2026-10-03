@@ -121,15 +121,15 @@ One-release legacy aliases (same app; remove after in-flight jobs drain):
 - OS has no Cloud sync script yet. If you add one, it must target app **`cerevex-ads`** and the **OS worker** `/api/inngest` URL only.
 
 
-## One-shot (Railway / shared Neon)
+## One-shot (local / non-production, Bun only)
 
-Requires `DATABASE_URL`. Applies journaled OS SQL once. Does **not** seed. Does **not** deploy. Does **not** touch Brain public migrations. Never logs `DATABASE_URL`.
+Not a production path. It does not run the journal guards. Requires Bun and `DATABASE_URL` for a local or other non-production database. Applies the bundled OS SQL once. Does **not** seed. Does **not** deploy. Does **not** touch Brain public migrations. Never logs `DATABASE_URL`. No `npm install` is required.
 
 ```bash
-# Repo-canonical — reads apps/ads/shared/drizzle via _journal.json
+# Repo checkout — reads apps/ads/shared/drizzle via _journal.json
 DATABASE_URL=... bun scripts/os-neon-smoke-migrate.ts
 
-# Operator embed — sibling SQL + bundle in artifacts/
+# artifacts/ alone — sibling SQL + os-migrate-bundle.json
 DATABASE_URL=... bun artifacts/os-neon-migrate.ts
 ```
 
@@ -140,7 +140,7 @@ The runner:
 3. Records each file in `os.__drizzle_migrations` (`hash` + `created_at`, same shape as Drizzle)
 4. Prints JSON: `ok`, `migrationsApplied`, `osTables[]`, `publicTableCount`, `publicUnchanged`
 
-Embeddable copies: `artifacts/0000_m1_spine.sql`, `artifacts/0001_m2_connect.sql`, `artifacts/os-migrate-bundle.json`.
+The bundle and sibling SQL files cover every current journal tag, `0000` through `0005`. That still does not make this a production migrate.
 
 Drizzle SQL under `apps/ads/shared/drizzle/` is schema-qualified to **`os`** (`CREATE TYPE "os".…`, `CREATE TABLE "os".…`).
 
@@ -199,29 +199,9 @@ Expected public tables (Brain migrations `0001`–`0010`):
 `stores`, `jobs`, `drafts`, `approvals`, `knowledge`, `events`, `products`, `catalog_resources`, `gsc_rows`, `seo_findings` (plus any later Brain tables).  
 `knowledge.embedding` should remain `vector(1536)`. Save the row counts.
 
-### 2. Create schema `os` + run OS migrations
+### 2. Do not apply OS migrations from this checklist
 
-`migrate.ts` already runs `CREATE SCHEMA IF NOT EXISTS "os"` and sets `search_path` to `os, public`.
-
-Railway-safe one-shot (preferred when you only have Bun + `DATABASE_URL`; does not seed):
-
-```bash
-# Same DATABASE_URL as Brain. Do not change the Neon project.
-# Do NOT run ads:db:seed against production.
-DATABASE_URL=... bun scripts/os-neon-smoke-migrate.ts
-# or: DATABASE_URL=... bun artifacts/os-neon-migrate.ts
-```
-
-`npm` path (needs workspace install):
-
-```bash
-# Same DATABASE_URL as Brain. Do not change the Neon project.
-# Do NOT run ads:db:seed against production (would write local-dev owner password).
-cp -n apps/ads/.env.example apps/ads/.env
-# Put DATABASE_URL into apps/ads/.env (or export it). Leave META_/GOOGLE_ blank.
-
-npm run ads:db:migrate
-```
+This checklist has no production migrate command. `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
 
 Manual SQL equivalent (if you use `psql` instead of the migrator):
 
