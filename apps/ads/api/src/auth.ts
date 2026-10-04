@@ -1,8 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { compare } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
+import { HTTPException } from "hono/http-exception";
 import { SignJWT, jwtVerify } from "jose";
+import { isProductionRuntime } from "@cerevex/contracts";
 import type { AuthContext, Role } from "@tharros/ads-shared";
+import { workspaceRole } from "@tharros/ads-shared";
 import { SERVICE_ACTOR } from "@tharros/ads-shared/actor";
 import { getDb } from "@tharros/ads-shared/db";
 import { clientMemberships, memberships, users, workspaces } from "@tharros/ads-shared/schema";
@@ -132,14 +135,25 @@ export function internalWorkspaceId(): string | null {
 }
 
 /**
- * Production refuses to boot when the service key is set and its workspace is not.
- * Other environments fail closed on the request instead of exiting.
+ * A production runtime refuses to boot when the service key is set and its workspace is not.
+ * That is the same runtime as the JWT check: NODE_ENV, any Railway environment name, or
+ * CEREVEX_REQUIRE_SIGNING_SECRETS. Other environments fail closed on the request instead of exiting.
  */
 export function assertServiceWorkspaceConfigured(): void {
-  if (process.env.NODE_ENV !== "production") return;
+  if (!isProductionRuntime()) return;
   if (!process.env.ADS_INTERNAL_KEY?.trim()) return;
   if (!internalWorkspaceId()) {
     throw new Error("ADS_INTERNAL_WORKSPACE_ID must be set when ADS_INTERNAL_KEY is set");
+  }
+}
+
+const APPLY_SAFETY_FORBIDDEN =
+  "Only a workspace owner can turn the kill switch off, unfreeze an ad account, or turn an apply capability on.";
+
+/** Kill switch off, unfreeze, and apply=on stay with a human owner. The service principal is refused. */
+export function assertApplySafetyOwner(auth: AuthContext, workspaceId: string): void {
+  if (isServicePrincipal(auth) || workspaceRole(auth, workspaceId) !== "owner") {
+    throw new HTTPException(403, { message: APPLY_SAFETY_FORBIDDEN });
   }
 }
 

@@ -4,8 +4,11 @@
 
 import {
   applyEnvKills,
+  applySafetyCapabilityIds,
+  applySafetyOnIds,
   capabilityBlockMessage,
   defaultCapabilityFlags,
+  isApplySafetyCapability,
   isCapabilityOn,
   isCapabilityVisible,
   isCallAttributionVisible,
@@ -32,7 +35,10 @@ export {
   defaultCapabilityFlags,
   envCapabilityKills,
   filterItemsByCapabilities,
+  isApplySafetyCapability,
   isCapabilityId,
+  applySafetyCapabilityIds,
+  applySafetyOnIds,
   isCapabilityInOperatorSettings,
   isCapabilityOn,
   isCapabilityState,

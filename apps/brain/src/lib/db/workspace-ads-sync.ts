@@ -25,3 +25,17 @@ export function adsWorkspaceSettingsPatch(
   }
   return Object.keys(body).length > 0 ? body : null;
 }
+
+/**
+ * A 403 from ads is a refusal, not a saved change.
+ * Other failures still fall back to the local settings copy.
+ */
+export function capabilityPatchShowsSaved(result: {
+  ok: boolean;
+  status?: number;
+  reason?: string;
+}): boolean {
+  if (result.ok) return true;
+  if (result.status === 403 || result.reason === "unauthorized") return false;
+  return true;
+}

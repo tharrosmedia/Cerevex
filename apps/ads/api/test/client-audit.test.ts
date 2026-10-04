@@ -977,14 +977,15 @@ describe("client audit log", () => {
   }, 60_000);
 
   it("pages 120 same-transaction rows at 10, 25, and 50 with no drops or duplicates", async () => {
+    const action = `paging_probe_${randomUUID()}`;
     const pool = getPool();
     await pool.query("BEGIN");
     try {
       await pool.query(
         `insert into os.client_audit_log (workspace_id, client_id, actor_type, module, action, entity_type, payload_json)
-         select $1, $2, 'worker', 'paging', 'paging_probe', 'recommendation', jsonb_build_object('n', g)
+         select $1, $2, 'worker', 'paging', $3, 'recommendation', jsonb_build_object('n', g)
          from generate_series(1, 120) as g`,
-        [workspaceId, clientId],
+        [workspaceId, clientId, action],
       );
       await pool.query("COMMIT");
     } catch (error) {
@@ -996,7 +997,7 @@ describe("client audit log", () => {
       let cursor: string | null = null;
       let pages = 0;
       do {
-        const params = new URLSearchParams({ action: "paging_probe", module: "paging", limit: String(limit) });
+        const params = new URLSearchParams({ action, module: "paging", limit: String(limit) });
         if (cursor) params.set("cursor", cursor);
         const res = await app.request(`/clients/${clientId}/audit-log?${params.toString()}`, {
           headers: { authorization: `Bearer ${ownerToken}` },
