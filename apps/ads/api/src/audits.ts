@@ -20,7 +20,7 @@ import {
 } from "@tharros/ads-shared";
 import { capabilityPublicMeta, loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
 import { filterOfflineRecommendations } from "./offline";
-import { latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shared/apply";
+import { applyResultAuditAction, latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shared/apply";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
@@ -397,7 +397,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         workspaceId: client.workspaceId,
         actorType: "worker",
         actorId: auditActor(auth).actorId,
-        action: ran.applyJob.status === "succeeded" ? "apply_success" : "apply_fail",
+        action: applyResultAuditAction(ran),
         entityType: "apply_job",
         entityId: applyJob.id,
         payload: {
@@ -405,6 +405,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
           writes: ran.writes,
           outcomes: ran.outcomes,
           error: ran.applyJob.error,
+          revokedDuringApply: ran.blocked === "revoked_after_write",
         },
       });
       childLogger(c.get("requestId")).info({
@@ -513,10 +514,15 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         workspaceId: client.workspaceId,
         actorType: "worker",
         actorId: auditActor(auth).actorId,
-        action: ran.applyJob.status === "succeeded" ? "apply_success" : "apply_fail",
+        action: applyResultAuditAction(ran),
         entityType: "apply_job",
         entityId: applyJob.id,
-        payload: { recommendationId: row.id, writes: ran.writes, outcomes: ran.outcomes },
+        payload: {
+          recommendationId: row.id,
+          writes: ran.writes,
+          outcomes: ran.outcomes,
+          revokedDuringApply: ran.blocked === "revoked_after_write",
+        },
       });
       return c.json({
         ok: ran.applyJob.status === "succeeded",

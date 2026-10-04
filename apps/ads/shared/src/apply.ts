@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   bookedJobSignalWriteBlockedReason,
   brandGuardrailsWriteBlockedReason,
@@ -90,6 +90,12 @@ export type ApplyRunResult = {
   writes: boolean;
   blocked: string | null;
 };
+
+/** A platform write is history. Revocation does not turn it into a failed non-write. */
+export function applyResultAuditAction(result: { writes: boolean; applyJob: { status: string } }): "apply_success" | "apply_fail" {
+  if (result.writes || result.applyJob.status === "succeeded") return "apply_success";
+  return "apply_fail";
+}
 
 function authorizationStillApplies(
   job: { workspaceId: string },
@@ -184,45 +190,45 @@ async function auditRevoked(
   });
 }
 
+function storedRun(job: ApplyJobRow, blocked: string | null = null): ApplyRunResult {
+  const stored = (job.responseJson as { outcomes?: MutationOutcome[]; writes?: boolean } | null) ?? null;
+  return publicResult(job, {
+    outcomes: stored?.outcomes ?? [],
+    writes: blocked === "in_progress" ? false : Boolean(stored?.writes),
+    blocked,
+  });
+}
+
 /**
- * Claim the job and decide whether a platform call is allowed.
- * The transaction commits before any platform I/O.
+ * One conditional update owns the job. Only queued or pending can become applying.
+ * A second caller, including inline apply, sees applying and does not call the platform.
+ * The checks below commit before any platform I/O. An applying job is never reclaimed.
  */
 async function claimApplyJob(
   applyJobId: string,
 ): Promise<{ kind: "done"; result: ApplyRunResult } | { kind: "run"; prepared: PreparedApply }> {
+  const [claimed] = await getDb()
+    .update(applyJobs)
+    .set({
+      status: "applying",
+      attempts: sql`${applyJobs.attempts} + 1`,
+      error: null,
+    })
+    .where(and(eq(applyJobs.id, applyJobId), inArray(applyJobs.status, ["queued", "pending"])))
+    .returning();
+
+  if (!claimed) {
+    const existing = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
+    if (!existing) throw new Error("Apply job not found");
+    if (existing.status === "applying") {
+      return { kind: "done" as const, result: storedRun(existing, "in_progress") };
+    }
+    return { kind: "done" as const, result: storedRun(existing) };
+  }
+
   return getDb().transaction(async (tx) => {
     const handle = tx as unknown as ApplyHandle;
-    const [job] = await tx
-      .select()
-      .from(applyJobs)
-      .where(eq(applyJobs.id, applyJobId))
-      .for("update", { skipLocked: true });
-    if (!job) {
-      const [existing] = await tx.select().from(applyJobs).where(eq(applyJobs.id, applyJobId));
-      if (!existing) throw new Error("Apply job not found");
-      const stored = (existing.responseJson as { outcomes?: MutationOutcome[]; writes?: boolean } | null) ?? null;
-      return {
-        kind: "done" as const,
-        result: publicResult(existing, {
-          outcomes: stored?.outcomes ?? [],
-          writes: Boolean(stored?.writes),
-          blocked: null,
-        }),
-      };
-    }
-
-    if (job.status === "succeeded") {
-      const stored = (job.responseJson as { outcomes?: MutationOutcome[]; writes?: boolean } | null) ?? null;
-      return {
-        kind: "done" as const,
-        result: publicResult(job, {
-          outcomes: stored?.outcomes ?? [],
-          writes: Boolean(stored?.writes),
-          blocked: null,
-        }),
-      };
-    }
+    const job = claimed;
 
     const [authPeek] = await tx
       .select()
@@ -264,7 +270,7 @@ async function claimApplyJob(
         result: await saveJob(
           handle,
           job,
-          { status: "failed", error: "authorization_revoked", response, attempts: job.attempts + 1 },
+          { status: "failed", error: "authorization_revoked", response },
           { blocked: "authorization_revoked" },
         ),
       };
@@ -283,7 +289,7 @@ async function claimApplyJob(
         result: await saveJob(
           handle,
           job,
-          { status: "failed", error: gate.blocked, response, attempts: job.attempts + 1 },
+          { status: "failed", error: gate.blocked, response },
           { blocked: gate.blocked },
         ),
       };
@@ -300,7 +306,6 @@ async function claimApplyJob(
             status: "failed",
             error: "recommendation_or_account_missing",
             response,
-            attempts: job.attempts + 1,
           },
           { blocked: "recommendation_or_account_missing" },
         ),
@@ -316,14 +321,9 @@ async function claimApplyJob(
     const stopped = await stopBeforePlatform(handle, job, recommendation, capabilities, jobType);
     if (stopped) return { kind: "done" as const, result: stopped };
 
-    await handle
-      .update(applyJobs)
-      .set({ status: "applying", attempts: job.attempts + 1, error: null })
-      .where(eq(applyJobs.id, job.id));
-    const claimed = (await handle.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) })) ?? job;
     return {
       kind: "run" as const,
-      prepared: { job: claimed, recommendation, account, capabilities, jobType },
+      prepared: { job, recommendation, account, capabilities, jobType },
     };
   });
 }
@@ -343,7 +343,6 @@ async function stopBeforePlatform(
         status: "succeeded",
         error: null,
         response: { writes: false, outcomes: [], blocked: "capability_apply", jobType, mode: "mock" },
-        attempts: job.attempts + 1,
       },
       { blocked: "capability_apply" },
     );
@@ -410,7 +409,6 @@ async function stopBeforePlatform(
           reason: row.reason,
           ...row.extra,
         },
-        attempts: job.attempts + 1,
       },
       { blocked: row.blocked },
     );
@@ -432,7 +430,6 @@ async function stopBeforePlatform(
           mode: "mock",
           reason: sealed,
         },
-        attempts: job.attempts + 1,
       },
       { blocked: "create_entity_sealed" },
     );
@@ -538,16 +535,46 @@ async function settleApplyJob(
         })
       : null;
     if (!authorizationStillApplies(job, freshAuth, recommendation)) {
-      await auditRevoked(handle, job, recommendation?.id ?? freshAuth?.recommendationId ?? null);
+      const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
       const response = {
-        writes: false,
-        outcomes: [] as MutationOutcome[],
-        blocked: "authorization_revoked",
-        revoked: true,
+        ...executed.response,
+        writes,
+        outcomes: executed.outcomes,
+        revokedDuringApply: true,
+        revoked_after_write: writes,
+        blocked: writes ? null : "authorization_revoked",
       };
-      return saveJob(handle, job, { status: "failed", error: "authorization_revoked", response }, {
-        blocked: "authorization_revoked",
+      await handle.insert(auditLog).values({
+        workspaceId: job.workspaceId,
+        actorType: "worker",
+        actorId: null,
+        action: writes ? "apply_success" : "apply_fail",
+        entityType: "apply_job",
+        entityId: job.id,
+        payloadJson: {
+          recommendationId: recommendation?.id ?? freshAuth?.recommendationId ?? null,
+          authorizationId: job.authorizationId,
+          writes,
+          outcomes: executed.outcomes,
+          revokedDuringApply: true,
+          revoked_after_write: writes,
+        },
       });
+      return saveJob(
+        handle,
+        job,
+        {
+          status: writes ? "succeeded" : "failed",
+          error: writes ? "revoked_after_write" : "authorization_revoked",
+          response,
+          finished: true,
+        },
+        {
+          outcomes: executed.outcomes,
+          writes,
+          blocked: writes ? "revoked_after_write" : "authorization_revoked",
+        },
+      );
     }
     const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
     return saveJob(

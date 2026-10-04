@@ -326,6 +326,113 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     }
   });
 
+  it("keeps the platform write when deny lands during the call", async () => {
+    const rec = await insertRec();
+    const jobId = await approveQueued(rec.id);
+    const locker = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await locker.connect();
+    let running: ReturnType<typeof runApplyJob> | null = null;
+    try {
+      await locker.query("BEGIN");
+      await locker.query(`SELECT id FROM os.ad_entities WHERE id = $1 FOR UPDATE`, [entityId]);
+      running = runApplyJob(jobId);
+      const started = Date.now();
+      let writing = false;
+      while (Date.now() - started < 4000) {
+        const waiting = await locker.query(
+          `SELECT a.pid
+           FROM pg_stat_activity a
+           WHERE a.pid <> pg_backend_pid()
+             AND a.wait_event_type = 'Lock'
+           LIMIT 1`,
+        );
+        if (waiting.rowCount) {
+          writing = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(writing).toBe(true);
+      const deny = await app.request(`/recommendations/${rec.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "deny" }),
+      });
+      expect(deny.status).toBe(200);
+      await locker.query("COMMIT");
+      const ran = await running;
+      expect(ran.writes).toBe(true);
+      expect(ran.outcomes.some((row) => row.writes && row.status === "applied")).toBe(true);
+      const entity = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) });
+      expect(entity?.status).toBe("paused");
+      const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+      const response = (job?.responseJson ?? {}) as {
+        writes?: boolean;
+        outcomes?: unknown[];
+        revokedDuringApply?: boolean;
+        revoked_after_write?: boolean;
+      };
+      expect(response.writes).toBe(true);
+      expect(response.outcomes?.length).toBeGreaterThan(0);
+      expect(response.revokedDuringApply).toBe(true);
+      expect(response.revoked_after_write).toBe(true);
+      const audits = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
+      const recorded = audits.find((row) => row.action === "apply_success");
+      const payload = (recorded?.payloadJson ?? {}) as { writes?: boolean; outcomes?: unknown[] };
+      expect(payload.writes).toBe(true);
+      expect(payload.outcomes?.length).toBeGreaterThan(0);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+      await running?.catch(() => undefined);
+    }
+  });
+
+  it("lets only one caller claim a job and hit the platform", async () => {
+    const rec = await insertRec();
+    const jobId = await approveQueued(rec.id);
+    const ran = await Promise.all([runApplyJob(jobId), runApplyJob(jobId)]);
+    expect(ran.filter((row) => row.writes).length).toBeGreaterThan(0);
+    const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+    expect(job?.attempts).toBe(1);
+    expect(job?.status).toBe("succeeded");
+    const entity = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) });
+    expect(entity?.status).toBe("paused");
+    const again = await runApplyJob(jobId);
+    expect(again.blocked).not.toBe("in_progress");
+    const after = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+    expect(after?.attempts).toBe(1);
+
+    const second = await insertRec();
+    const secondJob = await approveQueued(second.id);
+    const [worker, inline] = await Promise.all([
+      runApplyJob(secondJob),
+      app.request(`/recommendations/${second.id}/apply`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ inline: true }),
+      }),
+    ]);
+    expect(inline.status).toBe(200);
+    expect(worker.applyJob.id).toBe(secondJob);
+    const raced = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, secondJob) });
+    expect(raced?.attempts).toBe(1);
+    expect(raced?.status).toBe("succeeded");
+    const paused = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) });
+    expect(paused?.status).toBe("paused");
+
+    await getDb().update(applyJobs).set({ status: "applying" }).where(eq(applyJobs.id, secondJob));
+    await resetEntity();
+    const crashed = await runApplyJob(secondJob);
+    expect(crashed.blocked).toBe("in_progress");
+    expect(crashed.writes).toBe(false);
+    const still = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) });
+    expect(still?.status).toBe("active");
+    const left = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, secondJob) });
+    expect(left?.status).toBe("applying");
+    expect(left?.attempts).toBe(1);
+  });
+
   it("returns the same 404 for a missing recommendation and one the caller cannot access", async () => {
     const hidden = await insertRec(otherClientId);
     const missingId = "00000000-0000-4000-8000-000000000000";
