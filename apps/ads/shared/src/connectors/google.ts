@@ -13,6 +13,7 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
+import { PLATFORM_WRITE_TIMEOUT_MS } from "./write-timeout";
 
 const GOOGLE_ADS = "https://googleads.googleapis.com/v17";
 
@@ -575,6 +576,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       method: "POST",
       headers: googleAdsHeaders(tokens, developerToken),
       body: JSON.stringify({ mutateOperations: operations }),
+      signal: AbortSignal.timeout(PLATFORM_WRITE_TIMEOUT_MS),
     });
     if (!res.ok) {
       const text = await res.text();

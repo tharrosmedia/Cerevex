@@ -67,6 +67,11 @@ export type CapabilityCatalogEntry = {
   defaultState: CapabilityState;
   unfinished: boolean;
   group: "product" | "apply" | "shell" | "m51" | "m52" | "site" | "seo";
+  /**
+   * Turning this on lets a later approve write.
+   * `apply`, `apply.*`, and any `*.apply` are included by name even when this is unset.
+   */
+  gatesApply?: boolean;
 };
 
 export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = {
@@ -165,6 +170,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m51",
+    gatesApply: true,
   },
   "m51.grok_creatives": {
     id: "m51.grok_creatives",
@@ -237,6 +243,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+    gatesApply: true,
   },
   "m52.clarity_connect": {
     id: "m52.clarity_connect",
@@ -261,6 +268,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+    gatesApply: true,
   },
   "m52.search_negatives": {
     id: "m52.search_negatives",
@@ -269,6 +277,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+    gatesApply: true,
   },
   "m52.geo_discipline": {
     id: "m52.geo_discipline",
@@ -277,6 +286,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+    gatesApply: true,
   },
   "m52.brand_guardrails": {
     id: "m52.brand_guardrails",
@@ -285,6 +295,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+    gatesApply: true,
   },
   "m52.seasonality_calendar": {
     id: "m52.seasonality_calendar",
@@ -293,6 +304,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+    gatesApply: true,
   },
   "m52.owner_weekly_narrative": {
     id: "m52.owner_weekly_narrative",
@@ -301,6 +313,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "m52",
+    gatesApply: true,
   },
   "site.wordpress.connect": {
     id: "site.wordpress.connect",
@@ -381,6 +394,30 @@ export function blockedUnfinishedCapabilityOns(overrides: CapabilityOverrides): 
 
 export function isCapabilityId(value: unknown): value is CapabilityId {
   return typeof value === "string" && (CAPABILITY_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * An apply-type capability. Turning it on is owner-only.
+ * Names cover `apply`, every `apply.*`, and any future `*.apply`.
+ * Other write gates set `gatesApply` on the catalog entry.
+ */
+export function isApplySafetyCapability(id: CapabilityId): boolean {
+  if (id === "apply" || id.startsWith("apply.") || id.endsWith(".apply")) return true;
+  return CAPABILITY_CATALOG[id]?.gatesApply === true;
+}
+
+export function applySafetyCapabilityIds(): CapabilityId[] {
+  return CAPABILITY_IDS.filter((id) => isApplySafetyCapability(id));
+}
+
+/** Capability ids in this patch that would turn an apply-type capability on. */
+export function applySafetyOnIds(overrides: Partial<Record<string, string>> | null | undefined): CapabilityId[] {
+  if (!overrides) return [];
+  const ids: CapabilityId[] = [];
+  for (const [id, state] of Object.entries(overrides)) {
+    if (state === "on" && isCapabilityId(id) && isApplySafetyCapability(id)) ids.push(id);
+  }
+  return ids;
 }
 
 export function isCapabilityState(value: unknown): value is CapabilityState {

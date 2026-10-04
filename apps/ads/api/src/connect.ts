@@ -9,7 +9,7 @@ import { rejectAdAccountIfBlocked, withTenantWriteLock } from "@tharros/ads-shar
 import { adAccountSyncEvent, sendAdAccountSync } from "@tharros/ads-shared/inngest";
 import { adAccounts, adEntities, adMetrics, oauthCredentials } from "@tharros/ads-shared/schema";
 import { HTTPException } from "hono/http-exception";
-import { actorRef, auditActor } from "./auth";
+import { actorRef, assertApplySafetyOwner, auditActor } from "./auth";
 import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 
@@ -163,6 +163,9 @@ export async function setAccountFrozen(auth: AuthContext, adAccountId: string, f
   const account = await requireVisibleAccount(auth, adAccountId);
   if (!account) {
     throw new HTTPException(404, { message: "Ad account not found" });
+  }
+  if (frozen === false) {
+    assertApplySafetyOwner(auth, account.workspaceId);
   }
   await requireMutableClient(auth, account.clientId);
   const [updated] = await getDb()

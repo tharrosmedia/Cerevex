@@ -13,6 +13,7 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
+import { PLATFORM_WRITE_TIMEOUT_MS } from "./write-timeout";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -31,6 +32,7 @@ async function graphPost(path: string, accessToken: string, body: Record<string,
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: params,
+    signal: AbortSignal.timeout(PLATFORM_WRITE_TIMEOUT_MS),
   });
   if (!res.ok) {
     const text = await res.text();
