@@ -13,6 +13,7 @@ import {
 } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { getDefaultSiteConnector } from "./connectors/site";
+import { PLATFORM_WRITE_TIMEOUT_MS } from "./connectors/write-timeout";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { parseApplyMutations } from "./audit-schemas";
@@ -108,6 +109,8 @@ export function shouldRecordApplyAudit(result: { blocked: string | null; audited
 /** A live apply may hold the platform call. Past this, a later caller closes the job without calling the platform. */
 export const APPLYING_LEASE_MS = 2 * 60 * 1000;
 
+export { PLATFORM_WRITE_TIMEOUT_MS };
+
 /**
  * A write is succeeded even when a later mutation failed. With no write, a failure stays failed.
  * Revocation uses the same split: a landed write stays succeeded.
@@ -136,17 +139,30 @@ export function sanitizeStoredError(message: string | null): string | null {
   return message.length > 500 ? message.slice(0, 500) : message;
 }
 
-function claimedAtMillis(responseJson: unknown): number | null {
+function claimedAtText(responseJson: unknown): string | null {
   const response = responseJson as { claimedAt?: unknown } | null;
   if (!response || typeof response.claimedAt !== "string") return null;
-  const parsed = Date.parse(response.claimedAt);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(Date.parse(response.claimedAt))) return null;
+  return response.claimedAt;
 }
 
-function applyingLeaseExpired(responseJson: unknown, now = Date.now()): boolean {
-  const claimedAt = claimedAtMillis(responseJson);
-  if (claimedAt === null) return true;
-  return now - claimedAt >= APPLYING_LEASE_MS;
+/** Milliseconds left on the claim, using the database clock. Missing or unreadable claim times are already expired. */
+export async function applyingLeaseRemainingMs(responseJson: unknown): Promise<number> {
+  const claimedAt = claimedAtText(responseJson);
+  if (!claimedAt) return 0;
+  const result = await getDb().execute(sql`
+    select greatest(
+      0,
+      extract(epoch from (${claimedAt}::timestamptz + (${APPLYING_LEASE_MS}::int * interval '1 millisecond') - now())) * 1000
+    )::double precision as ms
+  `);
+  const ms = Number((result.rows[0] as { ms: number | string } | undefined)?.ms);
+  return Number.isFinite(ms) ? Math.ceil(ms) : 0;
+}
+
+async function applyingLeaseExpired(responseJson: unknown): Promise<boolean> {
+  if (!claimedAtText(responseJson)) return true;
+  return (await applyingLeaseRemainingMs(responseJson)) <= 0;
 }
 
 function authorizationStillApplies(
@@ -242,22 +258,28 @@ async function auditRevoked(
   });
 }
 
+function confirmedWrites(value: unknown): boolean {
+  return value === true;
+}
+
 function storedRun(job: ApplyJobRow, blocked: string | null = null): ApplyRunResult {
-  const stored = (job.responseJson as { outcomes?: MutationOutcome[]; writes?: boolean } | null) ?? null;
+  const stored = (job.responseJson as { outcomes?: MutationOutcome[]; writes?: unknown } | null) ?? null;
   return publicResult(job, {
     outcomes: stored?.outcomes ?? [],
-    writes: blocked === "in_progress" ? false : Boolean(stored?.writes),
+    writes: blocked === "in_progress" ? false : confirmedWrites(stored?.writes),
     blocked,
   });
 }
 
 /**
- * Close a crashed apply without calling the platform. The operator re-queues after checking the ad account.
- * A missing claim time is stale: this build always records claimedAt in the same update that sets applying.
+ * Close a crashed apply without calling the platform.
+ * writes is unknown: a late runner may still land a write and then audit that outcome.
+ * A missing claim time is stale: this build records claimedAt from the database clock in the claim update.
+ * There is no re-queue path yet.
  */
 async function closeStaleApplying(job: typeof applyJobs.$inferSelect): Promise<ApplyRunResult> {
   const response = {
-    writes: false,
+    writes: "unknown" as const,
     outcomes: [] as MutationOutcome[],
     blocked: "stale_applying",
     claimedAt: (job.responseJson as { claimedAt?: string } | null)?.claimedAt ?? null,
@@ -286,7 +308,7 @@ async function closeStaleApplying(job: typeof applyJobs.$inferSelect): Promise<A
     entityId: closed.id,
     payloadJson: {
       authorizationId: closed.authorizationId,
-      writes: false,
+      writes: "unknown",
       error: "stale_applying",
     },
   });
@@ -308,7 +330,7 @@ async function claimApplyJob(
       status: "applying",
       attempts: sql`${applyJobs.attempts} + 1`,
       error: null,
-      responseJson: { claimedAt: new Date().toISOString() },
+      responseJson: sql`jsonb_build_object('claimedAt', now())`,
     })
     .where(and(eq(applyJobs.id, applyJobId), inArray(applyJobs.status, ["queued", "pending"])))
     .returning();
@@ -317,7 +339,7 @@ async function claimApplyJob(
     const existing = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
     if (!existing) throw new Error("Apply job not found");
     if (existing.status === "applying") {
-      if (applyingLeaseExpired(existing.responseJson)) {
+      if (await applyingLeaseExpired(existing.responseJson)) {
         return { kind: "done" as const, result: await closeStaleApplying(existing) };
       }
       return { kind: "done" as const, result: storedRun(existing, "in_progress") };
@@ -627,6 +649,9 @@ async function settleApplyJob(
         .where(eq(authorizations.id, authorization.id))
         .for("update");
     }
+    const supersededStale =
+      job.error === "stale_applying" ||
+      (job.responseJson as { blocked?: unknown } | null)?.blocked === "stale_applying";
     const freshAuth = await handle.query.authorizations.findFirst({
       where: eq(authorizations.id, job.authorizationId),
     });
@@ -681,7 +706,24 @@ async function settleApplyJob(
     }
     const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
     const settled = settledApplyJob({ writes, failed: executed.failed, revoked: false });
-    return saveJob(
+    if (supersededStale) {
+      await handle.insert(auditLog).values({
+        workspaceId: job.workspaceId,
+        actorType: "worker",
+        actorId: null,
+        action: writes ? "apply_success" : "apply_fail",
+        entityType: "apply_job",
+        entityId: job.id,
+        payloadJson: {
+          recommendationId: recommendation?.id ?? freshAuth?.recommendationId ?? null,
+          authorizationId: job.authorizationId,
+          writes,
+          outcomes: executed.outcomes,
+          superseded: "stale_applying",
+        },
+      });
+    }
+    const saved = await saveJob(
       handle,
       job,
       {
@@ -692,6 +734,7 @@ async function settleApplyJob(
       },
       { outcomes: executed.outcomes, writes, blocked: null },
     );
+    return supersededStale ? { ...saved, audited: true } : saved;
   });
 }
 

@@ -1,9 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { applySafetyCapabilityIds, isApplySafetyCapability, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { ADS_POOL_MAX, closeDb, getDb } from "@tharros/ads-shared/db";
-import { runApplyJob, sanitizeStoredError, settledApplyJob, shouldRecordApplyAudit } from "@tharros/ads-shared/apply";
+import {
+  APPLYING_LEASE_MS,
+  PLATFORM_WRITE_TIMEOUT_MS,
+  applyingLeaseRemainingMs,
+  runApplyJob,
+  sanitizeStoredError,
+  settledApplyJob,
+  shouldRecordApplyAudit,
+} from "@tharros/ads-shared/apply";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import {
   adAccounts,
@@ -425,10 +434,12 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     const paused = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) });
     expect(paused?.status).toBe("paused");
 
-    await getDb()
-      .update(applyJobs)
-      .set({ status: "applying", responseJson: { claimedAt: new Date().toISOString() } })
-      .where(eq(applyJobs.id, secondJob));
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set status = 'applying',
+          response_json = jsonb_build_object('claimedAt', now())
+      where id = ${secondJob}::uuid
+    `);
     await resetEntity();
     const crashed = await runApplyJob(secondJob);
     expect(crashed.blocked).toBe("in_progress");
@@ -838,14 +849,13 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
   it("closes a stale applying job without calling the platform", async () => {
     const rec = await insertRec();
     const jobId = await approveQueued(rec.id);
-    await getDb()
-      .update(applyJobs)
-      .set({
-        status: "applying",
-        attempts: 1,
-        responseJson: { claimedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString() },
-      })
-      .where(eq(applyJobs.id, jobId));
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set status = 'applying',
+          attempts = 1,
+          response_json = jsonb_build_object('claimedAt', now() - interval '121 seconds')
+      where id = ${jobId}::uuid
+    `);
     await resetEntity();
     const ran = await runApplyJob(jobId);
     expect(ran.blocked).toBe("stale_applying");
@@ -857,8 +867,11 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(job?.status).toBe("failed");
     expect(job?.error).toBe("stale_applying");
     expect(job?.attempts).toBe(1);
+    expect((job?.responseJson as { writes?: unknown } | null)?.writes).toBe("unknown");
     const audits = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
-    expect(audits.filter((row) => row.action === "apply_stale")).toHaveLength(1);
+    const staleAudits = audits.filter((row) => row.action === "apply_stale");
+    expect(staleAudits).toHaveLength(1);
+    expect((staleAudits[0]?.payloadJson as { writes?: unknown }).writes).toBe("unknown");
     expect(audits.some((row) => row.action === "apply_fail" || row.action === "apply_success")).toBe(false);
     const again = await runApplyJob(jobId);
     expect(again.blocked).not.toBe("in_progress");
@@ -909,10 +922,12 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
   it("returns in progress without a failure audit when apply is already claimed", async () => {
     const rec = await insertRec();
     const jobId = await approveQueued(rec.id);
-    await getDb()
-      .update(applyJobs)
-      .set({ status: "applying", responseJson: { claimedAt: new Date().toISOString() } })
-      .where(eq(applyJobs.id, jobId));
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set status = 'applying',
+          response_json = jsonb_build_object('claimedAt', now())
+      where id = ${jobId}::uuid
+    `);
     const before = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
     const res = await app.request(`/recommendations/${rec.id}/apply`, {
       method: "POST",
@@ -1043,6 +1058,151 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect((await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.applyKillSwitch).toBe(false);
   });
 
+  it("keeps a 119 second claim in progress on the database clock", async () => {
+    const rec = await insertRec();
+    const jobId = await approveQueued(rec.id);
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set status = 'applying',
+          response_json = jsonb_build_object('claimedAt', now() - interval '119 seconds')
+      where id = ${jobId}::uuid
+    `);
+    const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+    const remaining = await applyingLeaseRemainingMs(job?.responseJson);
+    expect(remaining).toBeGreaterThan(0);
+    expect(remaining).toBeLessThan(APPLYING_LEASE_MS);
+    const ran = await runApplyJob(jobId);
+    expect(ran.blocked).toBe("in_progress");
+    expect(ran.writes).toBe(false);
+    const after = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+    expect(after?.status).toBe("applying");
+    const audits = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
+    expect(audits.some((row) => row.action === "apply_stale" || row.action === "apply_fail")).toBe(false);
+  });
+
+  it("audits a late settle that overwrites a stale applying job", async () => {
+    const rec = await insertRec();
+    const jobId = await approveQueued(rec.id);
+    const locker = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await locker.connect();
+    let running: Promise<Awaited<ReturnType<typeof runApplyJob>>> | null = null;
+    try {
+      await locker.query("BEGIN");
+      await locker.query(`SELECT id FROM os.ad_entities WHERE id = $1 FOR UPDATE`, [entityId]);
+      running = runApplyJob(jobId);
+      const sawWait = await waitForApplyLock(locker, 4000);
+      expect(sawWait).toBe(true);
+      await getDb().execute(sql`
+        update os.apply_jobs
+        set response_json = jsonb_build_object('claimedAt', now() - interval '121 seconds')
+        where id = ${jobId}::uuid and status = 'applying'
+      `);
+      const stale = await runApplyJob(jobId);
+      expect(stale.blocked).toBe("stale_applying");
+      expect(stale.writes).toBe(false);
+      await locker.query("COMMIT");
+      const settled = await running;
+      expect(settled.writes).toBe(true);
+      expect(settled.applyJob.status).toBe("succeeded");
+      expect(settled.audited).toBe(true);
+      const audits = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
+      expect(audits.filter((row) => row.action === "apply_stale")).toHaveLength(1);
+      expect((audits.find((row) => row.action === "apply_stale")?.payloadJson as { writes?: unknown }).writes).toBe(
+        "unknown",
+      );
+      expect(audits.filter((row) => row.action === "apply_success")).toHaveLength(1);
+      const success = audits.find((row) => row.action === "apply_success");
+      expect((success?.payloadJson as { superseded?: string }).superseded).toBe("stale_applying");
+      expect((success?.payloadJson as { writes?: unknown }).writes).toBe(true);
+    } finally {
+      await locker.query("ROLLBACK").catch(() => undefined);
+      await locker.end().catch(() => undefined);
+      await running?.catch(() => undefined);
+    }
+  });
+
+  it("refuses service and operator apply-capability ons and audits the owner", async () => {
+    const db = getDb();
+    const before = await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+    if (!before) throw new Error("workspace missing");
+    const snapshot = before.settingsJson;
+    const email = "operator.safety@tharrosmedia.com";
+    const passwordHash = await hash("operator-safety-local", 10);
+    const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
+    const operator =
+      existing ?? (await db.insert(users).values({ email, name: "Safety operator", passwordHash }).returning())[0];
+    if (!operator) throw new Error("operator missing");
+    if (existing) await db.update(users).set({ passwordHash }).where(eq(users.id, operator.id));
+    await db.insert(memberships).values({ userId: operator.id, workspaceId, role: "operator" }).onConflictDoNothing();
+    const operatorToken = (await login(email, "operator-safety-local")).token;
+    const ids = applySafetyCapabilityIds();
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "apply",
+        "apply.create_entity",
+        "apply.budget",
+        "apply.bid",
+        "m52.booked_job_signal",
+        "site.wordpress.apply",
+        "seo.gsc.apply",
+      ]),
+    );
+    expect(isApplySafetyCapability("connect.meta")).toBe(false);
+
+    try {
+      for (const id of ids) {
+        const hide = await app.request("/workspace", {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ capabilities: { [id]: "hidden" } }),
+        });
+        expect(hide.status, id).toBe(200);
+        const serviceOn = await app.request("/workspace", {
+          method: "PATCH",
+          headers: internalHeaders(true),
+          body: JSON.stringify({ capabilities: { [id]: "on" } }),
+        });
+        expect(serviceOn.status, id).toBe(403);
+        const operatorOn = await app.request("/workspace", {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${operatorToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ capabilities: { [id]: "on" } }),
+        });
+        expect(operatorOn.status, id).toBe(403);
+        const hidden = resolveWorkspaceCapabilities(
+          (await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.settingsJson,
+        );
+        expect(hidden[id], id).toBe("hidden");
+        const ownerOn = await app.request("/workspace", {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ capabilities: { [id]: "on" } }),
+        });
+        expect(ownerOn.status, id).toBe(200);
+        const turnedOn = resolveWorkspaceCapabilities(
+          (await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.settingsJson,
+        );
+        expect(turnedOn[id], id).toBe("on");
+        const flips = (await db.select().from(auditLog).where(eq(auditLog.entityId, workspaceId))).filter(
+          (row) => row.action === "capability_flip" && (row.payloadJson as { capability?: string }).capability === id,
+        );
+        const refused = flips.filter((row) => (row.payloadJson as { allowed?: boolean }).allowed === false);
+        const allowed = flips.filter((row) => (row.payloadJson as { allowed?: boolean }).allowed === true);
+        expect(refused.some((row) => row.actorType === "service"), id).toBe(true);
+        expect(refused.some((row) => row.actorType === "user"), id).toBe(true);
+        expect(allowed.some((row) => row.actorType === "user" && row.actorId === ownerId), id).toBe(true);
+      }
+      const recommend = await app.request("/workspace", {
+        method: "PATCH",
+        headers: internalHeaders(true),
+        body: JSON.stringify({ capabilities: { apply: "recommend_only" } }),
+      });
+      expect(recommend.status).toBe(200);
+    } finally {
+      await db.update(workspaces).set({ settingsJson: snapshot }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
   it("keeps a partial write as succeeded and hides raw SQL from job.error", () => {
     expect(settledApplyJob({ writes: true, failed: "budget failed", revoked: false })).toEqual({
       status: "succeeded",
@@ -1068,6 +1228,8 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(shouldRecordApplyAudit({ blocked: "stale_applying" })).toBe(false);
     expect(shouldRecordApplyAudit({ blocked: "revoked_after_write", audited: true })).toBe(false);
     expect(shouldRecordApplyAudit({ blocked: null })).toBe(true);
+    expect(PLATFORM_WRITE_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(PLATFORM_WRITE_TIMEOUT_MS).toBeLessThan(APPLYING_LEASE_MS / 2);
   });
 });
 

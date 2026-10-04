@@ -1,6 +1,6 @@
 import { pullGoogleAdAccount } from "@cerevex/jobs-ads-google/pull";
 import { pullMetaAdAccount } from "@cerevex/jobs-ads-meta/pull";
-import { applyResultAuditAction, runApplyJob, shouldRecordApplyAudit } from "@tharros/ads-shared/apply";
+import { applyResultAuditAction, applyingLeaseRemainingMs, runApplyJob, shouldRecordApplyAudit } from "@tharros/ads-shared/apply";
 import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
 import { runAdAccountSync, syncJobAuditAction } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
@@ -62,9 +62,22 @@ export async function handleApplyRequested({ event, step }: any) {
     return { ok: false, error: "applyJobId required" };
   }
 
-  const result = await step.run("execute-authorized-mutations", async () => {
+  let result = await step.run("execute-authorized-mutations", async () => {
     return runApplyJob(applyJobId);
   });
+
+  if (result.blocked === "in_progress") {
+    const waitMs = await step.run("measure-applying-lease", async () =>
+      applyingLeaseRemainingMs(result.applyJob.response),
+    );
+    if (waitMs > 0) {
+      await step.sleep("wait-out-applying-lease", waitMs);
+    }
+    result = await step.run("recheck-applying-lease", async () => runApplyJob(applyJobId));
+    if (result.blocked === "in_progress") {
+      throw new Error("apply_in_progress");
+    }
+  }
 
   if (shouldRecordApplyAudit(result)) {
     await step.run("audit-apply", async () => {
@@ -89,11 +102,10 @@ export async function handleApplyRequested({ event, step }: any) {
     });
   }
 
-  const inProgress = result.blocked === "in_progress";
   return {
-    ok: inProgress ? true : result.applyJob.status === "succeeded",
+    ok: result.applyJob.status === "succeeded",
     applyJobId,
-    status: inProgress ? "in_progress" : result.applyJob.status,
+    status: result.applyJob.status,
     writes: result.writes,
     blocked: result.blocked,
     outcomes: result.outcomes,

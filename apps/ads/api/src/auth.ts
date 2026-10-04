@@ -148,7 +148,7 @@ export function assertServiceWorkspaceConfigured(): void {
 }
 
 const APPLY_SAFETY_FORBIDDEN =
-  "Only a workspace owner can turn the kill switch off, unfreeze an ad account, or enable apply.";
+  "Only a workspace owner can turn the kill switch off, unfreeze an ad account, or turn an apply capability on.";
 
 /** Kill switch off, unfreeze, and apply=on stay with a human owner. The service principal is refused. */
 export function assertApplySafetyOwner(auth: AuthContext, workspaceId: string): void {

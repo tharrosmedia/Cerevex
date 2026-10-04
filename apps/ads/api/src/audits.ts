@@ -10,6 +10,7 @@ import {
   canApproveApply,
   canMutate,
   type AuthContext,
+  workspaceRole,
   capabilityOnBlockedReason,
   CAPABILITY_IDS,
   EVENTS,
@@ -18,6 +19,7 @@ import {
   isCapabilityState,
   toWorkspaceSummary,
 } from "@tharros/ads-shared";
+import { applySafetyOnIds, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { capabilityPublicMeta, loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
 import { filterOfflineRecommendations } from "./offline";
 import { applyResultAuditAction, latestApplyJob, runApplyJob, shouldRecordApplyAudit, toApplyJobPublic } from "@tharros/ads-shared/apply";
@@ -634,18 +636,31 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         message: "businessType, modules, capabilities, or applyKillSwitch is required",
       });
     }
-    if (parsed.data.applyKillSwitch === false || parsed.data.capabilities?.apply === "on") {
-      assertApplySafetyOwner(auth, workspaceId);
-    }
-    if (isServicePrincipal(auth) && parsed.data.applyKillSwitch !== undefined) {
-      assertApplySafetyOwner(auth, workspaceId);
-    }
-
     const workspace = await getDb().query.workspaces.findFirst({
       where: eq(workspaces.id, workspaceId),
     });
     if (!workspace) {
       throw new HTTPException(404, { message: "Workspace not found" });
+    }
+
+    const safetyOns = applySafetyOnIds(parsed.data.capabilities);
+    const needsOwner =
+      parsed.data.applyKillSwitch === false ||
+      safetyOns.length > 0 ||
+      (isServicePrincipal(auth) && parsed.data.applyKillSwitch !== undefined);
+    if (needsOwner && (isServicePrincipal(auth) || workspaceRole(auth, workspaceId) !== "owner")) {
+      const flags = resolveWorkspaceCapabilities(workspace.settingsJson);
+      for (const id of safetyOns) {
+        await writeAuditEvent({
+          workspaceId,
+          ...auditActor(auth),
+          action: "capability_flip",
+          entityType: "workspace",
+          entityId: workspaceId,
+          payload: { capability: id, from: flags[id], to: "on", allowed: false },
+        });
+      }
+      assertApplySafetyOwner(auth, workspaceId);
     }
 
     let next = workspace.settingsJson as unknown;
@@ -692,6 +707,19 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         entityId: workspaceId,
         payload: { applyKillSwitch: parsed.data.applyKillSwitch },
       });
+    }
+    if (safetyOns.length > 0) {
+      const previous = resolveWorkspaceCapabilities(workspace.settingsJson);
+      for (const id of safetyOns) {
+        await writeAuditEvent({
+          workspaceId,
+          ...auditActor(auth),
+          action: "capability_flip",
+          entityType: "workspace",
+          entityId: workspaceId,
+          payload: { capability: id, from: previous[id], to: "on", allowed: true },
+        });
+      }
     }
 
     childLogger(c.get("requestId")).info({

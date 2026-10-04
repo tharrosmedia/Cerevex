@@ -17,6 +17,7 @@ import { adsApi } from '@/lib/ads-bff';
 import { getActiveStoreId, getStore, updateStore } from './stores';
 import {
   adsWorkspaceSettingsPatch,
+  capabilityPatchShowsSaved,
   type AdsWorkspaceSettingsPatch,
 } from './workspace-ads-sync';
 
@@ -111,10 +112,14 @@ export async function saveCapabilityOverrides(overrides: CapabilityOverrides) {
   if (blockedUnfinishedCapabilityOns(overrides).length > 0) {
     throw new Error('Unfinished M5.1 capabilities cannot be turned on.');
   }
+  const patched = await patchAdsWorkspaceSettings({ capabilities: overrides });
+  if (!capabilityPatchShowsSaved(patched)) {
+    const message = patched.ok ? 'Could not save that capability.' : patched.message;
+    throw new Error(message || 'Could not save that capability.');
+  }
   const current = await currentSettingsRecord();
   const next = settingsJsonWithCapabilityOverrides(current, overrides);
   await persistSettings(next);
-  const patched = await patchAdsWorkspaceSettings({ capabilities: overrides });
   if (patched.ok && patched.data.workspace?.capabilities) {
     return {
       ...parseWorkspaceModuleSettings(next),
