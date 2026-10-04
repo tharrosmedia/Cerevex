@@ -21,7 +21,13 @@ async function saveCapabilityAction(formData: FormData) {
     redirect('/settings?capabilities=error');
     return;
   }
-  await saveCapabilityOverrides({ [id]: state });
+  try {
+    await saveCapabilityOverrides({ [id]: state });
+  } catch (error) {
+    const digest = error && typeof error === 'object' && 'digest' in error ? String((error as { digest?: unknown }).digest ?? '') : '';
+    if (digest.startsWith('NEXT_REDIRECT')) throw error;
+    redirect('/settings?capabilities=error');
+  }
   revalidatePath('/');
   revalidatePath('/settings');
   revalidatePath('/ads');

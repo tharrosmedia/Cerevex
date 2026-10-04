@@ -1,6 +1,6 @@
 import { pullGoogleAdAccount } from "@cerevex/jobs-ads-google/pull";
 import { pullMetaAdAccount } from "@cerevex/jobs-ads-meta/pull";
-import { applyResultAuditAction, runApplyJob } from "@tharros/ads-shared/apply";
+import { applyResultAuditAction, applyingLeaseRemainingMs, runApplyJob, shouldRecordApplyAudit } from "@tharros/ads-shared/apply";
 import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
 import { runAdAccountSync, syncJobAuditAction } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
@@ -62,30 +62,45 @@ export async function handleApplyRequested({ event, step }: any) {
     return { ok: false, error: "applyJobId required" };
   }
 
-  const result = await step.run("execute-authorized-mutations", async () => {
+  let result = await step.run("execute-authorized-mutations", async () => {
     return runApplyJob(applyJobId);
   });
 
-  await step.run("audit-apply", async () => {
-    await writeAuditEvent({
-      workspaceId: event.data.workspaceId,
-      actorType: "worker",
-      actorId: event.data.requestedBy,
-      action: applyResultAuditAction(result),
-      entityType: "apply_job",
-      entityId: applyJobId,
-      payload: {
-        event: event.name,
-        clientId: event.data.clientId,
-        authorizationId: event.data.authorizationId,
-        applyJobId,
-        writes: result.writes,
-        blocked: result.blocked,
-        outcomes: result.outcomes,
-        error: result.applyJob.error,
-      },
+  if (result.blocked === "in_progress") {
+    const waitMs = await step.run("measure-applying-lease", async () =>
+      applyingLeaseRemainingMs(result.applyJob.response),
+    );
+    if (waitMs > 0) {
+      await step.sleep("wait-out-applying-lease", waitMs);
+    }
+    result = await step.run("recheck-applying-lease", async () => runApplyJob(applyJobId));
+    if (result.blocked === "in_progress") {
+      throw new Error("apply_in_progress");
+    }
+  }
+
+  if (shouldRecordApplyAudit(result)) {
+    await step.run("audit-apply", async () => {
+      await writeAuditEvent({
+        workspaceId: event.data.workspaceId,
+        actorType: "worker",
+        actorId: event.data.requestedBy,
+        action: applyResultAuditAction(result),
+        entityType: "apply_job",
+        entityId: applyJobId,
+        payload: {
+          event: event.name,
+          clientId: event.data.clientId,
+          authorizationId: event.data.authorizationId,
+          applyJobId,
+          writes: result.writes,
+          blocked: result.blocked,
+          outcomes: result.outcomes,
+          error: result.applyJob.error,
+        },
+      });
     });
-  });
+  }
 
   return {
     ok: result.applyJob.status === "succeeded",

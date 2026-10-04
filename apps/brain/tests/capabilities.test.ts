@@ -8,6 +8,9 @@ import {
   canApproveApply,
   canApproveWithApply,
   capabilityOnBlockedReason,
+  CAPABILITY_IDS,
+  isApplySafetyCapability,
+  applySafetyCapabilityIds,
   DEFAULT_APPROVE_OPERATOR_EMAIL,
   defaultCapabilityFlags,
   defaultModulesFor,
@@ -206,5 +209,25 @@ assert.equal(
 );
 assert.equal(wordpressApplyBlockedReason({ ...applyOn, 'site.wordpress.apply': 'on' }), null);
 assert.equal(resolveWorkspaceCapabilities({}, { CAPABILITY_KILL: 'site.wordpress.connect' })['site.wordpress.connect'], 'hidden');
+
+for (const id of CAPABILITY_IDS) {
+  if (id === 'apply' || id.startsWith('apply.') || id.endsWith('.apply')) {
+    assert.equal(isApplySafetyCapability(id), true, id);
+  }
+}
+for (const id of [
+  'apply',
+  'apply.create_entity',
+  'apply.budget',
+  'apply.bid',
+  'm52.booked_job_signal',
+  'm51.budget_shift',
+  'site.wordpress.apply',
+  'seo.gsc.apply',
+] as const) {
+  assert.equal(applySafetyCapabilityIds().includes(id), true, id);
+}
+assert.equal(isApplySafetyCapability('connect.meta'), false);
+assert.equal(isApplySafetyCapability('m51.grok_creatives'), false);
 
 console.log('capabilities: ok');
