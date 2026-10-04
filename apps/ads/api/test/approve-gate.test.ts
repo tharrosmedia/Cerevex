@@ -17,7 +17,7 @@ describe("M5 Adam-only Approve + freeze", () => {
   let recommendationId = "";
 
   beforeAll(async () => {
-    await ensureScopedUser();
+    const { workspace } = await ensureScopedUser();
     ownerToken = (
       await login(
         process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com",
@@ -26,8 +26,6 @@ describe("M5 Adam-only Approve + freeze", () => {
     ).token;
 
     const db = getDb();
-    const workspace = await db.query.workspaces.findFirst();
-    if (!workspace) throw new Error("workspace missing");
     const email = "operator@tharrosmedia.com";
     const passwordHash = await hash("operator-local-only", 10);
     const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
