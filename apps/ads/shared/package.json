@@ -15,6 +15,7 @@
     "./migration-journal": "./src/migration-journal.ts",
     "./prod-migrate": "./src/prod-migrate.ts",
     "./entitlements": "./src/entitlements.ts",
+    "./usage": "./src/usage.ts",
     "./crypto": "./src/crypto.ts",
     "./oauth": "./src/oauth.ts",
     "./credentials": "./src/credentials.ts",

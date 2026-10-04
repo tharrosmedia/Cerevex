@@ -217,14 +217,14 @@ describe("plan and location entitlements", () => {
       plan: string;
       locations: { limit: number | null; activeCount: number };
       adAccounts: { limitPerPlatform: number | null; activeByPlatform: Record<string, number> };
-      monthly: { creativeVariations: { limit: number | null; used: number | null }; seoJobs: { limit: number | null } };
+      monthly: { creativeVariations: { limit: number | null; used: number }; seoJobs: { limit: number | null } };
     };
     expect(entitlements.plan).toBe("paid");
     expect(entitlements.locations).toEqual({ limit: null, activeCount: 2 });
     expect(entitlements.adAccounts.limitPerPlatform).toBeNull();
     expect(entitlements.adAccounts.activeByPlatform.meta).toBe(2);
     expect(entitlements.monthly.creativeVariations.limit).toBeNull();
-    expect(entitlements.monthly.creativeVariations.used).toBeNull();
+    expect(entitlements.monthly.creativeVariations.used).toBe(0);
     expect(entitlements.monthly.seoJobs.limit).toBeNull();
   });
 
@@ -259,16 +259,16 @@ describe("plan and location entitlements", () => {
     const entitlements = view.entitlements as {
       locations: { limit: number; activeCount: number };
       monthly: {
-        creativeVariations: { limit: number; used: number | null; excludedOutcomes: string[]; reset: string };
-        seoJobs: { limit: number; used: number | null };
+        creativeVariations: { limit: number; used: number; excludedOutcomes: string[]; reset: string };
+        seoJobs: { limit: number; used: number };
       };
     };
     expect(entitlements.locations).toEqual({ limit: 1, activeCount: 1 });
     expect(entitlements.monthly.creativeVariations.limit).toBe(20);
-    expect(entitlements.monthly.creativeVariations.used).toBeNull();
+    expect(entitlements.monthly.creativeVariations.used).toBe(0);
     expect(entitlements.monthly.creativeVariations.excludedOutcomes).toEqual(["rejected", "duplicate", "merged"]);
     expect(entitlements.monthly.creativeVariations.reset).toBe("month_start_et");
-    expect(entitlements.monthly.seoJobs).toMatchObject({ limit: 10, used: null });
+    expect(entitlements.monthly.seoJobs).toMatchObject({ limit: 10, used: 0 });
   });
 
   it("blocks a second ad account on the same platform and allows one on another", async () => {

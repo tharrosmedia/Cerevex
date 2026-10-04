@@ -196,7 +196,7 @@ async function cloneBase(suffix: string): Promise<string> {
 const serviceTag = "0007_service_actor_constraints";
 const serviceIndex = journal.migrations.findIndex((migration) => migration.tag === serviceTag);
 const beforeServiceTags = journal.migrations.slice(0, serviceIndex).map((migration) => migration.tag);
-const serviceThenAudit = [serviceTag, "0008_client_audit_log"];
+const serviceThenAudit = [serviceTag, "0008_client_audit_log", "0009_monthly_usage"];
 const beforeServiceName = `cerevex_prod_mig_${process.pid}_pre7`;
 let beforeServiceReady: Promise<string> | undefined;
 
@@ -504,23 +504,33 @@ describe("os production migrate", () => {
     expect(await ledgerCount(databaseUrl)).toBe(journal.migrations.length);
   });
 
-  it("applies only 0008 after 0000–0007 and keeps scholarship limits", async () => {
-    expect(pending.tag).toBe("0008_client_audit_log");
+  it("applies 0008 and 0009 after 0000–0007 and keeps scholarship limits", async () => {
+    expect(pending.tag).toBe("0009_monthly_usage");
     expect(appliedTags).toContain("0006_plan_entitlements");
     expect(appliedTags).toContain(serviceTag);
-    expect(appliedTags).not.toContain("0008_client_audit_log");
-    const sql = artifactSql(pending.tag);
-    expect(sql).not.toMatch(/search_path/i);
-    expect(() => assertOsOnly(sql, pending.tag)).not.toThrow();
+    expect(appliedTags).toContain("0008_client_audit_log");
+    const auditSql = artifactSql("0008_client_audit_log");
+    expect(auditSql).not.toMatch(/search_path/i);
+    expect(() => assertOsOnly(auditSql, "0008_client_audit_log")).not.toThrow();
+    const usageSql = artifactSql("0009_monthly_usage");
+    expect(usageSql).not.toMatch(/search_path/i);
+    expect(() => assertOsOnly(usageSql, "0009_monthly_usage")).not.toThrow();
 
-    const databaseUrl = await cloneBase("scholarship");
+    const databaseUrl = await cloneBeforeService("scholarship");
+    const clientSetup = new pg.Client({ connectionString: databaseUrl });
+    await clientSetup.connect();
+    try {
+      await applyTags(clientSetup, [serviceTag]);
+    } finally {
+      await clientSetup.end();
+    }
     const dry = await request(databaseUrl, "dry-run");
-    expect(dry.pending).toEqual(["0008_client_audit_log"]);
+    expect(dry.pending).toEqual(["0008_client_audit_log", "0009_monthly_usage"]);
     expect(dry.migrationsApplied).toEqual([]);
     expect(await pendingTable(databaseUrl)).toBeNull();
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0008_client_audit_log"]);
+    expect(applied.migrationsApplied).toEqual(["0008_client_audit_log", "0009_monthly_usage"]);
 
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
