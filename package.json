@@ -32,6 +32,7 @@
     "ads:db:up": "npm run db:up --workspace=@tharros/ads",
     "ads:db:down": "npm run db:down --workspace=@tharros/ads",
     "ads:db:migrate": "npm run db:migrate --workspace=@tharros/ads",
+    "ads:db:migrate:prod": "npm run migrate:prod --workspace=@tharros/ads-shared --",
     "ads:db:seed": "npm run db:seed --workspace=@tharros/ads"
   },
   "engines": {
