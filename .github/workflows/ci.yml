@@ -130,6 +130,7 @@ jobs:
           SEED_OWNER_EMAIL: adam@tharrosmedia.com
           SEED_OWNER_PASSWORD: local-dev-only
           NODE_ENV: test
+          OS_PROD_MIGRATE_ALLOW_INSECURE_LOOPBACK: "1"
         run: |
           npm run ads:db:migrate
           npm run ads:db:seed
