@@ -211,6 +211,13 @@ describe("migration journal schema", () => {
         "skill_client_configs",
       );
       expect((await client.query(`select to_regclass('os.locations') as name`)).rows[0]?.name).toBe("locations");
+      expect((await client.query(`select to_regclass('os.apply_jobs_authorization_uidx') as name`)).rows[0]?.name).toBe(
+        "apply_jobs_authorization_uidx",
+      );
+      const plan = await client.query(
+        `select column_name from information_schema.columns where table_schema = 'os' and table_name = 'clients' and column_name = 'plan'`,
+      );
+      expect(plan.rows).toHaveLength(1);
       const beforeSecond = rows.rows.map((row) => `${row.id}:${row.hash}:${row.created_at}`);
       const second = await runMigrate(databaseUrl);
       expect(second.code, second.stderr).toBe(0);

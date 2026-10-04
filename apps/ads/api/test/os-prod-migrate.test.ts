@@ -369,6 +369,85 @@ describe("os production migrate", () => {
     expect(await ledgerCount(databaseUrl)).toBe(journal.migrations.length);
   });
 
+  it("applies only 0007 after 0000–0006 and keeps scholarship limits", async () => {
+    expect(pending.tag).toBe("0007_service_actor_constraints");
+    expect(appliedTags).toContain("0006_plan_entitlements");
+    expect(appliedTags).not.toContain("0007_service_actor_constraints");
+    const sql = artifactSql(pending.tag);
+    expect(sql).not.toMatch(/search_path/i);
+    expect(() => assertOsOnly(sql, pending.tag)).not.toThrow();
+
+    const databaseUrl = await cloneBase("scholarship");
+    const dry = await request(databaseUrl, "dry-run");
+    expect(dry.pending).toEqual(["0007_service_actor_constraints"]);
+    expect(dry.migrationsApplied).toEqual([]);
+    expect(await pendingTable(databaseUrl)).toBeNull();
+
+    const applied = await request(databaseUrl, "apply");
+    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const planColumn = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'os' AND table_name = 'clients' AND column_name = 'plan'`,
+      );
+      expect(planColumn.rows).toHaveLength(1);
+      expect(String((await client.query(`SELECT to_regclass('os.locations') AS name`)).rows[0]?.name)).toContain(
+        "locations",
+      );
+
+      const workspace = await client.query(
+        `INSERT INTO os.workspaces (name) VALUES ('scholarship-after-0007') RETURNING id`,
+      );
+      const workspaceId = workspace.rows[0]?.id as string;
+      const scholar = await client.query(
+        `INSERT INTO os.clients (workspace_id, name, plan) VALUES ($1, 'scholar', 'scholarship') RETURNING id`,
+        [workspaceId],
+      );
+      const scholarId = scholar.rows[0]?.id as string;
+      await client.query(`INSERT INTO os.locations (workspace_id, client_id, store_id) VALUES ($1, $2, 'store-a')`, [
+        workspaceId,
+        scholarId,
+      ]);
+      await expect(
+        client.query(`INSERT INTO os.locations (workspace_id, client_id, store_id) VALUES ($1, $2, 'store-b')`, [
+          workspaceId,
+          scholarId,
+        ]),
+      ).rejects.toMatchObject({ code: "23514" });
+
+      await client.query(
+        `INSERT INTO os.ad_accounts (workspace_id, client_id, platform, external_id, connection_status)
+         VALUES ($1, $2, 'meta', 'act_1', 'connected')`,
+        [workspaceId, scholarId],
+      );
+      await expect(
+        client.query(
+          `INSERT INTO os.ad_accounts (workspace_id, client_id, platform, external_id, connection_status)
+           VALUES ($1, $2, 'meta', 'act_2', 'connected')`,
+          [workspaceId, scholarId],
+        ),
+      ).rejects.toMatchObject({ code: "23514" });
+
+      const paid = await client.query(
+        `INSERT INTO os.clients (workspace_id, name, plan) VALUES ($1, 'paid-extra', 'paid') RETURNING id`,
+        [workspaceId],
+      );
+      const paidId = paid.rows[0]?.id as string;
+      await client.query(
+        `INSERT INTO os.locations (workspace_id, client_id, store_id) VALUES ($1, $2, 'paid-a'), ($1, $2, 'paid-b')`,
+        [workspaceId, paidId],
+      );
+      await expect(client.query(`UPDATE os.clients SET plan = 'scholarship' WHERE id = $1`, [paidId])).rejects.toMatchObject({
+        code: "23514",
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
   it("the CLI refuses when DATABASE_URL is missing", async () => {
     const env = { ...process.env };
     delete env.PRODUCTION_NEON_HOST;
