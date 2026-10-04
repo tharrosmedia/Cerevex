@@ -10,9 +10,10 @@
  * recordUsage / getUsage / assertWithinCap are the helpers. Creation paths
  * call recordUsage. It counts once per item id and does not block the create.
  * assertWithinCap is the check a later screen can call before that count.
- * Call it in the same transaction as recordUsage. It holds the per-client
+ * It requires the same transaction as recordUsage. It holds the client-and-month
  * usage lock until that transaction ends, so concurrent gated creates cannot
- * all pass on one reading of the counter. Paid is unlimited and still counted.
+ * all pass on one reading of the counter. The month is the database clock.
+ * Paid is unlimited and still counted.
  * Nothing here bills or sends mail.
  */
 import {
@@ -100,12 +101,34 @@ async function loadClient(tx: Tx, tenantId: string): Promise<{ id: string; works
 }
 
 /**
- * Serializes usage writes for one client. With a period key, the lock is that
- * client and month. Re-entrant inside the same transaction.
+ * Serializes usage writes for one client and one Eastern month.
+ * Re-entrant inside the same transaction. The period key comes from the
+ * database clock. There is no client-only lock.
  */
-export async function lockUsage(tx: Tx, tenantId: string, periodKey?: string): Promise<void> {
-  const scope = periodKey ? `${tenantId}:${periodKey}` : tenantId;
+export async function lockUsage(tx: Tx, tenantId: string, periodKey: string): Promise<void> {
+  const scope = `${tenantId}:${periodKey}`;
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('os.usage'), hashtext(${scope}::text))`);
+}
+
+type UsageClock = { createdAt: Date | string; periodKey: string };
+
+async function readUsageClock(tx: Tx): Promise<UsageClock> {
+  const clockResult = await tx.execute(sql`
+    SELECT now() AS created_at,
+           to_char(now() AT TIME ZONE 'America/New_York', 'YYYY-MM') AS period_key
+  `);
+  const clock = rowsOf(clockResult)[0] as { created_at?: Date | string; period_key?: string } | undefined;
+  const periodKey = clock?.period_key;
+  const createdAt = clock?.created_at;
+  if (!periodKey || createdAt == null) throw new Error("Could not read the usage month.");
+  return { createdAt, periodKey };
+}
+
+/** Read the Eastern month from the database and lock that client and month. */
+export async function lockUsageMonth(tx: Tx, tenantId: string): Promise<UsageClock> {
+  const clock = await readUsageClock(tx);
+  await lockUsage(tx, tenantId, clock.periodKey);
+  return clock;
 }
 
 function rowsOf(result: unknown): UsageWriteRow[] {
@@ -127,15 +150,7 @@ async function writeUsage(tx: Tx, input: UsageRecordInput): Promise<UsageRecordR
   // sees the other session's commit after this wait. The counter upsert stays
   // atomic (used = used + 1). The month comes from the database clock, and
   // the lock is that client and month.
-  const clockResult = await tx.execute(sql`
-    SELECT now() AS created_at,
-           to_char(now() AT TIME ZONE 'America/New_York', 'YYYY-MM') AS period_key
-  `);
-  const clock = rowsOf(clockResult)[0] as { created_at?: Date | string; period_key?: string } | undefined;
-  const periodKey = clock?.period_key;
-  const createdAt = clock?.created_at;
-  if (!periodKey || createdAt == null) throw new Error("Could not read the usage month.");
-  await lockUsage(tx, input.tenantId, periodKey);
+  const { createdAt, periodKey } = await lockUsageMonth(tx, input.tenantId);
   const client = await loadClient(tx, input.tenantId);
 
   const written = await tx.execute(sql`
@@ -254,37 +269,29 @@ export async function getUsage(tenantId: string, at: Date = new Date()): Promise
  * Does not record anything. Paid always passes. Scholarship passes while
  * `used` is below the limit.
  *
- * The check takes the same per-client usage lock as the count, for this
- * month's counter. Pass the transaction you will record in. The lock is held
- * until that transaction ends, so a second gated create waits and sees the
- * new total. Ten gated creates at used=19 store 20, not 29. A direct
- * recordUsage still counts the 21st. This helper does not turn creation off
- * by itself.
+ * Pass the transaction you will record in. The check reads the Eastern month
+ * from the database clock and takes that client-and-month lock until the
+ * transaction ends, so a second gated create waits and sees the new total.
+ * Ten gated creates at used=19 store 20, not 29. Calling this without that
+ * transaction is refused, so a count in the same transaction cannot wait on
+ * a second lock. A direct recordUsage still counts the 21st. This helper does
+ * not turn creation off by itself.
  */
 export async function assertWithinCap(
   tenantId: string,
   kind: MonthlyCapId,
-  at: Date = new Date(),
-  tx?: Tx,
+  tx: Tx,
 ): Promise<UsageSlice> {
-  const run = async (inner: Tx): Promise<UsageSlice> => {
-    const periodKey = usagePeriodKey(at);
-    await lockUsage(inner, tenantId, periodKey);
-    const client = await loadClient(inner, tenantId);
-    const [row] = await inner
-      .select({ used: usageCounters.used })
-      .from(usageCounters)
-      .where(
-        and(
-          eq(usageCounters.clientId, tenantId),
-          eq(usageCounters.kind, kind),
-          eq(usageCounters.periodKey, periodKey),
-        ),
-      );
-    const current = slice(kind, client.plan, row?.used ?? 0, periodKey);
-    if (!current.withinCap) throw new UsageLimitError(monthlyLimitMessage(kind, at));
-    return current;
-  };
-  if (tx) return run(tx);
-  return getDb().transaction(run);
+  const { createdAt, periodKey } = await lockUsageMonth(tx, tenantId);
+  const at = createdAt instanceof Date ? createdAt : new Date(createdAt);
+  const client = await loadClient(tx, tenantId);
+  const [row] = await tx
+    .select({ used: usageCounters.used })
+    .from(usageCounters)
+    .where(
+      and(eq(usageCounters.clientId, tenantId), eq(usageCounters.kind, kind), eq(usageCounters.periodKey, periodKey)),
+    );
+  const current = slice(kind, client.plan, row?.used ?? 0, periodKey);
+  if (!current.withinCap) throw new UsageLimitError(monthlyLimitMessage(kind, at));
+  return current;
 }

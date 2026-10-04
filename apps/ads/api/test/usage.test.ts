@@ -193,7 +193,7 @@ describe("monthly usage counters", () => {
     const usage = await getUsage(tenantId);
     expect(usage.plan).toBe("paid");
     expect(usage.creativeVariations).toMatchObject({ used: 25, limit: null, withinCap: true });
-    await expect(assertWithinCap(tenantId, "creative_variations")).resolves.toMatchObject({ used: 25 });
+    await expect(checkCap(tenantId, "creative_variations")).resolves.toMatchObject({ used: 25 });
   });
 
   it("reports scholarship usage at 19, 20, and 21 without refusing the 21st", async () => {
@@ -206,7 +206,7 @@ describe("monthly usage counters", () => {
         outcome: "created",
       });
     }
-    expect(await assertWithinCap(tenantId, "creative_variations")).toMatchObject({
+    expect(await checkCap(tenantId, "creative_variations")).toMatchObject({
       used: 19,
       limit: 20,
       withinCap: true,
@@ -219,7 +219,7 @@ describe("monthly usage counters", () => {
       outcome: "created",
     });
     expect(twentieth).toMatchObject({ counted: true, used: 20, limit: 20, withinCap: false });
-    await expect(assertWithinCap(tenantId, "creative_variations")).rejects.toBeInstanceOf(UsageLimitError);
+    await expect(checkCap(tenantId, "creative_variations")).rejects.toBeInstanceOf(UsageLimitError);
 
     const twentyFirst = await recordUsage({
       tenantId,
@@ -279,7 +279,7 @@ describe("monthly usage counters", () => {
       Array.from({ length: 10 }, async (_, index) => {
         try {
           return await db.transaction(async (tx) => {
-            await assertWithinCap(tenantId, "creative_variations", new Date(), tx);
+            await assertWithinCap(tenantId, "creative_variations", tx);
             return recordUsage(
               {
                 tenantId,
@@ -424,6 +424,10 @@ describe("monthly usage counters", () => {
     expect(new Set(saved.map((row) => row.ideaId)).size).toBe(12);
     expect((await getUsage(tenantId)).creativeVariations.used).toBe(12);
   });
+
+  function checkCap(tenantId: string, kind: "creative_variations" | "seo_jobs") {
+    return getDb().transaction((tx) => assertWithinCap(tenantId, kind, tx));
+  }
 
   function messageOf(error: unknown): string {
     if (error instanceof Error && error.cause instanceof Error) return error.cause.message;

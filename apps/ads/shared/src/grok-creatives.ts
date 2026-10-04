@@ -11,7 +11,7 @@ import { platformLabel } from "./creative-analysis";
 import { insertJobRecommendation } from "./rec-lifecycle";
 import { brainstormIdeas, brainstormSessions } from "./schema";
 import type { Platform } from "./types";
-import { lockUsage, recordUsage } from "./usage";
+import { lockUsageMonth, recordUsage } from "./usage";
 
 const XAI_BASE = "https://api.x.ai/v1";
 
@@ -181,7 +181,7 @@ export async function saveGrokIdea(input: {
 }): Promise<{ sessionId: string; ideaId: string; alternative: GrokAlternative }> {
   const db = getDb();
   return db.transaction(async (tx) => {
-    await lockUsage(tx, input.clientId);
+    await lockUsageMonth(tx, input.clientId);
     const [session] = await tx
       .insert(brainstormSessions)
       .values({

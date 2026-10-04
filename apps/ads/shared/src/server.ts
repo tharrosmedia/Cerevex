@@ -21,6 +21,7 @@ export {
   assertWithinCap,
   getUsage,
   lockUsage,
+  lockUsageMonth,
   recordUsage,
   recordUsageForStore,
 } from "./usage";
