@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   bookedJobSignalWriteBlockedReason,
   brandGuardrailsWriteBlockedReason,
@@ -28,6 +28,7 @@ import {
 import {
   adAccounts,
   applyJobs,
+  auditLog,
   authorizations,
   recommendations,
   workspaces,
@@ -90,207 +91,278 @@ export type ApplyRunResult = {
   blocked: string | null;
 };
 
-export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
-  const db = getDb();
-  const job = await db.query.applyJobs.findFirst({
-    where: eq(applyJobs.id, applyJobId),
-  });
-  if (!job) {
-    throw new Error("Apply job not found");
-  }
+/** A platform write is history. Revocation does not turn it into a failed non-write. */
+export function applyResultAuditAction(result: { writes: boolean; applyJob: { status: string } }): "apply_success" | "apply_fail" {
+  if (result.writes || result.applyJob.status === "succeeded") return "apply_success";
+  return "apply_fail";
+}
 
-  if (job.status === "succeeded") {
-    return {
-      applyJob: toApplyJobPublic(job),
-      outcomes: ((job.responseJson as { outcomes?: MutationOutcome[] } | null)?.outcomes ?? []),
-      writes: Boolean((job.responseJson as { writes?: boolean } | null)?.writes),
-      blocked: null,
-    };
-  }
+function authorizationStillApplies(
+  job: { workspaceId: string },
+  authorization:
+    | { workspaceId: string; revokedAt: Date | null; expiresAt: Date | null }
+    | null
+    | undefined,
+  recommendation: { status: string } | null | undefined,
+  now = new Date(),
+): boolean {
+  if (!authorization || authorization.workspaceId !== job.workspaceId) return false;
+  if (authorization.revokedAt) return false;
+  if (authorization.expiresAt && authorization.expiresAt.getTime() <= now.getTime()) return false;
+  return recommendation?.status === "authorized";
+}
 
-  const workspace = await db.query.workspaces.findFirst({
-    where: eq(workspaces.id, job.workspaceId),
-  });
-  const authorization = await db.query.authorizations.findFirst({
-    where: eq(authorizations.id, job.authorizationId),
-  });
-  const recommendation = authorization
-    ? await db.query.recommendations.findFirst({
-        where: eq(recommendations.id, authorization.recommendationId),
-      })
-    : null;
-  const account = recommendation
-    ? await db.query.adAccounts.findFirst({
-        where: eq(adAccounts.id, recommendation.adAccountId),
-      })
-    : null;
+type ApplyJobRow = typeof applyJobs.$inferSelect;
+type RecommendationRow = typeof recommendations.$inferSelect;
+type AccountRow = typeof adAccounts.$inferSelect;
 
-  const gate = evaluateApplyGate({
-    expectedWorkspaceId: job.workspaceId,
-    workspace,
-    authorization,
-    account,
-  });
+type PreparedApply = {
+  job: ApplyJobRow;
+  recommendation: RecommendationRow;
+  account: AccountRow;
+  capabilities: ReturnType<typeof resolveWorkspaceCapabilities>;
+  jobType: ApplyJobType;
+};
 
-  await db
+type ApplyHandle = {
+  insert: ReturnType<typeof getDb>["insert"];
+  update: ReturnType<typeof getDb>["update"];
+  query: ReturnType<typeof getDb>["query"];
+  select: ReturnType<typeof getDb>["select"];
+};
+
+function publicResult(
+  job: ApplyJobRow,
+  extras: { outcomes?: MutationOutcome[]; writes?: boolean; blocked?: string | null } = {},
+): ApplyRunResult {
+  return {
+    applyJob: toApplyJobPublic(job),
+    outcomes: extras.outcomes ?? [],
+    writes: extras.writes ?? false,
+    blocked: extras.blocked ?? null,
+  };
+}
+
+async function saveJob(
+  tx: ApplyHandle,
+  job: ApplyJobRow,
+  patch: {
+    status: string;
+    error: string | null;
+    response: Record<string, unknown>;
+    attempts?: number;
+    finished?: boolean;
+  },
+  extras: { outcomes?: MutationOutcome[]; writes?: boolean; blocked?: string | null } = {},
+): Promise<ApplyRunResult> {
+  await tx
     .update(applyJobs)
     .set({
-      status: gate.allowed ? "applying" : "failed",
-      attempts: job.attempts + 1,
-      error: gate.allowed ? null : gate.blocked,
+      status: patch.status,
+      error: patch.error,
+      responseJson: patch.response,
+      ...(patch.attempts !== undefined ? { attempts: patch.attempts } : {}),
+      ...(patch.finished === false ? {} : { finishedAt: new Date() }),
     })
     .where(eq(applyJobs.id, job.id));
+  const updated = await tx.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+  return publicResult(updated ?? job, extras);
+}
 
-  if (!gate.allowed) {
-    const response = { ...gate, outcomes: [], writes: false };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "failed",
-        error: gate.blocked,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
+async function auditRevoked(
+  tx: ApplyHandle,
+  job: ApplyJobRow,
+  recommendationId: string | null,
+): Promise<void> {
+  await tx.insert(auditLog).values({
+    workspaceId: job.workspaceId,
+    actorType: "worker",
+    actorId: null,
+    action: "revoked",
+    entityType: "apply_job",
+    entityId: job.id,
+    payloadJson: {
+      recommendationId,
+      authorizationId: job.authorizationId,
+      outcome: "revoked",
       writes: false,
-      blocked: gate.blocked,
+    },
+  });
+}
+
+function storedRun(job: ApplyJobRow, blocked: string | null = null): ApplyRunResult {
+  const stored = (job.responseJson as { outcomes?: MutationOutcome[]; writes?: boolean } | null) ?? null;
+  return publicResult(job, {
+    outcomes: stored?.outcomes ?? [],
+    writes: blocked === "in_progress" ? false : Boolean(stored?.writes),
+    blocked,
+  });
+}
+
+/**
+ * One conditional update owns the job. Only queued or pending can become applying.
+ * A second caller, including inline apply, sees applying and does not call the platform.
+ * The checks below commit before any platform I/O. An applying job is never reclaimed.
+ */
+async function claimApplyJob(
+  applyJobId: string,
+): Promise<{ kind: "done"; result: ApplyRunResult } | { kind: "run"; prepared: PreparedApply }> {
+  const [claimed] = await getDb()
+    .update(applyJobs)
+    .set({
+      status: "applying",
+      attempts: sql`${applyJobs.attempts} + 1`,
+      error: null,
+    })
+    .where(and(eq(applyJobs.id, applyJobId), inArray(applyJobs.status, ["queued", "pending"])))
+    .returning();
+
+  if (!claimed) {
+    const existing = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
+    if (!existing) throw new Error("Apply job not found");
+    if (existing.status === "applying") {
+      return { kind: "done" as const, result: storedRun(existing, "in_progress") };
+    }
+    return { kind: "done" as const, result: storedRun(existing) };
+  }
+
+  return getDb().transaction(async (tx) => {
+    const handle = tx as unknown as ApplyHandle;
+    const job = claimed;
+
+    const [authPeek] = await tx
+      .select()
+      .from(authorizations)
+      .where(eq(authorizations.id, job.authorizationId));
+    if (authPeek) {
+      await tx
+        .select({ id: recommendations.id })
+        .from(recommendations)
+        .where(eq(recommendations.id, authPeek.recommendationId))
+        .for("update");
+      await tx
+        .select({ id: authorizations.id })
+        .from(authorizations)
+        .where(eq(authorizations.id, authPeek.id))
+        .for("update");
+    }
+
+    const authorization = await handle.query.authorizations.findFirst({
+      where: eq(authorizations.id, job.authorizationId),
+    });
+    const recommendation = authorization
+      ? await handle.query.recommendations.findFirst({
+          where: eq(recommendations.id, authorization.recommendationId),
+        })
+      : null;
+    const account = recommendation
+      ? await handle.query.adAccounts.findFirst({ where: eq(adAccounts.id, recommendation.adAccountId) })
+      : null;
+    const workspace = await handle.query.workspaces.findFirst({
+      where: eq(workspaces.id, job.workspaceId),
+    });
+
+    if (!authorizationStillApplies(job, authorization, recommendation)) {
+      const response = { writes: false, outcomes: [] as MutationOutcome[], blocked: "authorization_revoked", revoked: true };
+      await auditRevoked(handle, job, recommendation?.id ?? authorization?.recommendationId ?? null);
+      return {
+        kind: "done" as const,
+        result: await saveJob(
+          handle,
+          job,
+          { status: "failed", error: "authorization_revoked", response },
+          { blocked: "authorization_revoked" },
+        ),
+      };
+    }
+
+    const gate = evaluateApplyGate({
+      expectedWorkspaceId: job.workspaceId,
+      workspace,
+      authorization,
+      account,
+    });
+    if (!gate.allowed) {
+      const response = { ...gate, outcomes: [], writes: false };
+      return {
+        kind: "done" as const,
+        result: await saveJob(
+          handle,
+          job,
+          { status: "failed", error: gate.blocked, response },
+          { blocked: gate.blocked },
+        ),
+      };
+    }
+
+    if (!recommendation || !account) {
+      const response = { writes: false, outcomes: [] };
+      return {
+        kind: "done" as const,
+        result: await saveJob(
+          handle,
+          job,
+          {
+            status: "failed",
+            error: "recommendation_or_account_missing",
+            response,
+          },
+          { blocked: "recommendation_or_account_missing" },
+        ),
+      };
+    }
+
+    const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
+    const request = (job.requestJson as Record<string, unknown> | null) ?? {};
+    const jobType = (
+      typeof request.jobType === "string" ? request.jobType : inferApplyJobType(request.proposedMutations)
+    ) as ApplyJobType;
+
+    const stopped = await stopBeforePlatform(handle, job, recommendation, capabilities, jobType);
+    if (stopped) return { kind: "done" as const, result: stopped };
+
+    return {
+      kind: "run" as const,
+      prepared: { job, recommendation, account, capabilities, jobType },
     };
-  }
+  });
+}
 
-  if (!recommendation || !account) {
-    await db
-      .update(applyJobs)
-      .set({
-        status: "failed",
-        error: "recommendation_or_account_missing",
-        finishedAt: new Date(),
-        responseJson: { writes: false, outcomes: [] },
-      })
-      .where(eq(applyJobs.id, job.id));
-    throw new Error("Recommendation or ad account missing for apply job");
-  }
-
-  const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
-  const request = (job.requestJson as Record<string, unknown> | null) ?? {};
-  const jobType = (typeof request.jobType === "string" ? request.jobType : inferApplyJobType(request.proposedMutations)) as ApplyJobType;
-
+async function stopBeforePlatform(
+  tx: ApplyHandle,
+  job: ApplyJobRow,
+  recommendation: RecommendationRow,
+  capabilities: ReturnType<typeof resolveWorkspaceCapabilities>,
+  jobType: ApplyJobType,
+): Promise<ApplyRunResult | null> {
   if (!isCapabilityOn("apply", capabilities)) {
-    const response = {
-      writes: false,
-      outcomes: [],
-      blocked: "capability_apply",
-      jobType,
-      mode: "mock",
-    };
-    await db
-      .update(applyJobs)
-      .set({
+    return saveJob(
+      tx,
+      job,
+      {
         status: "succeeded",
         error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: "capability_apply",
-    };
+        response: { writes: false, outcomes: [], blocked: "capability_apply", jobType, mode: "mock" },
+      },
+      { blocked: "capability_apply" },
+    );
   }
 
-  const crmBlocked = crmWriteBlockedReason(recommendation.type);
-  if (crmBlocked) {
-    const response = {
-      writes: false,
-      outcomes: [],
-      blocked: crmBlocked,
-      jobType,
-      mode: "mock",
+  const early: Array<{ blocked: string | null; reason: string; extra?: Record<string, unknown> }> = [
+    {
+      blocked: crmWriteBlockedReason(recommendation.type),
       reason: "Lead lifecycle is recommend-only. CRM apply later — nothing writes Housecall Pro.",
-      crmWrite: "later",
-    };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: crmBlocked,
-    };
-  }
-
-  const bookedJobBlocked = bookedJobSignalWriteBlockedReason(capabilities, recommendation.type);
-  if (bookedJobBlocked) {
-    const response = {
-      writes: false,
-      outcomes: [],
-      blocked: bookedJobBlocked,
-      jobType,
-      mode: "mock",
+      extra: { crmWrite: "later" },
+    },
+    {
+      blocked: bookedJobSignalWriteBlockedReason(capabilities, recommendation.type),
       reason: "Booked-job signal is recommend-only or off. No platform write.",
-    };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: bookedJobBlocked,
-    };
-  }
-
-  const siteBlocked = siteApplyBlockedReason(getDefaultSiteConnector(), recommendation.type);
-  if (siteBlocked) {
-    const response = {
-      writes: false,
-      outcomes: [],
-      blocked: siteBlocked,
-      jobType,
-      mode: "mock",
+    },
+    {
+      blocked: siteApplyBlockedReason(getDefaultSiteConnector(), recommendation.type),
       reason: "LP intelligence is recommend-only. Site apply later — nothing writes the website.",
-      siteApply: "later",
-    };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: siteBlocked,
-    };
-  }
-
-  const hygieneBlocks: Array<{ blocked: string | null; reason: string }> = [
+      extra: { siteApply: "later" },
+    },
     {
       blocked: creativeFatigueWriteBlockedReason(capabilities, recommendation.type),
       reason: "Creative fatigue is recommend-only or off. No platform write.",
@@ -315,97 +387,66 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
       blocked: ownerWeeklyNarrativeWriteBlockedReason(capabilities, recommendation.type),
       reason: "Owner weekly narrative is recommend-only or off. The digest does not write live ads.",
     },
-  ];
-  for (const row of hygieneBlocks) {
-    if (!row.blocked) continue;
-    const response = {
-      writes: false,
-      outcomes: [],
-      blocked: row.blocked,
-      jobType,
-      mode: "mock",
-      reason: row.reason,
-    };
-    await db
-      .update(applyJobs)
-      .set({
-        status: "succeeded",
-        error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: row.blocked,
-    };
-  }
-
-  const budgetShiftBlocked = budgetShiftWriteBlockedReason(capabilities, recommendation.type);
-  if (budgetShiftBlocked) {
-    const response = {
-      writes: false,
-      outcomes: [],
-      blocked: budgetShiftBlocked,
-      jobType,
-      mode: "mock",
+    {
+      blocked: budgetShiftWriteBlockedReason(capabilities, recommendation.type),
       reason: "Budget shift is recommend-only or off. No platform write.",
-    };
-    await db
-      .update(applyJobs)
-      .set({
+    },
+  ];
+  for (const row of early) {
+    if (!row.blocked) continue;
+    return saveJob(
+      tx,
+      job,
+      {
         status: "succeeded",
         error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: budgetShiftBlocked,
-    };
+        response: {
+          writes: false,
+          outcomes: [],
+          blocked: row.blocked,
+          jobType,
+          mode: "mock",
+          reason: row.reason,
+          ...row.extra,
+        },
+      },
+      { blocked: row.blocked },
+    );
   }
 
   if (isSealedCreateEntityJob(jobType) && !isCapabilityOn("apply.create_entity", capabilities)) {
     const sealed = mutationFamilySkipReason(MUTATION_FAMILIES.create_entity);
-    const response = {
-      writes: false,
-      outcomes: [],
-      blocked: "create_entity_sealed",
-      jobType,
-      mode: "mock",
-      reason: sealed,
-    };
-    await db
-      .update(applyJobs)
-      .set({
+    return saveJob(
+      tx,
+      job,
+      {
         status: "succeeded",
         error: null,
-        finishedAt: new Date(),
-        responseJson: response,
-      })
-      .where(eq(applyJobs.id, job.id));
-    const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-    return {
-      applyJob: toApplyJobPublic(updated ?? job),
-      outcomes: [],
-      writes: false,
-      blocked: "create_entity_sealed",
-    };
+        response: {
+          writes: false,
+          outcomes: [],
+          blocked: "create_entity_sealed",
+          jobType,
+          mode: "mock",
+          reason: sealed,
+        },
+      },
+      { blocked: "create_entity_sealed" },
+    );
   }
+  return null;
+}
 
-  const mutations = parseApplyMutations(recommendation.proposedMutationsJson);
+async function executePrepared(prepared: PreparedApply): Promise<{
+  outcomes: MutationOutcome[];
+  failed: string | null;
+  response: Record<string, unknown>;
+}> {
+  const mutations = parseApplyMutations(prepared.recommendation.proposedMutationsJson);
   const outcomes: MutationOutcome[] = [];
   let failed: string | null = null;
-
   for (const mutation of mutations) {
-    if (mutation.platform !== account.platform) {
+    if (mutation.platform !== prepared.account.platform) {
       outcomes.push({
         action: mutation.action,
         platform: mutation.platform,
@@ -413,17 +454,17 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
         status: "skipped",
         mode: "mock",
         writes: false,
-        reason: `Mutation platform ${mutation.platform} does not match account ${account.platform}.`,
+        reason: `Mutation platform ${mutation.platform} does not match account ${prepared.account.platform}.`,
       });
       continue;
     }
     try {
       const outcome = await executeMutation({
-        adAccountId: account.id,
-        platform: account.platform,
-        accountExternalId: account.externalId,
+        adAccountId: prepared.account.id,
+        platform: prepared.account.platform,
+        accountExternalId: prepared.account.externalId,
         mutation,
-        capabilities,
+        capabilities: prepared.capabilities,
       });
       outcomes.push(outcome);
       if (outcome.status === "failed") {
@@ -445,34 +486,114 @@ export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
       break;
     }
   }
-
   const writes = outcomes.some((row) => row.writes && row.status === "applied");
-  const status = failed ? "failed" : "succeeded";
-  const response = {
-    writes,
-    outcomes,
-    mode: outcomes.some((row) => row.mode === "live") ? "live" : "mock",
-    createNewSkipped: outcomes
-      .filter((row) => row.status === "skipped" && /create-new|Create-new/i.test(row.reason ?? ""))
-      .map((row) => row.action),
-    jobType,
-  };
-
-  await db
-    .update(applyJobs)
-    .set({
-      status,
-      error: failed,
-      finishedAt: new Date(),
-      responseJson: response,
-    })
-    .where(eq(applyJobs.id, job.id));
-
-  const updated = await db.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
   return {
-    applyJob: toApplyJobPublic(updated ?? { ...job, status, error: failed, responseJson: response }),
     outcomes,
-    writes,
-    blocked: null,
+    failed,
+    response: {
+      writes,
+      outcomes,
+      mode: outcomes.some((row) => row.mode === "live") ? "live" : "mock",
+      createNewSkipped: outcomes
+        .filter((row) => row.status === "skipped" && /create-new|Create-new/i.test(row.reason ?? ""))
+        .map((row) => row.action),
+      jobType: prepared.jobType,
+    },
   };
+}
+
+async function settleApplyJob(
+  jobId: string,
+  executed: { outcomes: MutationOutcome[]; failed: string | null; response: Record<string, unknown> },
+): Promise<ApplyRunResult> {
+  return getDb().transaction(async (tx) => {
+    const handle = tx as unknown as ApplyHandle;
+    const [job] = await tx.select().from(applyJobs).where(eq(applyJobs.id, jobId)).for("update");
+    if (!job) throw new Error("Apply job not found");
+    const [authorization] = await tx
+      .select()
+      .from(authorizations)
+      .where(eq(authorizations.id, job.authorizationId));
+    if (authorization) {
+      await tx
+        .select({ id: recommendations.id })
+        .from(recommendations)
+        .where(eq(recommendations.id, authorization.recommendationId))
+        .for("update");
+      await tx
+        .select({ id: authorizations.id })
+        .from(authorizations)
+        .where(eq(authorizations.id, authorization.id))
+        .for("update");
+    }
+    const freshAuth = await handle.query.authorizations.findFirst({
+      where: eq(authorizations.id, job.authorizationId),
+    });
+    const recommendation = freshAuth
+      ? await handle.query.recommendations.findFirst({
+          where: eq(recommendations.id, freshAuth.recommendationId),
+        })
+      : null;
+    if (!authorizationStillApplies(job, freshAuth, recommendation)) {
+      const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
+      const response = {
+        ...executed.response,
+        writes,
+        outcomes: executed.outcomes,
+        revokedDuringApply: true,
+        revoked_after_write: writes,
+        blocked: writes ? null : "authorization_revoked",
+      };
+      await handle.insert(auditLog).values({
+        workspaceId: job.workspaceId,
+        actorType: "worker",
+        actorId: null,
+        action: writes ? "apply_success" : "apply_fail",
+        entityType: "apply_job",
+        entityId: job.id,
+        payloadJson: {
+          recommendationId: recommendation?.id ?? freshAuth?.recommendationId ?? null,
+          authorizationId: job.authorizationId,
+          writes,
+          outcomes: executed.outcomes,
+          revokedDuringApply: true,
+          revoked_after_write: writes,
+        },
+      });
+      return saveJob(
+        handle,
+        job,
+        {
+          status: writes ? "succeeded" : "failed",
+          error: writes ? "revoked_after_write" : "authorization_revoked",
+          response,
+          finished: true,
+        },
+        {
+          outcomes: executed.outcomes,
+          writes,
+          blocked: writes ? "revoked_after_write" : "authorization_revoked",
+        },
+      );
+    }
+    const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
+    return saveJob(
+      handle,
+      job,
+      {
+        status: executed.failed ? "failed" : "succeeded",
+        error: executed.failed,
+        response: executed.response,
+        finished: true,
+      },
+      { outcomes: executed.outcomes, writes, blocked: null },
+    );
+  });
+}
+
+export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
+  const claimed = await claimApplyJob(applyJobId);
+  if (claimed.kind === "done") return claimed.result;
+  const executed = await executePrepared(claimed.prepared);
+  return settleApplyJob(claimed.prepared.job.id, executed);
 }

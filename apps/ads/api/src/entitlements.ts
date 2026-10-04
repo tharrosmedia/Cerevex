@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { writeAuditEvent } from "@tharros/ads-shared/audit";
 import { activateStore, deactivateStore, getEntitlements } from "@tharros/ads-shared/entitlements";
+import { auditActor } from "./auth";
 import { requireMutableClient } from "./connect";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
@@ -25,10 +26,11 @@ export function registerEntitlementRoutes(app: Hono<AppEnv>, requireAuth: Middle
     const auth = c.get("auth");
     const client = await requireMutableClient(auth, c.req.param("id"));
     const location = await activateStore(client.id, parsed.data.storeId);
+    const actor = auditActor(auth);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
       action: "location.activated",
       entityType: "location",
       entityId: location.id,
@@ -51,10 +53,11 @@ export function registerEntitlementRoutes(app: Hono<AppEnv>, requireAuth: Middle
     const client = await requireMutableClient(auth, c.req.param("id"));
     const location = await deactivateStore(client.id, parsed.data.storeId);
     if (!location) throw new HTTPException(404, { message: "That location isn't on this account." });
+    const actor = auditActor(auth);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
       action: "location.deactivated",
       entityType: "location",
       entityId: location.id,

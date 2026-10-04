@@ -1,5 +1,6 @@
 import { isCapabilityOn, isCapabilityVisible } from "@cerevex/contracts";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { resolveAuditActor } from "./actor";
 import { loadFunnelSignal } from "./analytics";
 import { evaluateAccount } from "./audit-engine";
 import { evaluateClientM51 } from "./m51-engine";
@@ -104,9 +105,12 @@ export async function createAuditRun(input: {
   workspaceId: string;
   clientId: string;
   requestedBy: string;
+  actorType?: string;
+  actorId?: string | null;
   adAccountId?: string;
 }): Promise<typeof auditRuns.$inferSelect> {
   const db = getDb();
+  const actor = resolveAuditActor(input.actorType ?? "user", input.actorId ?? input.requestedBy);
   const [row] = await db
     .insert(auditRuns)
     .values({
@@ -116,14 +120,14 @@ export async function createAuditRun(input: {
       summaryJson: {
         writes: false,
         adAccountId: input.adAccountId ?? null,
-        requestedBy: input.requestedBy,
+        requestedBy: actor.actorType === "service" ? "service" : input.requestedBy,
       },
     })
     .returning();
   await db.insert(auditLog).values({
     workspaceId: input.workspaceId,
-    actorType: "user",
-    actorId: input.requestedBy,
+    actorType: actor.actorType,
+    actorId: actor.actorId,
     action: "jobs.audit_enqueued",
     entityType: "audit_run",
     entityId: row.id,
@@ -475,80 +479,125 @@ export async function getFinding(id: string) {
   });
 }
 
+export class RecommendationNotOpenError extends Error {
+  constructor() {
+    super("This recommendation is no longer open.");
+    this.name = "RecommendationNotOpenError";
+  }
+}
+
 export async function decideRecommendation(input: {
   recommendationId: string;
-  userId: string;
+  userId: string | null;
+  actorType?: "user" | "service";
   action: DecisionAction;
   note?: string;
 }): Promise<{ recommendation: RecommendationPublic; authorization: AuthorizationPublic | null }> {
-  const db = getDb();
-  const row = await db.query.recommendations.findFirst({
-    where: eq(recommendations.id, input.recommendationId),
-  });
-  if (!row) {
-    throw new Error("Recommendation not found");
+  const actor = resolveAuditActor(input.actorType ?? (input.userId ? "user" : "service"), input.userId);
+  if (input.action === "authorize" && actor.actorType === "service") {
+    throw new Error("Service credentials cannot authorize");
   }
 
-  const status =
-    input.action === "authorize" ? "authorized" : input.action === "deny" ? "denied" : "snoozed";
+  return getDb().transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(recommendations)
+      .where(eq(recommendations.id, input.recommendationId))
+      .for("update");
+    if (!row) {
+      throw new Error("Recommendation not found");
+    }
+    // Approve, deny, and snooze share this row lock. The first committed
+    // decision wins. Deny or snooze may still revoke an authorization that
+    // is already approved. A deny or snooze that already committed is not
+    // overwritten.
+    const canDecide =
+      row.status === "proposed" ||
+      (input.action !== "authorize" && row.status === "authorized");
+    if (!canDecide) {
+      throw new RecommendationNotOpenError();
+    }
 
-  const [decision] = await db
-    .insert(decisions)
-    .values({
-      workspaceId: row.workspaceId,
-      clientId: row.clientId,
-      recommendationId: row.id,
-      userId: input.userId,
-      action: input.action,
-      note: input.note,
-    })
-    .returning();
+    await tx
+      .select({ id: authorizations.id })
+      .from(authorizations)
+      .where(eq(authorizations.recommendationId, row.id))
+      .for("update");
 
-  let authorization: typeof authorizations.$inferSelect | null = null;
-  if (input.action === "authorize") {
-    [authorization] = await db
-      .insert(authorizations)
-      .values({
-        workspaceId: row.workspaceId,
-        clientId: row.clientId,
-        recommendationId: row.id,
-        decisionId: decision.id,
-        scopeJson: {
-          kind: "os.authorize-to-apply",
+    const status =
+      input.action === "authorize" ? "authorized" : input.action === "deny" ? "denied" : "snoozed";
+
+    let decisionId: string | null = null;
+    if (input.userId) {
+      const [decision] = await tx
+        .insert(decisions)
+        .values({
+          workspaceId: row.workspaceId,
+          clientId: row.clientId,
           recommendationId: row.id,
-          proposedOnly: false,
-          writes: true,
-        },
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      })
+          userId: input.userId,
+          action: input.action,
+          note: input.note,
+        })
+        .returning();
+      decisionId = decision.id;
+    }
+
+    let authorization: typeof authorizations.$inferSelect | null = null;
+    if (input.action === "authorize") {
+      if (!decisionId) {
+        throw new Error("Service credentials cannot authorize");
+      }
+      [authorization] = await tx
+        .insert(authorizations)
+        .values({
+          workspaceId: row.workspaceId,
+          clientId: row.clientId,
+          recommendationId: row.id,
+          decisionId,
+          scopeJson: {
+            kind: "os.authorize-to-apply",
+            recommendationId: row.id,
+            proposedOnly: false,
+            writes: true,
+          },
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        })
+        .returning();
+    } else {
+      await tx
+        .update(authorizations)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(authorizations.recommendationId, row.id), isNull(authorizations.revokedAt)));
+    }
+
+    const [updated] = await tx
+      .update(recommendations)
+      .set({ status })
+      .where(eq(recommendations.id, row.id))
       .returning();
-  }
 
-  const [updated] = await db
-    .update(recommendations)
-    .set({ status })
-    .where(eq(recommendations.id, row.id))
-    .returning();
-
-  await db.insert(auditLog).values({
-    workspaceId: row.workspaceId,
-    actorType: "user",
-    actorId: input.userId,
-    action: input.action,
-    entityType: "recommendation",
-    entityId: row.id,
-    payloadJson: {
+    await tx.insert(auditLog).values({
+      workspaceId: row.workspaceId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
       action: input.action,
-      authorizationId: authorization?.id ?? null,
-      writes: false,
-      applied: false,
-    },
-  });
+      entityType: "recommendation",
+      entityId: row.id,
+      payloadJson: {
+        action: input.action,
+        authorizationId: authorization?.id ?? null,
+        writes: false,
+        applied: false,
+        revoked: input.action !== "authorize",
+      },
+    });
 
-  return {
-    recommendation: toRecommendationPublic(updated),
-    authorization: authorization ? toAuthorizationPublic(authorization) : null,
-  };
+    return {
+      recommendation: toRecommendationPublic(updated),
+      authorization: authorization ? toAuthorizationPublic(authorization) : null,
+    };
+  });
 }
 
 export async function writeAuditEvent(input: {
@@ -560,10 +609,11 @@ export async function writeAuditEvent(input: {
   entityId?: string | null;
   payload?: Record<string, unknown>;
 }): Promise<void> {
+  const actor = resolveAuditActor(input.actorType, input.actorId);
   await getDb().insert(auditLog).values({
     workspaceId: input.workspaceId,
-    actorType: input.actorType,
-    actorId: input.actorId ?? null,
+    actorType: actor.actorType,
+    actorId: actor.actorId,
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId ?? null,
@@ -581,14 +631,8 @@ export async function createApplyJobForAuthorization(input: {
 }): Promise<ApplyJobPublic> {
   const db = getDb();
   const key = applyJobIdempotencyKey(input.recommendationId);
-  const existing = await db.query.applyJobs.findFirst({
-    where: eq(applyJobs.idempotencyKey, key),
-  });
-  if (existing) {
-    return toApplyJobPublic(existing);
-  }
   const jobType = input.jobType ?? inferApplyJobType(input.proposedMutations);
-  const [job] = await db
+  const inserted = await db
     .insert(applyJobs)
     .values({
       workspaceId: input.workspaceId,
@@ -602,8 +646,14 @@ export async function createApplyJobForAuthorization(input: {
         jobType,
       },
     })
+    .onConflictDoNothing()
     .returning();
-  return toApplyJobPublic(job);
+  if (inserted[0]) return toApplyJobPublic(inserted[0]);
+  const existing =
+    (await db.query.applyJobs.findFirst({ where: eq(applyJobs.idempotencyKey, key) })) ??
+    (await db.query.applyJobs.findFirst({ where: eq(applyJobs.authorizationId, input.authorizationId) }));
+  if (!existing) throw new Error("Apply job conflict but row missing");
+  return toApplyJobPublic(existing);
 }
 
 export async function getWorkspaceKillSwitch(workspaceId: string): Promise<boolean> {
