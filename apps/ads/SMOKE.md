@@ -203,7 +203,7 @@ Expected public tables (Brain migrations `0001`–`0010`):
 
 This checklist does not apply OS migrations. The only production migrate command is in the ads README (Production migrate). `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
 
-Do not apply OS SQL by hand with `psql`. The bundled one-shot in [One-shot (local / non-production, Bun only)](#one-shot-local--non-production-bun-only) is the only alternative on this page. It is not a production migrate: it needs Bun and a local or other non-production `DATABASE_URL`, writes `os.__drizzle_migrations` for journal tags `0000` through `0005`, and still does not run the journal guards.
+Do not apply OS SQL by hand with `psql`. The bundled one-shot in [One-shot (local / non-production, Bun only)](#one-shot-local--non-production-bun-only) is the only alternative on this page. It is not a production migrate: it needs Bun and a local or other non-production `DATABASE_URL`, writes `os.__drizzle_migrations` for journal tags `0000` through `0009`, and still does not run the journal guards.
 
 ### 3. Verify Brain public / pgvector untouched
 

@@ -31,6 +31,7 @@ const NAMES = [
   "Usage Mixed Scholarship",
   "Usage Reconnect Paid",
   "Usage Reconnect Scholarship",
+  "Usage Gate",
 ];
 
 describe("usage month in America/New_York", () => {
@@ -81,6 +82,7 @@ describe("monthly usage counters", () => {
       ["Usage Outcome", "scholarship"],
       ["Usage Path", "scholarship"],
       ["Usage Saves", "scholarship"],
+      ["Usage Gate", "scholarship"],
     ] as const;
     for (const [name, plan] of plans) {
       const [row] = await db.insert(clients).values({ workspaceId, name, status: "active", plan }).returning();
@@ -261,6 +263,48 @@ describe("monthly usage counters", () => {
     expect(new Set([left.used, right.used])).toEqual(new Set([20, 21]));
     expect((await getUsage(tenantId)).creativeVariations.used).toBe(21);
   });
+
+  it("stores 20 when ten gated creates race at 19", async () => {
+    const tenantId = ids["Usage Gate"];
+    for (let i = 1; i <= 19; i += 1) {
+      await recordUsage({
+        tenantId,
+        kind: "creative_variations",
+        itemId: `gate-${i}`,
+        outcome: "created",
+      });
+    }
+    const db = getDb();
+    const results = await Promise.all(
+      Array.from({ length: 10 }, async (_, index) => {
+        try {
+          return await db.transaction(async (tx) => {
+            await assertWithinCap(tenantId, "creative_variations", new Date(), tx);
+            return recordUsage(
+              {
+                tenantId,
+                kind: "creative_variations",
+                itemId: `gate-extra-${index}`,
+                outcome: "created",
+              },
+              tx,
+            );
+          });
+        } catch (error) {
+          return error;
+        }
+      }),
+    );
+    const counted = results.filter(
+      (row): row is { counted: boolean } => typeof row === "object" && row !== null && "counted" in row,
+    );
+    const refused = results.filter((row) => row instanceof UsageLimitError);
+    expect(counted).toHaveLength(1);
+    expect(counted[0]?.counted).toBe(true);
+    expect(refused).toHaveLength(9);
+    expect(results.some((row) => row instanceof Error && /deadlock/i.test(row.message))).toBe(false);
+    expect((await getUsage(tenantId)).creativeVariations.used).toBe(20);
+  }, 120_000);
 
   it("counts a saved creative variation once, and an SEO job through the store link", async () => {
     const tenantId = ids["Usage Path"];

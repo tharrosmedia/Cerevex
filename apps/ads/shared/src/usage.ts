@@ -9,8 +9,11 @@
  *
  * recordUsage / getUsage / assertWithinCap are the helpers. Creation paths
  * call recordUsage. It counts once per item id and does not block the create.
- * assertWithinCap is the check a later screen can call. Paid is unlimited and
- * still counted. Nothing here bills or sends mail.
+ * assertWithinCap is the check a later screen can call before that count.
+ * Call it in the same transaction as recordUsage. It holds the per-client
+ * usage lock until that transaction ends, so concurrent gated creates cannot
+ * all pass on one reading of the counter. Paid is unlimited and still counted.
+ * Nothing here bills or sends mail.
  */
 import {
   isPlanId,
@@ -96,9 +99,13 @@ async function loadClient(tx: Tx, tenantId: string): Promise<{ id: string; works
   return { id: client.id, workspaceId: client.workspaceId, plan: client.plan };
 }
 
-/** Serializes usage writes for one client. Re-entrant inside the same transaction. */
-export async function lockUsage(tx: Tx, tenantId: string): Promise<void> {
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('os.usage'), hashtext(${tenantId}::text))`);
+/**
+ * Serializes usage writes for one client. With a period key, the lock is that
+ * client and month. Re-entrant inside the same transaction.
+ */
+export async function lockUsage(tx: Tx, tenantId: string, periodKey?: string): Promise<void> {
+  const scope = periodKey ? `${tenantId}:${periodKey}` : tenantId;
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('os.usage'), hashtext(${scope}::text))`);
 }
 
 function rowsOf(result: unknown): UsageWriteRow[] {
@@ -118,35 +125,40 @@ async function writeUsage(tx: Tx, input: UsageRecordInput): Promise<UsageRecordR
   // Do not FOR UPDATE the client here. Idea inserts already hold KEY SHARE on
   // that row, and a stronger lock deadlocks a second save. READ COMMITTED
   // sees the other session's commit after this wait. The counter upsert stays
-  // atomic (used = used + 1). The month comes from the database clock.
-  await lockUsage(tx, input.tenantId);
+  // atomic (used = used + 1). The month comes from the database clock, and
+  // the lock is that client and month.
+  const clockResult = await tx.execute(sql`
+    SELECT now() AS created_at,
+           to_char(now() AT TIME ZONE 'America/New_York', 'YYYY-MM') AS period_key
+  `);
+  const clock = rowsOf(clockResult)[0] as { created_at?: Date | string; period_key?: string } | undefined;
+  const periodKey = clock?.period_key;
+  const createdAt = clock?.created_at;
+  if (!periodKey || createdAt == null) throw new Error("Could not read the usage month.");
+  await lockUsage(tx, input.tenantId, periodKey);
   const client = await loadClient(tx, input.tenantId);
 
   const written = await tx.execute(sql`
-    WITH clock AS (
-      SELECT now() AS created_at,
-             to_char(now() AT TIME ZONE 'America/New_York', 'YYYY-MM') AS period_key
-    ),
-    inserted AS (
+    WITH inserted AS (
       INSERT INTO os.usage_events (
         workspace_id, client_id, kind, item_id, outcome, counted, period_key, created_at
       )
-      SELECT
+      VALUES (
         ${client.workspaceId},
         ${client.id},
         ${input.kind},
         ${itemId},
         ${input.outcome},
         ${counted},
-        clock.period_key,
-        clock.created_at
-      FROM clock
+        ${periodKey},
+        ${createdAt}
+      )
       ON CONFLICT (client_id, kind, item_id) DO NOTHING
       RETURNING counted
     ),
     bumped AS (
       INSERT INTO os.usage_counters (client_id, workspace_id, kind, period_key, used)
-      SELECT ${client.id}, ${client.workspaceId}, ${input.kind}, (SELECT period_key FROM clock), 1
+      SELECT ${client.id}, ${client.workspaceId}, ${input.kind}, ${periodKey}, 1
       FROM inserted
       WHERE counted
       ON CONFLICT (client_id, kind, period_key)
@@ -156,14 +168,14 @@ async function writeUsage(tx: Tx, input: UsageRecordInput): Promise<UsageRecordR
     SELECT
       EXISTS (SELECT 1 FROM inserted) AS inserted,
       COALESCE((SELECT counted FROM inserted), false) AS counted,
-      (SELECT period_key FROM clock) AS period_key,
+      ${periodKey} AS period_key,
       COALESCE(
         (SELECT used FROM bumped),
         (
           SELECT c.used FROM os.usage_counters c
           WHERE c.client_id = ${client.id}
             AND c.kind = ${input.kind}
-            AND c.period_key = (SELECT period_key FROM clock)
+            AND c.period_key = ${periodKey}
         ),
         0
       ) AS used
@@ -171,9 +183,8 @@ async function writeUsage(tx: Tx, input: UsageRecordInput): Promise<UsageRecordR
   const row = rowsOf(written)[0];
   if (!row) throw new Error("Usage count did not return a row.");
   const used = row.used == null ? 0 : Number(row.used);
-  const periodKey = row.period_key || usagePeriodKey(new Date());
   return {
-    ...slice(input.kind, client.plan, used, periodKey),
+    ...slice(input.kind, client.plan, used, row.period_key || periodKey),
     counted: Boolean(row?.inserted) && Boolean(row?.counted),
     alreadyRecorded: !row?.inserted,
   };
@@ -198,20 +209,24 @@ export async function recordUsageForStore(input: {
   itemId: string;
   outcome: UsageOutcome;
 }): Promise<UsageRecordResult | { skipped: true; reason: "no_client" | "ambiguous_client" }> {
-  const db = getDb();
-  const bySite = await db.select({ id: clients.id }).from(clients).where(eq(clients.siteId, input.storeId));
-  const byLocation = await db
-    .select({ id: locations.clientId })
-    .from(locations)
-    .where(and(eq(locations.storeId, input.storeId), eq(locations.status, "active")));
-  const tenantIds = [...new Set([...bySite.map((row) => row.id), ...byLocation.map((row) => row.id)])];
-  if (tenantIds.length === 0) return { skipped: true, reason: "no_client" };
-  if (tenantIds.length > 1) return { skipped: true, reason: "ambiguous_client" };
-  return recordUsage({
-    tenantId: tenantIds[0]!,
-    kind: input.kind,
-    itemId: input.itemId,
-    outcome: input.outcome,
+  return getDb().transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext('os.usage.store'), hashtext(${input.storeId}::text))`,
+    );
+    const bySite = await tx.select({ id: clients.id }).from(clients).where(eq(clients.siteId, input.storeId));
+    const byLocation = await tx
+      .select({ id: locations.clientId })
+      .from(locations)
+      .where(and(eq(locations.storeId, input.storeId), eq(locations.status, "active")));
+    const tenantIds = [...new Set([...bySite.map((row) => row.id), ...byLocation.map((row) => row.id)])];
+    if (tenantIds.length === 0) return { skipped: true, reason: "no_client" };
+    if (tenantIds.length > 1) return { skipped: true, reason: "ambiguous_client" };
+    return writeUsage(tx, {
+      tenantId: tenantIds[0]!,
+      kind: input.kind,
+      itemId: input.itemId,
+      outcome: input.outcome,
+    });
   });
 }
 
@@ -236,22 +251,40 @@ export async function getUsage(tenantId: string, at: Date = new Date()): Promise
 
 /**
  * Reports whether another countable item would still be inside the limit.
- * Does not record anything and does not lock. Paid always passes. Scholarship
- * passes while `used` is below the limit.
+ * Does not record anything. Paid always passes. Scholarship passes while
+ * `used` is below the limit.
  *
- * This is not a safe concurrent gate. Callers that all read the same `used`
- * can each pass and then each record: 10 creates at used=19 can all pass and
- * the counter stores 29. A future gate has to check and increment inside the
- * locked writeUsage. This helper does not refuse the 21st. Creation still
- * counts and reports.
+ * The check takes the same per-client usage lock as the count, for this
+ * month's counter. Pass the transaction you will record in. The lock is held
+ * until that transaction ends, so a second gated create waits and sees the
+ * new total. Ten gated creates at used=19 store 20, not 29. A direct
+ * recordUsage still counts the 21st. This helper does not turn creation off
+ * by itself.
  */
 export async function assertWithinCap(
   tenantId: string,
   kind: MonthlyCapId,
   at: Date = new Date(),
+  tx?: Tx,
 ): Promise<UsageSlice> {
-  const usage = await getUsage(tenantId, at);
-  const current = kind === "creative_variations" ? usage.creativeVariations : usage.seoJobs;
-  if (!current.withinCap) throw new UsageLimitError(monthlyLimitMessage(kind));
-  return current;
+  const run = async (inner: Tx): Promise<UsageSlice> => {
+    const periodKey = usagePeriodKey(at);
+    await lockUsage(inner, tenantId, periodKey);
+    const client = await loadClient(inner, tenantId);
+    const [row] = await inner
+      .select({ used: usageCounters.used })
+      .from(usageCounters)
+      .where(
+        and(
+          eq(usageCounters.clientId, tenantId),
+          eq(usageCounters.kind, kind),
+          eq(usageCounters.periodKey, periodKey),
+        ),
+      );
+    const current = slice(kind, client.plan, row?.used ?? 0, periodKey);
+    if (!current.withinCap) throw new UsageLimitError(monthlyLimitMessage(kind, at));
+    return current;
+  };
+  if (tx) return run(tx);
+  return getDb().transaction(run);
 }

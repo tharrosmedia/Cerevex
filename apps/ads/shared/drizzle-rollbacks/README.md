@@ -9,3 +9,5 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/ads/shared/drizzle-rollbacks/<ta
 ```
 
 `0008_client_audit_log_rollback.sql` drops `os.client_audit_log`, the append-only function, and `recommendations.approval_json`, then deletes the `os.__drizzle_migrations` row for that file. The hash is the sha256 of `apps/ads/shared/drizzle/0008_client_audit_log.sql`, and `created_at` is the journal `when` (`1791200000000`). Do not pass this file to `drizzle migrate`.
+
+`0009_monthly_usage_rollback.sql` drops `os.usage_events` and `os.usage_counters`, then deletes the `os.__drizzle_migrations` row for that file. The hash is the sha256 of `apps/ads/shared/drizzle/0009_monthly_usage.sql`, and `created_at` is the journal `when` (`1791300000000`). Do not pass this file to `drizzle migrate`.
