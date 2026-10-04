@@ -10,10 +10,25 @@ import {
 assert.equal(AUTH_COOKIE_NAME, 'auth');
 assert.equal(AUTH_IDLE_MAX_AGE, 60 * 60 * 24 * 3);
 
-const env = process.env as { NODE_ENV?: string };
-const prevNodeEnv = env.NODE_ENV;
+const env = process.env as Record<string, string | undefined>;
+const prev = {
+  NODE_ENV: env.NODE_ENV,
+  RAILWAY_ENVIRONMENT: env.RAILWAY_ENVIRONMENT,
+  RAILWAY_ENVIRONMENT_NAME: env.RAILWAY_ENVIRONMENT_NAME,
+  CEREVEX_REQUIRE_SIGNING_SECRETS: env.CEREVEX_REQUIRE_SIGNING_SECRETS,
+};
+
+function restoreEnv() {
+  for (const [key, value] of Object.entries(prev)) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+}
 
 try {
+  delete env.RAILWAY_ENVIRONMENT;
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
   env.NODE_ENV = 'production';
   const prod = authCookieOptions();
   assert.equal(prod.httpOnly, true);
@@ -25,6 +40,13 @@ try {
   env.NODE_ENV = 'development';
   const dev = authCookieOptions();
   assert.equal(dev.secure, false);
+  env.RAILWAY_ENVIRONMENT_NAME = 'production-eu';
+  assert.equal(authCookieOptions().secure, true);
+  delete env.RAILWAY_ENVIRONMENT_NAME;
+  env.CEREVEX_REQUIRE_SIGNING_SECRETS = '1';
+  assert.equal(authCookieOptions().secure, true);
+  delete env.CEREVEX_REQUIRE_SIGNING_SECRETS;
+  assert.equal(authCookieOptions().secure, false);
   assert.equal(dev.maxAge, AUTH_IDLE_MAX_AGE);
   assert.equal(dev.httpOnly, true);
   assert.equal(dev.sameSite, 'lax');
@@ -54,5 +76,5 @@ try {
 
   console.log('auth-cookie: ok');
 } finally {
-  env.NODE_ENV = prevNodeEnv;
+  restoreEnv();
 }

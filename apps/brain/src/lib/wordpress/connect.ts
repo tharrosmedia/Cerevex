@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { siteCmsPlainError, wordpressConnectBlockedReason } from '@cerevex/contracts';
+import { isProductionRuntime, siteCmsPlainError, wordpressConnectBlockedReason } from '@cerevex/contracts';
 import { createWordPressConnector, normalizeSiteUrl } from '@cerevex/connector-wordpress';
 import { createStore, getStore, updateStore } from '../db/stores';
 import { logEvent } from '../brain/events';
@@ -99,7 +99,7 @@ export async function connectWordpressStore(input: WordpressConnectInput): Promi
     const jar = await cookies();
     jar.set('activeStoreId', created.id, {
       path: '/',
-      secure: process.env.NODE_ENV === 'production',
+      secure: isProductionRuntime(),
       sameSite: 'lax',
     });
     await logEvent(created.id, 'human', 'wordpress.connected', { siteUrl, reconnect: false });
