@@ -5,7 +5,7 @@ import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import { parseRecommendationDraft } from "@tharros/ads-shared/audit-schemas";
 import { insertJobRecommendation } from "@tharros/ads-shared/rec-lifecycle";
-import { applyJobs, clients, recommendations } from "@tharros/ads-shared/schema";
+import { applyJobs, clients, recommendations, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
@@ -19,9 +19,11 @@ describe("M3 audit → findings → recommendations", () => {
   let accountId = "";
   let recommendationId = "";
   let auditRunId = "";
+  let workspaceId = "";
 
   beforeAll(async () => {
-    await ensureScopedUser();
+    const { workspace } = await ensureScopedUser();
+    workspaceId = workspace.id;
     ownerToken = (
       await login(
         process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com",
@@ -50,12 +52,17 @@ describe("M3 audit → findings → recommendations", () => {
 
   afterAll(async () => {
     if (ownerToken) {
-      await app.request("/workspace", {
+      const restore = await app.request("/workspace", {
         method: "PATCH",
         headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
         body: JSON.stringify({ applyKillSwitch: true }),
       });
+      expect(restore.status).toBe(200);
     }
+    const workspace = await getDb().query.workspaces.findFirst({
+      where: eq(workspaces.id, workspaceId),
+    });
+    expect(workspace?.applyKillSwitch).toBe(true);
     await closeDb();
   });
 
@@ -201,11 +208,12 @@ describe("M3 audit → findings → recommendations", () => {
         .where(eq(applyJobs.authorizationId, String((decided.authorization as { id: string }).id)));
       expect(jobs[0]?.status).toBe("succeeded");
     } finally {
-      await app.request("/workspace", {
+      const restore = await app.request("/workspace", {
         method: "PATCH",
         headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
         body: JSON.stringify({ applyKillSwitch: true }),
       });
+      expect(restore.status).toBe(200);
     }
   });
 
