@@ -451,6 +451,64 @@ describe("os production migrate", () => {
     expect(source).toContain("transaction_read_only");
   });
 
+  it("keeps the failed tag pending after an earlier tag in the same run commits", async () => {
+    const databaseUrl = await cloneBase("partial");
+    const dir = mkdtempSync(join(tmpdir(), "os-prod-partial-"));
+    const bundle = JSON.parse(readFileSync(join(artifactsDir, "os-migrate-bundle.json"), "utf8")) as {
+      migrations: Array<{
+        filename: string;
+        tag: string;
+        idx: number;
+        when: number;
+        sha256: string;
+        sql: string;
+      }>;
+    };
+    for (const migration of bundle.migrations) {
+      writeFileSync(join(dir, migration.filename), readFileSync(join(artifactsDir, migration.filename)));
+    }
+    const last = bundle.migrations[bundle.migrations.length - 1]!;
+    const failTag = "0009_partial_fail";
+    const failSql =
+      'CREATE TABLE "os"."partial_fail_probe" (id integer);\n--> statement-breakpoint\nSELECT 1/0;\n';
+    const digest = createHash("sha256").update(failSql).digest("hex");
+    writeFileSync(join(dir, `${failTag}.sql`), failSql);
+    bundle.migrations.push({
+      filename: `${failTag}.sql`,
+      tag: failTag,
+      idx: last.idx + 1,
+      when: last.when + 1,
+      sha256: digest,
+      sql: failSql,
+    });
+    writeFileSync(join(dir, "os-migrate-bundle.json"), JSON.stringify(bundle));
+
+    const error = await runOsProdMigrate({
+      databaseUrl,
+      productionNeonHost: host,
+      host,
+      mode: "apply",
+      artifactsDir: dir,
+    }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ProdMigrateError);
+    const plan = (error as ProdMigrateError).plan;
+    expect(plan?.pending).toEqual([failTag]);
+    expect(plan?.applied).toEqual([...appliedTags, pending.tag]);
+    expect(await ledgerCount(databaseUrl)).toBe(journal.migrations.length);
+    expect(await pendingTable(databaseUrl)).toContain(pendingTableName());
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const probe = await client.query(`SELECT to_regclass('os.partial_fail_probe') AS rel`);
+      expect(probe.rows[0]?.rel).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
   it("refuses a duplicate ledger row for one tag", async () => {
     const databaseUrl = await cloneBase("dup");
     const first = journal.migrations[0]!;

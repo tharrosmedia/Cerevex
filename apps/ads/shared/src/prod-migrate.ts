@@ -597,7 +597,7 @@ export async function runOsProdMigrate(request: ProdMigrateRequest): Promise<Pro
         const message = error instanceof Error ? error.message : String(error);
         throw new ProdMigrateError(
           `Refusing to migrate. ${migration.tag} rolled back in its transaction. ${redactDatabaseUrl(message, request.databaseUrl)}`,
-          { ...reportPlan, pending: reportPlan.pending.slice(migrationsApplied.length) },
+          { ...reportPlan, pending: reportPlan.pending },
         );
       }
     }
