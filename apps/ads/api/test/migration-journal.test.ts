@@ -162,6 +162,7 @@ describe("migration journal", () => {
       "0005_skill_config",
       "0006_plan_entitlements",
       "0007_service_actor_constraints",
+      "0008_client_audit_log",
     ];
     expect(tags).toEqual(prefix);
     expect(tags).toContain("0006_plan_entitlements");

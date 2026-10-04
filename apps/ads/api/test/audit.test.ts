@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
-import { applyJobs, recommendations, workspaces } from "@tharros/ads-shared/schema";
+import { parseRecommendationDraft } from "@tharros/ads-shared/audit-schemas";
+import { insertJobRecommendation } from "@tharros/ads-shared/rec-lifecycle";
+import { applyJobs, clients, recommendations, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
@@ -141,6 +144,36 @@ describe("M3 audit → findings → recommendations", () => {
 
   it("blocks Approve while the kill switch is on, then applies after it is turned off", async () => {
     try {
+      const client = await getDb().query.clients.findFirst({ where: eq(clients.id, clientId) });
+      if (!client) throw new Error("client missing");
+      const created = await insertJobRecommendation(
+        parseRecommendationDraft({
+          workspaceId: client.workspaceId,
+          clientId,
+          adAccountId: accountId,
+          type: "pause_waste",
+          title: "Pause a wasted campaign",
+          rationale: "Spend without a qualified outcome.",
+          estimatedImpactUsd: null,
+          risk: "low",
+          confidence: null,
+          evidenceJson: { auditRunId: auditRunId, ruleId: "audit_test_pause", writes: false },
+          proposedMutationsJson: [
+            {
+              platform: "meta",
+              action: "pause",
+              target: { entityType: "campaign", externalId: `meta-camp-${randomUUID()}`, name: "Waste" },
+              payload: { reason: "zero_conversions" },
+              execute: false,
+            },
+          ],
+          status: "proposed",
+          schemaVersion: "1",
+        }),
+        { source: "native:audit", module: "paid-media" },
+      );
+      recommendationId = created.id;
+
       const blocked = await app.request(`/recommendations/${recommendationId}/decide`, {
         method: "POST",
         headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },

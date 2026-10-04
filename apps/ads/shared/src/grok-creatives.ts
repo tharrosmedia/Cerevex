@@ -8,7 +8,8 @@ import { parseRecommendationDraft } from "./audit-schemas";
 import type { CreativeFields } from "./creative-analysis";
 import { getDb } from "./db";
 import { platformLabel } from "./creative-analysis";
-import { brainstormIdeas, brainstormSessions, recommendations } from "./schema";
+import { insertJobRecommendation } from "./rec-lifecycle";
+import { brainstormIdeas, brainstormSessions } from "./schema";
 import type { Platform } from "./types";
 
 const XAI_BASE = "https://api.x.ai/v1";
@@ -275,7 +276,7 @@ export async function promoteGrokIdea(input: {
     status: "proposed",
     schemaVersion: "1",
   });
-  const [rec] = await db.insert(recommendations).values(draft).returning();
+  const rec = await insertJobRecommendation(draft, { source: "native:grok", module: "creatives" });
   await db
     .update(brainstormIdeas)
     .set({

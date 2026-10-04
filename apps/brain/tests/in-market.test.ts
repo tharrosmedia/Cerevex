@@ -57,7 +57,7 @@ const hiddenNav = resolveAdsNav({ shell: 'inShell', modules: defaultModulesFor('
 assert.equal(hiddenNav.some((item) => item.label === 'In market'), false);
 assert.deepEqual(
   hiddenNav.filter((item) => item.rail).map((item) => item.rail),
-  ['Audits', 'Suggestions'],
+  ['Audits', 'Suggestions', 'Audit log'],
 );
 
 const liveNav = resolveAdsNav({

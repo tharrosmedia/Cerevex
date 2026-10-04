@@ -12,6 +12,7 @@ import { checkDatabase, getDb } from "@tharros/ads-shared/db";
 import { checkInngest, sendStubPing } from "@tharros/ads-shared/inngest";
 import { auditLog } from "@tharros/ads-shared/schema";
 import { registerAuditRoutes } from "./audits";
+import { registerClientAuditRoutes } from "./client-audit";
 import { clientConnectionSummary, listPublicAdAccounts } from "./connect";
 import { registerM51Routes } from "./m51";
 import { registerLpIntelligenceRoutes } from "./lp-intelligence";
@@ -266,6 +267,7 @@ export function createApp() {
   registerSiteRoutes(app, requireAuth);
   registerEntitlementRoutes(app, requireAuth);
   registerAuditRoutes(app, requireAuth);
+  registerClientAuditRoutes(app, requireAuth);
   registerM51Routes(app, requireAuth);
   registerOfflineRoutes(app, requireAuth);
   registerLpIntelligenceRoutes(app, requireAuth);

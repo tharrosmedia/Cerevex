@@ -25,6 +25,7 @@
     "./audit-schemas": "./src/audit-schemas.ts",
     "./apply-gate": "./src/apply-gate.ts",
     "./apply": "./src/apply.ts",
+    "./rec-lifecycle": "./src/rec-lifecycle.ts",
     "./mutate": "./src/mutate.ts",
     "./flags": "./src/flags.ts",
     "./approve": "./src/approve.ts",

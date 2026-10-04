@@ -193,6 +193,45 @@ async function cloneBase(suffix: string): Promise<string> {
   return createDatabase(`cerevex_prod_mig_${process.pid}_${suffix}`, baseName);
 }
 
+const serviceTag = "0007_service_actor_constraints";
+const serviceIndex = journal.migrations.findIndex((migration) => migration.tag === serviceTag);
+const beforeServiceTags = journal.migrations.slice(0, serviceIndex).map((migration) => migration.tag);
+const serviceThenAudit = [serviceTag, "0008_client_audit_log"];
+const beforeServiceName = `cerevex_prod_mig_${process.pid}_pre7`;
+let beforeServiceReady: Promise<string> | undefined;
+
+function beforeServiceDatabase(): Promise<string> {
+  beforeServiceReady ??= (async () => {
+    const databaseUrl = await createDatabase(beforeServiceName);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await applyTags(client, beforeServiceTags);
+    } finally {
+      await client.end();
+    }
+    return databaseUrl;
+  })();
+  return beforeServiceReady;
+}
+
+async function cloneBeforeService(suffix: string): Promise<string> {
+  await beforeServiceDatabase();
+  return createDatabase(`cerevex_prod_mig_${process.pid}_${suffix}`, beforeServiceName);
+}
+
+async function relationName(databaseUrl: string, name: string): Promise<string | null> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const result = await client.query(`SELECT to_regclass($1) AS rel`, [name]);
+    const rel = result.rows[0]?.rel;
+    return rel ? String(rel) : null;
+  } finally {
+    await client.end();
+  }
+}
+
 function slowedArtifactDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "os-prod-race-"));
   const bundle = JSON.parse(readFileSync(join(artifactsDir, "os-migrate-bundle.json"), "utf8")) as {
@@ -330,8 +369,8 @@ afterAll(async () => {
 
 describe("os production migrate", () => {
   beforeAll(async () => {
-    await baseDatabase();
-  }, 60_000);
+    await Promise.all([baseDatabase(), beforeServiceDatabase()]);
+  }, 90_000);
 
   it("documents exactly one production command", () => {
     const readme = readFileSync(join(repoRoot, "apps/ads/README.md"), "utf8");
@@ -465,22 +504,23 @@ describe("os production migrate", () => {
     expect(await ledgerCount(databaseUrl)).toBe(journal.migrations.length);
   });
 
-  it("applies only 0007 after 0000–0006 and keeps scholarship limits", async () => {
-    expect(pending.tag).toBe("0007_service_actor_constraints");
+  it("applies only 0008 after 0000–0007 and keeps scholarship limits", async () => {
+    expect(pending.tag).toBe("0008_client_audit_log");
     expect(appliedTags).toContain("0006_plan_entitlements");
-    expect(appliedTags).not.toContain("0007_service_actor_constraints");
+    expect(appliedTags).toContain(serviceTag);
+    expect(appliedTags).not.toContain("0008_client_audit_log");
     const sql = artifactSql(pending.tag);
     expect(sql).not.toMatch(/search_path/i);
     expect(() => assertOsOnly(sql, pending.tag)).not.toThrow();
 
     const databaseUrl = await cloneBase("scholarship");
     const dry = await request(databaseUrl, "dry-run");
-    expect(dry.pending).toEqual(["0007_service_actor_constraints"]);
+    expect(dry.pending).toEqual(["0008_client_audit_log"]);
     expect(dry.migrationsApplied).toEqual([]);
     expect(await pendingTable(databaseUrl)).toBeNull();
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(applied.migrationsApplied).toEqual(["0008_client_audit_log"]);
 
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
@@ -547,7 +587,7 @@ describe("os production migrate", () => {
   it("fails 0007 when two succeeded jobs share an authorization and changes no rows", async () => {
     const olderId = "11111111-1111-4111-8111-111111111111";
     const newerId = "22222222-2222-4222-8222-222222222222";
-    const databaseUrl = await cloneBase("dedup_two_succeeded");
+    const databaseUrl = await cloneBeforeService("dedup_two_succeeded");
     await insertDuplicateApplyJobs(databaseUrl, "two-succeeded", [
       {
         id: olderId,
@@ -591,7 +631,7 @@ describe("os production migrate", () => {
   it("keeps the succeeded apply job and drops an older queued duplicate", async () => {
     const queuedId = "33333333-3333-4333-8333-333333333331";
     const succeededId = "33333333-3333-4333-8333-333333333332";
-    const databaseUrl = await cloneBase("dedup_succeeded_queued");
+    const databaseUrl = await cloneBeforeService("dedup_succeeded_queued");
     await insertDuplicateApplyJobs(databaseUrl, "succeeded-queued", [
       {
         id: queuedId,
@@ -608,17 +648,17 @@ describe("os production migrate", () => {
     ]);
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(applied.migrationsApplied).toEqual(serviceThenAudit);
     const jobs = await listApplyJobs(databaseUrl);
     expect(jobs.map((row) => row.id)).toEqual([succeededId]);
     expect(jobs[0]).toMatchObject({ status: "succeeded", attempts: 1, response_json: succeededResponse });
-    expect(await pendingTable(databaseUrl)).toContain("apply_jobs_authorization_uidx");
+    expect(await relationName(databaseUrl, "os.apply_jobs_authorization_uidx")).toContain("apply_jobs_authorization_uidx");
   });
 
   it("keeps an older succeeded apply job and drops a newer queued duplicate", async () => {
     const succeededId = "55555555-5555-4555-8555-555555555551";
     const queuedId = "55555555-5555-4555-8555-555555555552";
-    const databaseUrl = await cloneBase("dedup_older_succeeded");
+    const databaseUrl = await cloneBeforeService("dedup_older_succeeded");
     await insertDuplicateApplyJobs(databaseUrl, "older-succeeded", [
       {
         id: succeededId,
@@ -635,7 +675,7 @@ describe("os production migrate", () => {
     ]);
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(applied.migrationsApplied).toEqual(serviceThenAudit);
     const jobs = await listApplyJobs(databaseUrl);
     expect(jobs.map((row) => row.id)).toEqual([succeededId]);
     expect(jobs[0]).toMatchObject({ status: "succeeded", attempts: 1, response_json: succeededResponse });
@@ -644,7 +684,7 @@ describe("os production migrate", () => {
   it("keeps a newer succeeded apply job and drops an older failed duplicate", async () => {
     const failedId = "44444444-4444-4444-8444-444444444441";
     const succeededId = "44444444-4444-4444-8444-444444444442";
-    const databaseUrl = await cloneBase("dedup_succeeded_failed");
+    const databaseUrl = await cloneBeforeService("dedup_succeeded_failed");
     await insertDuplicateApplyJobs(databaseUrl, "succeeded-failed", [
       {
         id: failedId,
@@ -661,7 +701,7 @@ describe("os production migrate", () => {
     ]);
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(applied.migrationsApplied).toEqual(serviceThenAudit);
     const jobs = await listApplyJobs(databaseUrl);
     expect(jobs.map((row) => row.id)).toEqual([succeededId]);
     expect(jobs[0]).toMatchObject({ status: "succeeded", attempts: 1, response_json: succeededResponse });
@@ -671,7 +711,7 @@ describe("os production migrate", () => {
     const recordedId = "66666666-6666-4666-8666-666666666661";
     const queuedId = "66666666-6666-4666-8666-666666666662";
     const recorded = { writes: true, outcomes: [{ status: "applied", writes: true }] };
-    const databaseUrl = await cloneBase("dedup_recorded_failed");
+    const databaseUrl = await cloneBeforeService("dedup_recorded_failed");
     await insertDuplicateApplyJobs(databaseUrl, "recorded-failed", [
       {
         id: recordedId,
@@ -688,7 +728,7 @@ describe("os production migrate", () => {
     ]);
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(applied.migrationsApplied).toEqual(serviceThenAudit);
     const jobs = await listApplyJobs(databaseUrl);
     expect(jobs.map((row) => row.id)).toEqual([recordedId]);
     expect(jobs[0]).toMatchObject({ status: "failed", attempts: 1, response_json: recorded });
@@ -697,7 +737,7 @@ describe("os production migrate", () => {
   it("keeps the newest failed apply job when neither duplicate succeeded", async () => {
     const olderId = "77777777-7777-4777-8777-777777777771";
     const newerId = "77777777-7777-4777-8777-777777777772";
-    const databaseUrl = await cloneBase("dedup_newest_failed");
+    const databaseUrl = await cloneBeforeService("dedup_newest_failed");
     await insertDuplicateApplyJobs(databaseUrl, "newest-failed", [
       {
         id: olderId,
@@ -714,19 +754,22 @@ describe("os production migrate", () => {
     ]);
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(applied.migrationsApplied).toEqual(serviceThenAudit);
     const jobs = await listApplyJobs(databaseUrl);
     expect(jobs.map((row) => row.id)).toEqual([newerId]);
     expect(jobs[0]).toMatchObject({ status: "failed", attempts: 1 });
   });
 
-  it("applies 0007 on a clean database without changing apply jobs", async () => {
-    const databaseUrl = await cloneBase("dedup_clean");
+  it("applies 0007 then 0008 on a database that already has 0000 through 0006", async () => {
+    const databaseUrl = await cloneBeforeService("dedup_clean");
     expect(await listApplyJobs(databaseUrl)).toEqual([]);
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(applied.migrationsApplied).toEqual(serviceThenAudit);
     expect(await listApplyJobs(databaseUrl)).toEqual([]);
-    expect(await pendingTable(databaseUrl)).toContain("apply_jobs_authorization_uidx");
+    expect(await relationName(databaseUrl, "os.apply_jobs_authorization_uidx")).toContain(
+      "apply_jobs_authorization_uidx",
+    );
+    expect(await relationName(databaseUrl, "os.client_audit_log")).toContain("client_audit_log");
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
