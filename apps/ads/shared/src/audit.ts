@@ -1,5 +1,5 @@
 import { isCapabilityOn, isCapabilityVisible } from "@cerevex/contracts";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { loadFunnelSignal } from "./analytics";
 import { evaluateAccount } from "./audit-engine";
 import { evaluateClientM51 } from "./m51-engine";
@@ -407,6 +407,7 @@ export async function getAuditBundle(auditRunId: string): Promise<AuditBundle> {
   }
   const findingRows = await db.select().from(findings).where(eq(findings.auditRunId, auditRunId));
   const accountIds = ((run.summaryJson as { accountIds?: string[] } | null)?.accountIds ?? []).filter(Boolean);
+  const recOrder = [asc(recommendations.createdAt), asc(recommendations.id)] as const;
   const recRows =
     accountIds.length > 0
       ? await db
@@ -415,8 +416,13 @@ export async function getAuditBundle(auditRunId: string): Promise<AuditBundle> {
           .where(
             and(eq(recommendations.clientId, run.clientId ?? ""), inArray(recommendations.adAccountId, accountIds)),
           )
+          .orderBy(...recOrder)
       : run.clientId
-        ? await db.select().from(recommendations).where(eq(recommendations.clientId, run.clientId))
+        ? await db
+            .select()
+            .from(recommendations)
+            .where(eq(recommendations.clientId, run.clientId))
+            .orderBy(...recOrder)
         : [];
 
   const runStarted = run.startedAt?.getTime() ?? run.createdAt.getTime();

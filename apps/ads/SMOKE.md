@@ -106,6 +106,7 @@ One-release legacy aliases (same app; remove after in-flight jobs drain):
 | Var | Role |
 |---|---|
 | `DATABASE_URL` | **Same** Brain Neon URL (same project). Schema `os` isolates tables |
+| `PRODUCTION_NEON_HOST` | Hostname only of the production Neon compute, set in the ops shell env file. Not committed. Without this or `PRODUCTION_DATABASE_URL`, seed and tests cannot tell that compute from a branch and allow an unmarked Neon host only when `ALLOW_NONLOCAL_TEST_DB=1`. Process `PGOPTIONS` / `PGPASSWORD` are not mixed into that production set. `~/.pgpass` and `PGPASSFILE` are not scanned |
 | `OS_INNGEST_APP_ID` | **Set to `cerevex-ads`.** Required in any env that also has `INNGEST_APP_ID=shopify-brain` |
 | `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | Reuse Brain Cloud keys. Do **not** create a second Inngest org |
 | `INNGEST_DEV` | Local Dev Server only (`http://127.0.0.1:43183`). Unset in Cloud |
@@ -139,7 +140,7 @@ The runner:
 3. Records each file in `os.__drizzle_migrations` (`hash` + `created_at`, same shape as Drizzle)
 4. Prints JSON: `ok`, `migrationsApplied`, `osTables[]`, `publicTableCount`, `publicUnchanged`
 
-The bundle and sibling SQL files cover every current journal tag, `0000` through `0005`. That still does not make this a production migrate.
+The bundle and sibling SQL files cover every current journal tag, `0000` through `0006`. That still does not make this a production migrate.
 
 Drizzle SQL under `apps/ads/shared/drizzle/` is schema-qualified to **`os`** (`CREATE TYPE "os".…`, `CREATE TABLE "os".…`).
 
@@ -200,16 +201,9 @@ Expected public tables (Brain migrations `0001`–`0010`):
 
 ### 2. Do not apply OS migrations from this checklist
 
-This checklist has no production migrate command. `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
+This checklist does not apply OS migrations. The only production migrate command is in the ads README (Production migrate). `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
 
-Manual SQL equivalent (if you use `psql` instead of the migrator):
-
-```sql
-CREATE SCHEMA IF NOT EXISTS os;
-SET search_path TO os, public;
--- then apply apps/ads/shared/drizzle/0000_m1_spine.sql
--- then apply apps/ads/shared/drizzle/0001_m2_connect.sql
-```
+Do not apply OS SQL by hand with `psql`. The bundled one-shot in [One-shot (local / non-production, Bun only)](#one-shot-local--non-production-bun-only) is the only alternative on this page. It is not a production migrate: it needs Bun and a local or other non-production `DATABASE_URL`, writes `os.__drizzle_migrations` for journal tags `0000` through `0005`, and still does not run the journal guards.
 
 ### 3. Verify Brain public / pgvector untouched
 

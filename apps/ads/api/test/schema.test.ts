@@ -1,8 +1,9 @@
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { ADS_DB_SCHEMA } from "@cerevex/contracts";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
+import { clients } from "@tharros/ads-shared/schema";
 
 loadEnv();
 
@@ -33,6 +34,7 @@ const REQUIRED_TABLES = [
   "lp_snapshots",
   "skill_client_configs",
   "skill_store_configs",
+  "locations",
 ];
 
 describe("M1 core schema", () => {
@@ -93,5 +95,35 @@ describe("M1 core schema", () => {
     const names = new Set((result.rows as { column_name: string }[]).map((row) => row.column_name));
     expect(names.has("last_error")).toBe(true);
     expect(names.has("frozen")).toBe(true);
+  });
+
+  it("stores a paid-by-default plan and an active-location table", async () => {
+    const db = getDb();
+    const columns = await db.execute(sql`
+      select column_name, column_default
+      from information_schema.columns
+      where table_schema = ${ADS_DB_SCHEMA}
+        and table_name = 'clients'
+        and column_name = 'plan'
+    `);
+    const plan = (columns.rows as { column_name: string; column_default: string | null }[])[0];
+    expect(plan?.column_name).toBe("plan");
+    expect(plan?.column_default ?? "").toContain("paid");
+
+    const kill = await db.execute(sql`
+      select column_default
+      from information_schema.columns
+      where table_schema = ${ADS_DB_SCHEMA}
+        and table_name = 'workspaces'
+        and column_name = 'apply_kill_switch'
+    `);
+    expect(String((kill.rows[0] as { column_default: string }).column_default)).toContain("true");
+
+    const pilots = await db
+      .select({ name: clients.name, plan: clients.plan })
+      .from(clients)
+      .where(inArray(clients.name, ["Got Ductless", "KC Prestige", "Elmar HVAC"]));
+    expect(pilots).toHaveLength(3);
+    expect(pilots.every((row) => row.plan === "paid")).toBe(true);
   });
 });
