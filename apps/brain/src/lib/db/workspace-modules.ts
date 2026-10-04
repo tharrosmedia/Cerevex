@@ -15,11 +15,12 @@ import {
   type WorkspaceModuleSettings,
 } from '@cerevex/contracts';
 import { adsApi } from '@/lib/ads-bff';
-import { adsConfirmedSafetyIds } from '../ads-confirmed-safety';
+import { stripEditableWorkspaceSettings } from '../ads-confirmed-safety';
 import { getActiveStoreId, getStore, updateStore } from './stores';
 import {
   adsWorkspaceSettingsPatch,
   capabilityPatchShowsSaved,
+  ownerCapabilitySaveConfirmed,
   type AdsWorkspaceSettingsPatch,
 } from './workspace-ads-sync';
 
@@ -52,16 +53,20 @@ async function patchAdsWorkspaceSettings(
   );
 }
 
-/** Owner bearer for safety ons. Empty means ads will 401 and the local copy stays unchanged. */
-async function ownerBearer(): Promise<string | null> {
-  const fromEnv = process.env.ADS_API_TOKEN?.trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const jar = await cookies();
-    return jar.get('tharros_session')?.value?.trim() || null;
-  } catch {
-    return null;
+/** Real ads user. The shared service token and the browser cookie are not an owner. */
+async function loginAdsOwner(): Promise<{ token: string; userId: string }> {
+  const email = process.env.ADS_OWNER_EMAIL?.trim();
+  const password = process.env.ADS_OWNER_PASSWORD?.trim();
+  if (!email || !password) throw new Error('Ads owner login is not configured.');
+  const result = await adsApi<{ token?: string; user?: { id?: string } }>(
+    '/auth/login',
+    { method: 'POST', body: JSON.stringify({ email, password }) },
+    { anonymous: true },
+  );
+  if (!result.ok || !result.data.token || !result.data.user?.id) {
+    throw new Error(result.ok ? 'Ads owner login failed.' : result.message || 'Ads owner login failed.');
   }
+  return { token: result.data.token, userId: result.data.user.id };
 }
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -76,7 +81,7 @@ async function readCookieSettings(): Promise<Record<string, unknown> | null> {
   const raw = jar.get(WORKSPACE_COOKIE)?.value;
   if (!raw) return null;
   try {
-    return asRecord(JSON.parse(raw));
+    return stripEditableWorkspaceSettings(asRecord(JSON.parse(raw)));
   } catch {
     return null;
   }
@@ -134,22 +139,36 @@ export async function saveCapabilityOverrides(overrides: CapabilityOverrides) {
     throw new Error('Unfinished M5.1 capabilities cannot be turned on.');
   }
   const safetyOn = applySafetyOnIds(overrides);
+  const workspaceId = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim() || undefined;
+  let owner: { token: string; userId: string } | null = null;
+  if (safetyOn.length > 0) {
+    if (!workspaceId) throw new Error('Ads owner workspace is not configured.');
+    owner = await loginAdsOwner();
+  }
   const patched = await patchAdsWorkspaceSettings(
-    { capabilities: overrides },
-    safetyOn.length > 0 ? { asOwner: true, ownerToken: await ownerBearer() } : undefined,
+    { capabilities: overrides, workspaceId },
+    owner ? { asOwner: true, ownerToken: owner.token } : undefined,
   );
-  if (!capabilityPatchShowsSaved(patched, overrides)) {
+  if (safetyOn.length > 0) {
+    if (
+      !owner ||
+      !workspaceId ||
+      !ownerCapabilitySaveConfirmed({
+        result: patched,
+        workspaceId,
+        ownerUserId: owner.userId,
+        capabilityIds: safetyOn,
+      })
+    ) {
+      const message = patched.ok ? 'Could not confirm that capability.' : patched.message;
+      throw new Error(message || 'Could not save that capability.');
+    }
+  } else if (!capabilityPatchShowsSaved(patched, overrides)) {
     const message = patched.ok ? 'Could not save that capability.' : patched.message;
     throw new Error(message || 'Could not save that capability.');
   }
   const current = await currentSettingsRecord();
-  let next = settingsJsonWithCapabilityOverrides(current, overrides);
-  if (patched.ok && safetyOn.length > 0) {
-    next = {
-      ...next,
-      adsConfirmedSafety: [...new Set([...adsConfirmedSafetyIds(current), ...safetyOn])],
-    };
-  }
+  const next = settingsJsonWithCapabilityOverrides(current, overrides);
   await persistSettings(next);
   if (patched.ok && patched.data.workspace?.capabilities) {
     return {
@@ -185,13 +204,14 @@ export async function getWorkspaceProductSettings(): Promise<WorkspaceProductSet
 
 async function currentSettingsRecord(): Promise<Record<string, unknown>> {
   const store = await getActiveStoreRow();
-  const fromStore = asRecord(asRecord(store?.config).workspace);
+  const fromStore = stripEditableWorkspaceSettings(asRecord(asRecord(store?.config).workspace));
   if (Object.keys(fromStore).length > 0) return fromStore;
   return (await readCookieSettings()) ?? {};
 }
 
 async function persistSettings(next: Record<string, unknown>) {
-  await writeCookieSettings(next);
+  const clean = stripEditableWorkspaceSettings(next);
+  await writeCookieSettings(clean);
   const store = await getActiveStoreRow();
   if (!store) return;
   const currentConfig = asRecord(store.config);
@@ -201,6 +221,6 @@ async function persistSettings(next: Record<string, unknown>) {
     shopify_access_token: '',
     platform: store.platform || 'shopify',
     connector_type: store.connector_type || store.platform || 'shopify',
-    config: { ...currentConfig, workspace: next },
+    config: { ...currentConfig, workspace: clean },
   });
 }

@@ -61,8 +61,8 @@ const unconfirmedGsc = {
 };
 assert.equal(gscFlagsFromStore(unconfirmedGsc)['seo.gsc.apply'], 'hidden');
 assert.equal(gscFlagsFromStore(unconfirmedGsc)['seo.gsc.recommendations'], 'on');
-assert.equal(gscApplyIsWritable(unconfirmedGsc), false);
-assert.equal(gscApplyWriteBlockedReason(unconfirmedGsc), 'capability_seo_gsc_apply');
+assert.equal(await gscApplyIsWritable(unconfirmedGsc), false);
+assert.equal(await gscApplyWriteBlockedReason(unconfirmedGsc), 'capability_seo_gsc_apply');
 
 const confirmedGsc = {
   config: {
@@ -73,9 +73,9 @@ const confirmedGsc = {
     gsc: { applyKillSwitch: false },
   },
 };
-assert.equal(gscFlagsFromStore(confirmedGsc)['seo.gsc.apply'], 'on');
-assert.equal(gscApplyIsWritable(confirmedGsc), true);
-assert.equal(gscApplyWriteBlockedReason(confirmedGsc), null);
+assert.equal(gscFlagsFromStore(confirmedGsc)['seo.gsc.apply'], 'hidden');
+assert.equal(await gscApplyIsWritable(confirmedGsc), false);
+assert.equal(await gscApplyWriteBlockedReason(confirmedGsc), 'capability_seo_gsc_apply');
 
 assert.equal(parsePositionThreshold(undefined), GSC_DEFAULT_POSITION_THRESHOLD);
 assert.equal(parsePositionThreshold('4.5'), 4.5);

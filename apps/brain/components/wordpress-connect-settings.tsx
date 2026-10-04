@@ -15,7 +15,7 @@ import {
   testWordpressConnection,
   wordpressApplyBlockedByKillSwitch,
   wordpressConfigFromStore,
-  wordpressFlagsFromStore,
+  wordpressFlagsForGate,
   wordpressWorkspaceSettingsFromStore,
 } from '@/src/lib/wordpress';
 import { StatusBadge } from '@/components/status-badge';
@@ -37,7 +37,7 @@ export async function WordpressConnectSettings() {
   } catch {
     store = null;
   }
-  const flags = wordpressFlagsFromStore(store);
+  const flags = await wordpressFlagsForGate(store);
   if (!isWordpressConnectVisible(flags)) return null;
 
   const writable = isWordpressConnectWritable(flags);

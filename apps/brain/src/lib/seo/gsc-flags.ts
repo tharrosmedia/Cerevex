@@ -1,10 +1,10 @@
 import {
   gscApplyBlockedReason,
-  isGscApplyWritable,
   isGscRecommendationsOn,
   isGscRecommendationsVisible,
   type CapabilityFlags,
 } from '@cerevex/contracts';
+import { authoritativeApplyOn } from '../ads-apply-gate';
 import { flagsWithConfirmedSafety } from '../ads-confirmed-safety';
 import { gscApplyBlockedByKillSwitch } from './gsc-threshold';
 
@@ -32,16 +32,21 @@ export function gscRecommendationsCanGenerate(store: { config?: Record<string, u
   return isGscRecommendationsOn(flags) || flags['seo.gsc.recommendations'] === 'recommend_only';
 }
 
-export function gscApplyWriteBlockedReason(store: { config?: Record<string, unknown> } | null | undefined): string | null {
+export async function gscApplyWriteBlockedReason(
+  store: { config?: Record<string, unknown> } | null | undefined,
+): Promise<string | null> {
   const flags = gscFlagsFromStore(store);
+  flags['seo.gsc.apply'] = (await authoritativeApplyOn('seo.gsc.apply')) ? 'on' : 'hidden';
   const flagBlock = gscApplyBlockedReason(flags);
   if (flagBlock) return flagBlock;
   if (gscApplyBlockedByKillSwitch(store)) return 'gsc_apply_kill_switch';
   return null;
 }
 
-export function gscApplyIsWritable(store: { config?: Record<string, unknown> } | null | undefined): boolean {
-  return isGscApplyWritable(gscFlagsFromStore(store)) && !gscApplyBlockedByKillSwitch(store);
+export async function gscApplyIsWritable(
+  store: { config?: Record<string, unknown> } | null | undefined,
+): Promise<boolean> {
+  return (await gscApplyWriteBlockedReason(store)) == null;
 }
 
 export function isGscSourcedJob(input: { source?: unknown; gscRecType?: unknown } | null | undefined): boolean {

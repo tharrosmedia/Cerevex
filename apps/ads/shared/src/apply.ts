@@ -13,7 +13,14 @@ import {
 } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { getDefaultSiteConnector } from "./connectors/site";
-import { APPLY_EXECUTE_DEADLINE_MS, PLATFORM_WRITE_TIMEOUT_MS } from "./connectors/write-timeout";
+import {
+  APPLY_CALL_MARGIN_MS,
+  APPLY_EXECUTE_DEADLINE_MS,
+  ApplyCallBudgetError,
+  PLATFORM_WRITE_TIMEOUT_MS,
+  platformCallBudgetMs,
+  runBudgetedPlatformCalls,
+} from "./connectors/write-timeout";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { parseApplyMutations } from "./audit-schemas";
@@ -29,6 +36,7 @@ import {
 } from "./mutation-families";
 import {
   adAccounts,
+  adEntities,
   applyJobs,
   auditLog,
   authorizations,
@@ -118,7 +126,7 @@ export function shouldRecordApplyAudit(result: {
 /** A live apply may hold the platform call. Past this, a later caller closes the job without calling the platform. */
 export const APPLYING_LEASE_MS = 2 * 60 * 1000;
 
-export { APPLY_EXECUTE_DEADLINE_MS, PLATFORM_WRITE_TIMEOUT_MS };
+export { APPLY_CALL_MARGIN_MS, APPLY_EXECUTE_DEADLINE_MS, PLATFORM_WRITE_TIMEOUT_MS, runBudgetedPlatformCalls };
 
 /**
  * A write is succeeded even when a later mutation failed. With no write, a failure stays failed.
@@ -142,13 +150,19 @@ export function settledApplyJob(input: {
 /** Drop driver and constraint text. A platform message that merely says "update" stays. */
 export function sanitizeStoredError(message: string | null): string | null {
   if (!message) return message;
+  const rawSql =
+    /\b(select|insert|update|delete)\b/i.test(message) &&
+    /params:/i.test(message) &&
+    /\b(set|from|into|values|where)\b/i.test(message);
   if (
     /failed query:/i.test(message) ||
     /duplicate key value/i.test(message) ||
-    /violates unique constraint/i.test(message) ||
-    /violates foreign key constraint/i.test(message) ||
-    /violates check constraint/i.test(message) ||
-    /\bSQLSTATE\b/i.test(message)
+    /violates (?:unique|foreign key|check|not-null|exclusion) constraint/i.test(message) ||
+    /(?:relation|column)\s+".*"\s+does not exist/i.test(message) ||
+    /invalid input syntax/i.test(message) ||
+    /Key \([^)]+\)=\([^)]*\) already exists/i.test(message) ||
+    rawSql ||
+    /\bSQLSTATE\b\s*[0-9A-Z]{5}\b/i.test(message)
   ) {
     return "database_error";
   }
@@ -159,6 +173,42 @@ export function isAbortedApplyError(error: unknown): boolean {
   if (!error || typeof error !== "object" || !("name" in error)) return false;
   const name = (error as { name?: unknown }).name;
   return name === "TimeoutError" || name === "AbortError";
+}
+
+/** The request left this process and the platform result was not confirmed. A skipped call is not this. */
+export function isUnconfirmedApplyError(error: unknown): boolean {
+  if (error instanceof ApplyCallBudgetError) return false;
+  if (isAbortedApplyError(error)) return true;
+  const message = error instanceof Error ? error.message : "";
+  const code =
+    error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  const text = `${message} ${code}`;
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UND_ERR_|other side closed|network error/i.test(text);
+}
+
+export function claimTokenOf(responseJson: unknown): string | null {
+  const token = (responseJson as { claimToken?: unknown } | null)?.claimToken;
+  return typeof token === "string" && token.length > 0 ? token : null;
+}
+
+/**
+ * Test fence. beforeWrite runs after the claim and before the platform call.
+ * afterWrite runs after that call returns and before settle.
+ */
+export const applyClaimHooks: {
+  beforeWrite?: (input: { jobId: string; claimToken: string | null }) => Promise<void> | void;
+  afterWrite?: (input: { jobId: string; claimToken: string | null }) => Promise<void> | void;
+} = {};
+
+/** True only while this claim is still the applying row and its lease has not expired. */
+export async function claimStillHeld(jobId: string, claimToken: string | null): Promise<boolean> {
+  const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+  if (!job || job.status !== "applying") return false;
+  if (await applyingLeaseExpired(job.responseJson)) return false;
+  const token = claimTokenOf(job.responseJson);
+  if (claimToken && token !== claimToken) return false;
+  if (!claimToken && token) return false;
+  return true;
 }
 
 /** Confirmed platform writes win. An aborted write with no confirmation stays unknown. */
@@ -304,13 +354,21 @@ async function saveJob(
     outcomes?: MutationOutcome[];
     writes?: boolean;
     blocked?: string | null;
+    /** Caller already holds the job row and checked this is still its claim or the stale close of that claim. */
+    locked?: boolean;
     clientAudit?: {
       kind: "applied" | "apply_blocked";
       recommendation: RecommendationRow | null;
     };
   } = {},
 ): Promise<ApplyRunResult> {
-  await tx
+  const token = claimTokenOf(job.responseJson);
+  const held = extras.locked
+    ? eq(applyJobs.id, job.id)
+    : token
+      ? and(eq(applyJobs.id, job.id), eq(applyJobs.status, "applying"), sql`${applyJobs.responseJson}->>'claimToken' = ${token}`)
+      : and(eq(applyJobs.id, job.id), eq(applyJobs.status, "applying"));
+  const [updated] = await tx
     .update(applyJobs)
     .set({
       status: patch.status,
@@ -319,7 +377,13 @@ async function saveJob(
       ...(patch.attempts !== undefined ? { attempts: patch.attempts } : {}),
       ...(patch.finished === false ? {} : { finishedAt: new Date() }),
     })
-    .where(eq(applyJobs.id, job.id));
+    .where(held)
+    .returning();
+  if (!updated) {
+    const current = await tx.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    if (!current) throw new Error("Apply job not found");
+    return storedRun(current, current.status === "applying" ? "in_progress" : null);
+  }
   if (extras.clientAudit?.recommendation) {
     await writeApplyClientAudit(tx, {
       kind: extras.clientAudit.kind,
@@ -333,8 +397,8 @@ async function saveJob(
       response: patch.response,
     });
   }
-  const updated = await tx.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
-  return publicResult(updated ?? job, extras);
+  const saved = await tx.query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+  return publicResult(saved ?? updated, extras);
 }
 
 async function auditRevoked(
@@ -384,12 +448,26 @@ function storedRun(job: ApplyJobRow, blocked: string | null = null): ApplyRunRes
  * An owner can requeue the failed row. This close does not.
  */
 async function closeStaleApplying(job: typeof applyJobs.$inferSelect): Promise<ApplyRunResult> {
+  const prior = (job.responseJson as { claimedAt?: string; claimToken?: string } | null) ?? null;
+  const token = claimTokenOf(prior);
   const response = {
     writes: "unknown" as const,
     outcomes: [] as MutationOutcome[],
     blocked: "stale_applying",
-    claimedAt: (job.responseJson as { claimedAt?: string } | null)?.claimedAt ?? null,
+    claimedAt: prior?.claimedAt ?? null,
+    claimToken: token,
   };
+  const held = token
+    ? and(
+        eq(applyJobs.id, job.id),
+        eq(applyJobs.status, "applying"),
+        sql`${applyJobs.responseJson}->>'claimToken' = ${token}`,
+      )
+    : and(
+        eq(applyJobs.id, job.id),
+        eq(applyJobs.status, "applying"),
+        sql`coalesce(${applyJobs.responseJson}->>'claimToken', '') = ''`,
+      );
   const [closed] = await getDb()
     .update(applyJobs)
     .set({
@@ -398,7 +476,7 @@ async function closeStaleApplying(job: typeof applyJobs.$inferSelect): Promise<A
       responseJson: response,
       finishedAt: new Date(),
     })
-    .where(and(eq(applyJobs.id, job.id), eq(applyJobs.status, "applying")))
+    .where(held)
     .returning();
   if (!closed) {
     const current = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
@@ -444,26 +522,114 @@ async function closeStaleApplying(job: typeof applyJobs.$inferSelect): Promise<A
   return { ...storedRun(closed, "stale_applying"), audited: true };
 }
 
-/** Close a claim that is still applying after the worker has already waited out the lease. */
-export async function closeApplyingJob(applyJobId: string): Promise<ApplyRunResult> {
+/**
+ * Close a claim that is still applying after the worker has already waited out the lease.
+ * The lease must be expired on the database clock, and expectedToken must be the claim
+ * the caller observed. A live or replacement claim is left applying.
+ */
+export async function closeApplyingJob(
+  applyJobId: string,
+  expectedToken?: string | null,
+): Promise<ApplyRunResult> {
   const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
   if (!job) throw new Error("Apply job not found");
-  if (job.status === "applying") return closeStaleApplying(job);
-  return storedRun(job);
+  if (job.status !== "applying") return storedRun(job);
+  const token = claimTokenOf(job.responseJson);
+  if (token) {
+    if (!expectedToken || expectedToken !== token) return storedRun(job, "in_progress");
+  } else if (expectedToken) {
+    return storedRun(job, "in_progress");
+  }
+  if (!(await applyingLeaseExpired(job.responseJson))) return storedRun(job, "in_progress");
+  return closeStaleApplying(job);
 }
 
-/** Put a failed job back on the queue. Does not call the platform. Succeeded and applying rows stay put. */
+/**
+ * A confirmed or unknown write cannot be queued again until a read shows it did not land.
+ * Relative budget and bid changes cannot be proven, so they stay closed.
+ * The failed response is kept. A copy is stored on the request so the next claim does not erase it.
+ */
 export async function requeueFailedApplyJob(
   applyJobId: string,
-): Promise<{ ok: true; applyJob: ApplyJobPublic } | { ok: false; applyJob: ApplyJobPublic | null }> {
+  options: { reconciled?: boolean } = {},
+): Promise<
+  | { ok: true; applyJob: ApplyJobPublic }
+  | { ok: false; reason: "not_failed" | "unreconciled_write" | "write_landed"; applyJob: ApplyJobPublic | null }
+> {
+  const current = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
+  if (!current || current.status !== "failed") {
+    return { ok: false, reason: "not_failed", applyJob: current ? toApplyJobPublic(current) : null };
+  }
+  const writes = (current.responseJson as { writes?: unknown } | null)?.writes;
+  if (writes === true || writes === "unknown") {
+    if (!options.reconciled) {
+      return { ok: false, reason: "unreconciled_write", applyJob: toApplyJobPublic(current) };
+    }
+    const landed = await applyWriteLanded(current);
+    if (landed !== false) {
+      return {
+        ok: false,
+        reason: landed === true ? "write_landed" : "unreconciled_write",
+        applyJob: toApplyJobPublic(current),
+      };
+    }
+  }
+  const request = {
+    ...((current.requestJson as Record<string, unknown> | null) ?? {}),
+    requeueEvidence: current.responseJson ?? null,
+  };
   const [updated] = await getDb()
     .update(applyJobs)
-    .set({ status: "queued", error: null, finishedAt: null, responseJson: null })
+    .set({ status: "queued", error: null, finishedAt: null, requestJson: request })
     .where(and(eq(applyJobs.id, applyJobId), eq(applyJobs.status, "failed")))
     .returning();
   if (updated) return { ok: true, applyJob: toApplyJobPublic(updated) };
-  const current = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
-  return { ok: false, applyJob: current ? toApplyJobPublic(current) : null };
+  const again = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
+  return { ok: false, reason: "not_failed", applyJob: again ? toApplyJobPublic(again) : null };
+}
+
+/** Local entity state is the mock platform. A relative spend change cannot be proven either way. */
+async function applyWriteLanded(job: typeof applyJobs.$inferSelect): Promise<boolean | null> {
+  try {
+    const authorization = await getDb().query.authorizations.findFirst({
+      where: eq(authorizations.id, job.authorizationId),
+    });
+    const recommendation = authorization
+      ? await getDb().query.recommendations.findFirst({
+          where: eq(recommendations.id, authorization.recommendationId),
+        })
+      : null;
+    if (!recommendation) return null;
+    const mutations = parseApplyMutations(recommendation.proposedMutationsJson);
+    if (mutations.some((mutation) => mutation.action === "update_budget" || mutation.action === "update_bid")) {
+      return null;
+    }
+    for (const mutation of mutations) {
+      if (mutation.action === "pause") {
+        const entity = await getDb().query.adEntities.findFirst({
+          where: and(
+            eq(adEntities.adAccountId, recommendation.adAccountId),
+            eq(adEntities.externalId, mutation.target.externalId),
+          ),
+        });
+        if (!entity) return null;
+        return entity.status.toLowerCase() === "paused";
+      }
+      if (mutation.action === "create_ad") {
+        const rows = await getDb()
+          .select({ rawJson: adEntities.rawJson })
+          .from(adEntities)
+          .where(and(eq(adEntities.adAccountId, recommendation.adAccountId), eq(adEntities.entityType, "ad")));
+        return rows.some((row) => {
+          const raw = (row.rawJson as { lastMutation?: unknown; source?: unknown } | null) ?? null;
+          return raw?.lastMutation === "create_ad" || raw?.source === "m51-create-mock";
+        });
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -484,7 +650,7 @@ async function claimApplyJob(
         status: "applying",
         attempts: sql`${applyJobs.attempts} + 1`,
         error: null,
-        responseJson: sql`jsonb_build_object('claimedAt', now())`,
+        responseJson: sql`jsonb_build_object('claimedAt', now(), 'claimToken', gen_random_uuid()::text)`,
       })
       .where(and(eq(applyJobs.id, applyJobId), inArray(applyJobs.status, ["queued", "pending"])))
       .returning();
@@ -735,26 +901,33 @@ async function stopBeforePlatform(
   return null;
 }
 
+function skippedDeadline(mutation: { action: MutationOutcome["action"]; platform: MutationOutcome["platform"]; target: MutationOutcome["target"] }): MutationOutcome {
+  return {
+    action: mutation.action,
+    platform: mutation.platform,
+    target: mutation.target,
+    status: "skipped",
+    mode: "mock",
+    writes: false,
+    reason: "apply_deadline",
+  };
+}
+
 async function executePrepared(prepared: PreparedApply): Promise<{
   outcomes: MutationOutcome[];
   failed: string | null;
   response: Record<string, unknown>;
+  claimToken: string | null;
 }> {
   const mutations = parseApplyMutations(prepared.recommendation.proposedMutationsJson);
   const outcomes: MutationOutcome[] = [];
   let failed: string | null = null;
   const startedAt = Date.now();
+  const deadlineAt = startedAt + APPLY_EXECUTE_DEADLINE_MS;
+  const claimToken = claimTokenOf(prepared.job.responseJson);
   for (const mutation of mutations) {
-    if (Date.now() - startedAt >= APPLY_EXECUTE_DEADLINE_MS) {
-      outcomes.push({
-        action: mutation.action,
-        platform: mutation.platform,
-        target: mutation.target,
-        status: "failed",
-        mode: "live",
-        writes: "unknown",
-        reason: "apply_deadline",
-      });
+    if (platformCallBudgetMs(deadlineAt) <= 0) {
+      outcomes.push(skippedDeadline(mutation));
       failed = "apply_deadline";
       break;
     }
@@ -771,14 +944,39 @@ async function executePrepared(prepared: PreparedApply): Promise<{
       continue;
     }
     try {
+      if (applyClaimHooks.beforeWrite) {
+        await applyClaimHooks.beforeWrite({ jobId: prepared.job.id, claimToken });
+      }
+      if (!(await claimStillHeld(prepared.job.id, claimToken))) {
+        outcomes.push({
+          action: mutation.action,
+          platform: mutation.platform,
+          target: mutation.target,
+          status: "skipped",
+          mode: "mock",
+          writes: false,
+          reason: "claim_lost",
+        });
+        failed = "claim_lost";
+        break;
+      }
+      if (platformCallBudgetMs(deadlineAt) <= 0) {
+        outcomes.push(skippedDeadline(mutation));
+        failed = "apply_deadline";
+        break;
+      }
       const outcome = await executeMutation({
         adAccountId: prepared.account.id,
         platform: prepared.account.platform,
         accountExternalId: prepared.account.externalId,
         mutation,
         capabilities: prepared.capabilities,
+        deadlineAt,
       });
       outcomes.push(outcome);
+      if (applyClaimHooks.afterWrite) {
+        await applyClaimHooks.afterWrite({ jobId: prepared.job.id, claimToken });
+      }
       if (outcome.status === "failed") {
         const reason = sanitizeStoredError(outcome.reason ?? `${outcome.action} failed`);
         outcome.reason = reason ?? undefined;
@@ -786,8 +984,13 @@ async function executePrepared(prepared: PreparedApply): Promise<{
         break;
       }
     } catch (error) {
-      const aborted = isAbortedApplyError(error);
-      const message = aborted
+      if (error instanceof ApplyCallBudgetError) {
+        outcomes.push(skippedDeadline(mutation));
+        failed = "apply_deadline";
+        break;
+      }
+      const unconfirmed = isUnconfirmedApplyError(error);
+      const message = unconfirmed
         ? "apply_deadline"
         : (sanitizeStoredError(error instanceof Error ? error.message : "Apply mutation failed") ?? "Apply mutation failed");
       outcomes.push({
@@ -796,7 +999,7 @@ async function executePrepared(prepared: PreparedApply): Promise<{
         target: mutation.target,
         status: "failed",
         mode: "live",
-        writes: aborted ? "unknown" : false,
+        writes: unconfirmed ? "unknown" : false,
         reason: message,
       });
       failed = message;
@@ -816,17 +1019,40 @@ async function executePrepared(prepared: PreparedApply): Promise<{
         .map((row) => row.action),
       jobType: prepared.jobType,
     },
+    claimToken,
   };
 }
 
 async function settleApplyJob(
   jobId: string,
-  executed: { outcomes: MutationOutcome[]; failed: string | null; response: Record<string, unknown> },
+  executed: {
+    outcomes: MutationOutcome[];
+    failed: string | null;
+    response: Record<string, unknown>;
+    claimToken: string | null;
+  },
 ): Promise<ApplyRunResult> {
   const settled = await getDb().transaction(async (tx) => {
     const handle = tx as unknown as ApplyHandle;
     const [job] = await tx.select().from(applyJobs).where(eq(applyJobs.id, jobId)).for("update");
     if (!job) throw new Error("Apply job not found");
+    const token = claimTokenOf(job.responseJson);
+    const sameClaim = executed.claimToken == null ? token == null : token === executed.claimToken;
+    const supersededClose =
+      job.status === "failed" &&
+      (job.error === "stale_applying" ||
+        (job.responseJson as { blocked?: unknown } | null)?.blocked === "stale_applying");
+    const claimLost = !(job.status === "applying" && sameClaim) && !supersededClose;
+    if (claimLost) {
+      return {
+        result: {
+          ...storedRun(job, job.status === "applying" ? "in_progress" : null),
+          audited: true,
+          replayed: true,
+        },
+        clientAudit: null,
+      };
+    }
     const [authorization] = await tx
       .select()
       .from(authorizations)
@@ -895,6 +1121,7 @@ async function settleApplyJob(
           outcomes: executed.outcomes,
           writes,
           blocked: writes ? "revoked_after_write" : "authorization_revoked",
+          locked: true,
         },
       );
       return {
@@ -941,7 +1168,7 @@ async function settleApplyJob(
         response: { ...executed.response, writes: recorded, outcomes: executed.outcomes },
         finished: true,
       },
-      { outcomes: executed.outcomes, writes, blocked: null },
+      { outcomes: executed.outcomes, writes, blocked: null, locked: true },
     );
     return {
       result: supersededStale ? { ...saved, audited: true } : saved,

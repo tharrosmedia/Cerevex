@@ -55,8 +55,8 @@ const confirmedApply = wordpressFlagsFromStore({
     },
   },
 });
-assert.equal(confirmedApply['site.wordpress.apply'], 'on');
-assert.equal(wordpressApplyBlockedReason(confirmedApply), null);
+assert.equal(confirmedApply['site.wordpress.apply'], 'hidden');
+assert.equal(wordpressApplyBlockedReason(confirmedApply), 'capability_site_wordpress_apply');
 
 assert.equal(wordpressApplyBlockedByKillSwitch({}), true);
 assert.equal(wordpressApplyBlockedByKillSwitch({ config: {} }), true);

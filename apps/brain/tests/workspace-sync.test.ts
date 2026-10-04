@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { adsCallerHeaders, adsWorkspaceSettingsPatch, capabilityPatchShowsSaved } from '../src/lib/db/workspace-ads-sync';
+import {
+  adsCallerHeaders,
+  adsWorkspaceSettingsPatch,
+  capabilityPatchShowsSaved,
+  ownerCapabilitySaveConfirmed,
+} from '../src/lib/db/workspace-ads-sync';
+import { stripEditableApplyGates } from '../src/lib/ads-confirmed-safety';
 
 assert.deepEqual(adsWorkspaceSettingsPatch({ businessType: 'agency' }), { businessType: 'agency' });
 assert.deepEqual(adsWorkspaceSettingsPatch({ modules: { clients: true, sales: false } }), {
@@ -29,6 +35,68 @@ assert.equal(capabilityPatchShowsSaved({ ok: true, status: 200 }, safetyOn), tru
 assert.equal(
   capabilityPatchShowsSaved({ ok: false, status: 503, reason: 'error' }, { apply: 'recommend_only' }),
   true,
+);
+assert.equal(capabilityPatchShowsSaved({ ok: false, status: 401, reason: 'unauthorized' }, { 'site.wordpress.apply': 'hidden' }), true);
+assert.equal(capabilityPatchShowsSaved({ ok: false, status: 403, reason: 'unauthorized' }, { 'seo.gsc.apply': 'recommend_only' }), true);
+assert.equal(capabilityPatchShowsSaved({ ok: false, status: 401, reason: 'unauthorized' }, { apply: 'hidden' }), true);
+
+const workspaceId = '00000000-0000-4000-8000-000000000001';
+const ownerUserId = '00000000-0000-4000-8000-000000000002';
+const confirmed = {
+  ok: true,
+  data: {
+    workspace: { id: workspaceId, capabilities: { 'site.wordpress.apply': 'on', 'seo.gsc.apply': 'on' } },
+    ownerUserId,
+  },
+};
+assert.equal(
+  ownerCapabilitySaveConfirmed({ result: confirmed, workspaceId, ownerUserId, capabilityIds: ['site.wordpress.apply'] }),
+  true,
+);
+assert.equal(
+  ownerCapabilitySaveConfirmed({
+    result: confirmed,
+    workspaceId: '00000000-0000-4000-8000-000000000099',
+    ownerUserId,
+    capabilityIds: ['site.wordpress.apply'],
+  }),
+  false,
+);
+assert.equal(
+  ownerCapabilitySaveConfirmed({
+    result: { ok: true, data: '<html>ok</html>' },
+    workspaceId,
+    ownerUserId,
+    capabilityIds: ['site.wordpress.apply'],
+  }),
+  false,
+);
+assert.equal(
+  ownerCapabilitySaveConfirmed({
+    result: { ok: true, data: { workspace: { id: workspaceId, capabilities: { 'site.wordpress.apply': 'hidden' } }, ownerUserId } },
+    workspaceId,
+    ownerUserId,
+    capabilityIds: ['site.wordpress.apply'],
+  }),
+  false,
+);
+assert.equal(
+  ownerCapabilitySaveConfirmed({
+    result: { ok: true, data: { workspace: { id: workspaceId, capabilities: { 'site.wordpress.apply': 'on' } }, ownerUserId: null } },
+    workspaceId,
+    ownerUserId,
+    capabilityIds: ['site.wordpress.apply'],
+  }),
+  false,
+);
+assert.deepEqual(
+  stripEditableApplyGates({
+    workspace: {
+      capabilities: { 'site.wordpress.apply': 'on', 'site.wordpress.connect': 'on', 'seo.gsc.apply': 'on' },
+      adsConfirmedSafety: ['site.wordpress.apply'],
+    },
+  }),
+  { workspace: { capabilities: { 'site.wordpress.connect': 'on' } } },
 );
 
 const ownerHeaders = adsCallerHeaders({ safetyOn: true, internalKey: 'svc', ownerToken: 'owner-jwt' });

@@ -95,7 +95,14 @@ export function adsApiConfigured(): boolean {
 export type AdsCallOptions = {
   asOwner?: boolean;
   ownerToken?: string | null;
+  anonymous?: boolean;
 };
+
+const ADS_API_TIMEOUT_MS = 8_000;
+
+function jsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export async function adsApi<T>(
   path: string,
@@ -117,18 +124,20 @@ export async function adsApi<T>(
     headers.set("content-type", "application/json");
   }
   // Service secrets only — not product flags. APP_PASSWORD is Brain console session.
-  // Safety ons drop the service key and send the owner bearer alone.
-  const caller = adsCallerHeaders({
-    safetyOn: options.asOwner === true,
-    internalKey: process.env.ADS_INTERNAL_KEY,
-    ownerToken: options.asOwner ? (options.ownerToken ?? process.env.ADS_API_TOKEN) : process.env.ADS_API_TOKEN,
-  });
+  // Safety ons send the logged-in owner bearer alone. The shared ADS_API_TOKEN is not that owner.
   headers.delete("x-cerevex-internal-key");
   headers.delete("authorization");
-  const internalKey = caller.get("x-cerevex-internal-key");
-  const authorization = caller.get("authorization");
-  if (internalKey) headers.set("x-cerevex-internal-key", internalKey);
-  if (authorization) headers.set("authorization", authorization);
+  if (!options.anonymous) {
+    const caller = adsCallerHeaders({
+      safetyOn: options.asOwner === true,
+      internalKey: process.env.ADS_INTERNAL_KEY,
+      ownerToken: options.asOwner ? options.ownerToken : process.env.ADS_API_TOKEN,
+    });
+    const internalKey = caller.get("x-cerevex-internal-key");
+    const authorization = caller.get("authorization");
+    if (internalKey) headers.set("x-cerevex-internal-key", internalKey);
+    if (authorization) headers.set("authorization", authorization);
+  }
 
   const suffix = path.startsWith("/") ? path : `/${path}`;
   try {
@@ -136,13 +145,23 @@ export async function adsApi<T>(
       ...init,
       headers,
       cache: "no-store",
+      signal: AbortSignal.timeout(ADS_API_TIMEOUT_MS),
     });
-    const body = (await res.json().catch(() => ({}))) as { error?: string } & T;
+    const text = await res.text();
+    let parsed: unknown = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+    }
+    const body = jsonObject(parsed) ? (parsed as { error?: string } & T) : null;
     if (res.status === 401 || res.status === 403) {
       return {
         ok: false,
         reason: "unauthorized",
-        message: body.error ?? "Ads module is not authorized.",
+        message: body?.error ?? "Ads module is not authorized.",
         status: res.status,
       };
     }
@@ -150,7 +169,7 @@ export async function adsApi<T>(
       return {
         ok: false,
         reason: "not_found",
-        message: body.error ?? "Not found.",
+        message: body?.error ?? "Not found.",
         status: 404,
       };
     }
@@ -158,7 +177,15 @@ export async function adsApi<T>(
       return {
         ok: false,
         reason: "error",
-        message: body.error ?? `Ads request failed (${res.status})`,
+        message: body?.error ?? `Ads request failed (${res.status})`,
+        status: res.status,
+      };
+    }
+    if (!body) {
+      return {
+        ok: false,
+        reason: "error",
+        message: "Ads response was not JSON.",
         status: res.status,
       };
     }

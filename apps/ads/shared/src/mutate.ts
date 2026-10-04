@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { CapabilityFlags } from "@cerevex/contracts";
 import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
+import { ApplyCallBudgetError, platformCallBudgetMs } from "./connectors/write-timeout";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { loadTokens } from "./credentials";
 import { getDb } from "./db";
@@ -233,16 +234,23 @@ export async function applyViaConnector(input: {
   tokens: StoredOAuthTokens;
   mutation: ApplyMutation;
   accountExternalId: string;
+  deadlineAt?: number;
 }): Promise<MutationOutcome> {
   const connector = getAdPlatformConnector(input.platform);
   const live = await connector
-    .readLiveEntityState({ tokens: input.tokens, mutation: input.mutation })
-    .catch(() => null);
+    .readLiveEntityState({ tokens: input.tokens, mutation: input.mutation, deadlineAt: input.deadlineAt })
+    .catch((error: unknown) => {
+      if (error instanceof ApplyCallBudgetError) throw error;
+      if (input.deadlineAt != null && platformCallBudgetMs(input.deadlineAt) <= 0) throw new ApplyCallBudgetError();
+      return null;
+    });
+  if (input.deadlineAt != null && platformCallBudgetMs(input.deadlineAt) <= 0) throw new ApplyCallBudgetError();
   return connector.applyLive({
     tokens: input.tokens,
     mutation: input.mutation,
     live,
     accountExternalId: input.accountExternalId,
+    deadlineAt: input.deadlineAt,
   });
 }
 
@@ -391,6 +399,7 @@ export async function executeMutation(input: {
   accountExternalId: string;
   mutation: ApplyMutation;
   capabilities?: CapabilityFlags;
+  deadlineAt?: number;
 }): Promise<MutationOutcome> {
   const flags = input.capabilities ?? resolveWorkspaceCapabilities({});
   const skipped = classifyMutation(input.mutation, flags);
@@ -422,5 +431,6 @@ export async function executeMutation(input: {
     tokens,
     mutation: input.mutation,
     accountExternalId: input.accountExternalId,
+    deadlineAt: input.deadlineAt,
   });
 }

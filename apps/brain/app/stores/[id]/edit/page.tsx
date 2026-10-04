@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/page-header';
 import { SubmitButton } from '@/components/submit-button';
 import { platformLabel } from '@/lib/labels';
 import { normalizeShopDomain, verifyShopifyConnection } from '@/src/lib/shopify/verify';
+import { stripEditableApplyGates } from '@/src/lib/ads-confirmed-safety';
 import { isWordpressStore } from '@/src/lib/wordpress';
 
 function editUrl(id: string, error: string) {
@@ -42,7 +43,7 @@ async function update(formData: FormData) {
     try {
       const parsed = JSON.parse(configStr);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
-      config = parsed;
+      config = stripEditableApplyGates(parsed as Record<string, unknown>);
     } catch {
       redirect(editUrl(id, 'Not saved. Advanced settings must be valid JSON (an object).'));
     }

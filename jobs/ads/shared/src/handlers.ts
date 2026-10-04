@@ -73,6 +73,8 @@ export async function handleApplyRequested({ event, step }: any) {
   });
 
   if (result.blocked === "in_progress") {
+    const claimToken =
+      typeof result.applyJob.response?.claimToken === "string" ? result.applyJob.response.claimToken : null;
     const waitMs = await step.run("measure-applying-lease", async () =>
       applyingLeaseRemainingMs(result.applyJob.response),
     );
@@ -81,7 +83,7 @@ export async function handleApplyRequested({ event, step }: any) {
     }
     result = await step.run("recheck-applying-lease", async () => runApplyJob(applyJobId));
     if (result.blocked === "in_progress") {
-      result = await step.run("close-stuck-applying", async () => closeApplyingJob(applyJobId));
+      result = await step.run("close-stuck-applying", async () => closeApplyingJob(applyJobId, claimToken));
     }
   }
 

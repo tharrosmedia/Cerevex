@@ -13,7 +13,7 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
-import { PLATFORM_WRITE_TIMEOUT_MS } from "./write-timeout";
+import { requirePlatformSignal } from "./write-timeout";
 
 const GOOGLE_ADS = "https://googleads.googleapis.com/v17";
 
@@ -416,6 +416,8 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
   async readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
+    deadlineAt?: number;
+    signal?: AbortSignal;
   }): Promise<LiveEntityState | null> {
     if (input.tokens.mock) return null;
     const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
@@ -435,7 +437,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       method: "POST",
       headers: googleAdsHeaders(tokens, developerToken),
       body: JSON.stringify({ query }),
-      signal: AbortSignal.timeout(PLATFORM_WRITE_TIMEOUT_MS),
+      signal: input.signal ?? requirePlatformSignal(input.deadlineAt),
     });
     if (!res.ok) return null;
     const body = (await res.json()) as {
@@ -577,7 +579,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       method: "POST",
       headers: googleAdsHeaders(tokens, developerToken),
       body: JSON.stringify({ mutateOperations: operations }),
-      signal: AbortSignal.timeout(PLATFORM_WRITE_TIMEOUT_MS),
+      signal: input.signal ?? requirePlatformSignal(input.deadlineAt),
     });
     if (!res.ok) {
       const text = await res.text();

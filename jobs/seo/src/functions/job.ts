@@ -505,8 +505,8 @@ export const seoJob = inngest.createFunction(
 
       if (isGscSourcedJob(data)) {
         const storeForGate = await getStore(storeId);
-        const blocked = gscApplyWriteBlockedReason(storeForGate);
-        if (blocked || !gscApplyIsWritable(storeForGate)) {
+        const blocked = await gscApplyWriteBlockedReason(storeForGate);
+        if (blocked || !(await gscApplyIsWritable(storeForGate))) {
           await step.run('gsc-recommend-only', async () => {
             await updateJobStatus(job.id, 'approved');
             await logEvent(storeId, 'system', 'gsc.apply.blocked', { reason: blocked || 'flag_off', writes: false }, job.id);

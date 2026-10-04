@@ -151,6 +151,9 @@ export type ConnectorApplyInput = {
   mutation: ApplyMutation;
   live: LiveEntityState | null;
   accountExternalId: string;
+  /** Shared job deadline. Each fetch uses the time still left, not a fresh 30s. */
+  deadlineAt?: number;
+  signal?: AbortSignal;
 };
 
 /**
@@ -182,6 +185,8 @@ export interface AdPlatformConnector extends Connector {
   readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
+    deadlineAt?: number;
+    signal?: AbortSignal;
   }): Promise<LiveEntityState | null>;
   applyLive(input: ConnectorApplyInput): Promise<MutationOutcome>;
 }
