@@ -89,12 +89,64 @@ export type ApplyRunResult = {
   outcomes: MutationOutcome[];
   writes: boolean;
   blocked: string | null;
+  /** Settle already wrote the audit row. Callers must not write a second one. */
+  audited?: boolean;
 };
 
 /** A platform write is history. Revocation does not turn it into a failed non-write. */
 export function applyResultAuditAction(result: { writes: boolean; applyJob: { status: string } }): "apply_success" | "apply_fail" {
   if (result.writes || result.applyJob.status === "succeeded") return "apply_success";
   return "apply_fail";
+}
+
+/** Callers skip their own audit when settle already wrote one, or the call did not finish the job. */
+export function shouldRecordApplyAudit(result: { blocked: string | null; audited?: boolean }): boolean {
+  if (result.audited) return false;
+  return result.blocked !== "in_progress" && result.blocked !== "stale_applying";
+}
+
+/** A live apply may hold the platform call. Past this, a later caller closes the job without calling the platform. */
+export const APPLYING_LEASE_MS = 2 * 60 * 1000;
+
+/**
+ * A write is succeeded even when a later mutation failed. With no write, a failure stays failed.
+ * Revocation uses the same split: a landed write stays succeeded.
+ */
+export function settledApplyJob(input: {
+  writes: boolean;
+  failed: string | null;
+  revoked: boolean;
+}): { status: "succeeded" | "failed"; error: string | null } {
+  if (input.revoked) {
+    return {
+      status: input.writes ? "succeeded" : "failed",
+      error: input.writes ? "revoked_after_write" : "authorization_revoked",
+    };
+  }
+  if (input.writes || !input.failed) return { status: "succeeded", error: sanitizeStoredError(input.failed) };
+  return { status: "failed", error: sanitizeStoredError(input.failed) };
+}
+
+/** Drop raw SQL and driver params. Short domain errors stay as they are. */
+export function sanitizeStoredError(message: string | null): string | null {
+  if (!message) return message;
+  if (/failed query:/i.test(message) || (/\b(select|insert|update|delete)\b/i.test(message) && /\bparams?\s*:/i.test(message))) {
+    return "database_error";
+  }
+  return message.length > 500 ? message.slice(0, 500) : message;
+}
+
+function claimedAtMillis(responseJson: unknown): number | null {
+  const response = responseJson as { claimedAt?: unknown } | null;
+  if (!response || typeof response.claimedAt !== "string") return null;
+  const parsed = Date.parse(response.claimedAt);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function applyingLeaseExpired(responseJson: unknown, now = Date.now()): boolean {
+  const claimedAt = claimedAtMillis(responseJson);
+  if (claimedAt === null) return true;
+  return now - claimedAt >= APPLYING_LEASE_MS;
 }
 
 function authorizationStillApplies(
@@ -200,9 +252,52 @@ function storedRun(job: ApplyJobRow, blocked: string | null = null): ApplyRunRes
 }
 
 /**
+ * Close a crashed apply without calling the platform. The operator re-queues after checking the ad account.
+ * A missing claim time is stale: this build always records claimedAt in the same update that sets applying.
+ */
+async function closeStaleApplying(job: typeof applyJobs.$inferSelect): Promise<ApplyRunResult> {
+  const response = {
+    writes: false,
+    outcomes: [] as MutationOutcome[],
+    blocked: "stale_applying",
+    claimedAt: (job.responseJson as { claimedAt?: string } | null)?.claimedAt ?? null,
+  };
+  const [closed] = await getDb()
+    .update(applyJobs)
+    .set({
+      status: "failed",
+      error: "stale_applying",
+      responseJson: response,
+      finishedAt: new Date(),
+    })
+    .where(and(eq(applyJobs.id, job.id), eq(applyJobs.status, "applying")))
+    .returning();
+  if (!closed) {
+    const current = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+    if (!current) throw new Error("Apply job not found");
+    return storedRun(current, current.status === "applying" ? "in_progress" : null);
+  }
+  await getDb().insert(auditLog).values({
+    workspaceId: closed.workspaceId,
+    actorType: "worker",
+    actorId: null,
+    action: "apply_stale",
+    entityType: "apply_job",
+    entityId: closed.id,
+    payloadJson: {
+      authorizationId: closed.authorizationId,
+      writes: false,
+      error: "stale_applying",
+    },
+  });
+  return { ...storedRun(closed, "stale_applying"), audited: true };
+}
+
+/**
  * One conditional update owns the job. Only queued or pending can become applying.
  * A second caller, including inline apply, sees applying and does not call the platform.
- * The checks below commit before any platform I/O. An applying job is never reclaimed.
+ * A claim older than the lease is marked failed and is not sent to the platform again.
+ * The checks below commit before any platform I/O.
  */
 async function claimApplyJob(
   applyJobId: string,
@@ -213,6 +308,7 @@ async function claimApplyJob(
       status: "applying",
       attempts: sql`${applyJobs.attempts} + 1`,
       error: null,
+      responseJson: { claimedAt: new Date().toISOString() },
     })
     .where(and(eq(applyJobs.id, applyJobId), inArray(applyJobs.status, ["queued", "pending"])))
     .returning();
@@ -221,6 +317,9 @@ async function claimApplyJob(
     const existing = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
     if (!existing) throw new Error("Apply job not found");
     if (existing.status === "applying") {
+      if (applyingLeaseExpired(existing.responseJson)) {
+        return { kind: "done" as const, result: await closeStaleApplying(existing) };
+      }
       return { kind: "done" as const, result: storedRun(existing, "in_progress") };
     }
     return { kind: "done" as const, result: storedRun(existing) };
@@ -468,11 +567,13 @@ async function executePrepared(prepared: PreparedApply): Promise<{
       });
       outcomes.push(outcome);
       if (outcome.status === "failed") {
-        failed = outcome.reason ?? `${outcome.action} failed`;
+        const reason = sanitizeStoredError(outcome.reason ?? `${outcome.action} failed`);
+        outcome.reason = reason ?? undefined;
+        failed = reason;
         break;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Apply mutation failed";
+      const message = sanitizeStoredError(error instanceof Error ? error.message : "Apply mutation failed") ?? "Apply mutation failed";
       outcomes.push({
         action: mutation.action,
         platform: mutation.platform,
@@ -536,6 +637,7 @@ async function settleApplyJob(
       : null;
     if (!authorizationStillApplies(job, freshAuth, recommendation)) {
       const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
+      const settled = settledApplyJob({ writes, failed: executed.failed, revoked: true });
       const response = {
         ...executed.response,
         writes,
@@ -560,12 +662,12 @@ async function settleApplyJob(
           revoked_after_write: writes,
         },
       });
-      return saveJob(
+      const saved = await saveJob(
         handle,
         job,
         {
-          status: writes ? "succeeded" : "failed",
-          error: writes ? "revoked_after_write" : "authorization_revoked",
+          status: settled.status,
+          error: settled.error,
           response,
           finished: true,
         },
@@ -575,15 +677,17 @@ async function settleApplyJob(
           blocked: writes ? "revoked_after_write" : "authorization_revoked",
         },
       );
+      return { ...saved, audited: true };
     }
     const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
+    const settled = settledApplyJob({ writes, failed: executed.failed, revoked: false });
     return saveJob(
       handle,
       job,
       {
-        status: executed.failed ? "failed" : "succeeded",
-        error: executed.failed,
-        response: executed.response,
+        status: settled.status,
+        error: settled.error,
+        response: { ...executed.response, writes, outcomes: executed.outcomes },
         finished: true,
       },
       { outcomes: executed.outcomes, writes, blocked: null },

@@ -20,7 +20,7 @@ import {
 } from "@tharros/ads-shared";
 import { capabilityPublicMeta, loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
 import { filterOfflineRecommendations } from "./offline";
-import { applyResultAuditAction, latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shared/apply";
+import { applyResultAuditAction, latestApplyJob, runApplyJob, shouldRecordApplyAudit, toApplyJobPublic } from "@tharros/ads-shared/apply";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
@@ -45,7 +45,7 @@ import { getDb } from "@tharros/ads-shared/db";
 import { sendApplyRequested, sendAuditRequested } from "@tharros/ads-shared/inngest";
 import { adAccounts, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
-import { actorRef, auditActor, isServicePrincipal } from "./auth";
+import { actorRef, auditActor, assertApplySafetyOwner, isServicePrincipal } from "./auth";
 import { requireMutableClient, requireVisibleAccount } from "./connect";
 import { childLogger } from "./logger";
 import { getVisibleClient, listVisibleClients } from "./tenancy";
@@ -393,21 +393,23 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     if (parsed.data.inline) {
       const ran = await runApplyJob(applyJob.id);
-      await writeAuditEvent({
-        workspaceId: client.workspaceId,
-        actorType: "worker",
-        actorId: auditActor(auth).actorId,
-        action: applyResultAuditAction(ran),
-        entityType: "apply_job",
-        entityId: applyJob.id,
-        payload: {
-          recommendationId: row.id,
-          writes: ran.writes,
-          outcomes: ran.outcomes,
-          error: ran.applyJob.error,
-          revokedDuringApply: ran.blocked === "revoked_after_write",
-        },
-      });
+      if (shouldRecordApplyAudit(ran)) {
+        await writeAuditEvent({
+          workspaceId: client.workspaceId,
+          actorType: "worker",
+          actorId: auditActor(auth).actorId,
+          action: applyResultAuditAction(ran),
+          entityType: "apply_job",
+          entityId: applyJob.id,
+          payload: {
+            recommendationId: row.id,
+            writes: ran.writes,
+            outcomes: ran.outcomes,
+            error: ran.applyJob.error,
+            revokedDuringApply: ran.blocked === "revoked_after_write",
+          },
+        });
+      }
       childLogger(c.get("requestId")).info({
         msg: "recommendations.approved_inline",
         recommendationId: row.id,
@@ -505,27 +507,41 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       action: "apply_attempt",
       entityType: "apply_job",
       entityId: applyJob.id,
-      payload: { recommendationId: row.id, retry: true },
+      payload: { recommendationId: row.id, retry: false },
     });
 
     if (parsed.success && parsed.data.inline) {
       const ran = await runApplyJob(applyJob.id);
-      await writeAuditEvent({
-        workspaceId: client.workspaceId,
-        actorType: "worker",
-        actorId: auditActor(auth).actorId,
-        action: applyResultAuditAction(ran),
-        entityType: "apply_job",
-        entityId: applyJob.id,
-        payload: {
-          recommendationId: row.id,
-          writes: ran.writes,
-          outcomes: ran.outcomes,
-          revokedDuringApply: ran.blocked === "revoked_after_write",
-        },
-      });
+      if (ran.blocked === "in_progress") {
+        return c.json(
+          {
+            status: "in_progress",
+            applyJob: ran.applyJob,
+            writes: false,
+            note: "Apply is already in progress.",
+          },
+          409,
+        );
+      }
+      if (shouldRecordApplyAudit(ran)) {
+        await writeAuditEvent({
+          workspaceId: client.workspaceId,
+          actorType: "worker",
+          actorId: auditActor(auth).actorId,
+          action: applyResultAuditAction(ran),
+          entityType: "apply_job",
+          entityId: applyJob.id,
+          payload: {
+            recommendationId: row.id,
+            writes: ran.writes,
+            outcomes: ran.outcomes,
+            revokedDuringApply: ran.blocked === "revoked_after_write",
+          },
+        });
+      }
       return c.json({
         ok: ran.applyJob.status === "succeeded",
+        status: ran.applyJob.status,
         applyJob: ran.applyJob,
         ...gate,
         writes: ran.writes,
@@ -617,6 +633,12 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       throw new HTTPException(400, {
         message: "businessType, modules, capabilities, or applyKillSwitch is required",
       });
+    }
+    if (parsed.data.applyKillSwitch === false || parsed.data.capabilities?.apply === "on") {
+      assertApplySafetyOwner(auth, workspaceId);
+    }
+    if (isServicePrincipal(auth) && parsed.data.applyKillSwitch !== undefined) {
+      assertApplySafetyOwner(auth, workspaceId);
     }
 
     const workspace = await getDb().query.workspaces.findFirst({

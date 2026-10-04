@@ -1,6 +1,6 @@
 import { pullGoogleAdAccount } from "@cerevex/jobs-ads-google/pull";
 import { pullMetaAdAccount } from "@cerevex/jobs-ads-meta/pull";
-import { applyResultAuditAction, runApplyJob } from "@tharros/ads-shared/apply";
+import { applyResultAuditAction, runApplyJob, shouldRecordApplyAudit } from "@tharros/ads-shared/apply";
 import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
 import { runAdAccountSync, syncJobAuditAction } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
@@ -66,31 +66,34 @@ export async function handleApplyRequested({ event, step }: any) {
     return runApplyJob(applyJobId);
   });
 
-  await step.run("audit-apply", async () => {
-    await writeAuditEvent({
-      workspaceId: event.data.workspaceId,
-      actorType: "worker",
-      actorId: event.data.requestedBy,
-      action: applyResultAuditAction(result),
-      entityType: "apply_job",
-      entityId: applyJobId,
-      payload: {
-        event: event.name,
-        clientId: event.data.clientId,
-        authorizationId: event.data.authorizationId,
-        applyJobId,
-        writes: result.writes,
-        blocked: result.blocked,
-        outcomes: result.outcomes,
-        error: result.applyJob.error,
-      },
+  if (shouldRecordApplyAudit(result)) {
+    await step.run("audit-apply", async () => {
+      await writeAuditEvent({
+        workspaceId: event.data.workspaceId,
+        actorType: "worker",
+        actorId: event.data.requestedBy,
+        action: applyResultAuditAction(result),
+        entityType: "apply_job",
+        entityId: applyJobId,
+        payload: {
+          event: event.name,
+          clientId: event.data.clientId,
+          authorizationId: event.data.authorizationId,
+          applyJobId,
+          writes: result.writes,
+          blocked: result.blocked,
+          outcomes: result.outcomes,
+          error: result.applyJob.error,
+        },
+      });
     });
-  });
+  }
 
+  const inProgress = result.blocked === "in_progress";
   return {
-    ok: result.applyJob.status === "succeeded",
+    ok: inProgress ? true : result.applyJob.status === "succeeded",
     applyJobId,
-    status: result.applyJob.status,
+    status: inProgress ? "in_progress" : result.applyJob.status,
     writes: result.writes,
     blocked: result.blocked,
     outcomes: result.outcomes,
