@@ -16,6 +16,7 @@ import {
   isBusinessType,
   type BusinessType,
 } from '@cerevex/contracts';
+import { isProductionRuntime } from '@/lib/runtime-env';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,7 @@ export default async function CommandCenter({
       if (storeId) {
         c.set('activeStoreId', storeId, {
           path: '/',
-          secure: process.env.NODE_ENV === 'production',
+          secure: isProductionRuntime(),
           sameSite: 'lax',
         });
       }

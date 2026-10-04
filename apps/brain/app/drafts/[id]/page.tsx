@@ -4,6 +4,8 @@ import { inngest } from '@/src/inngest/client';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
+import { AUTH_COOKIE_NAME } from '@/lib/auth-cookie';
+import { authorizeApprover } from '@/lib/sensitive-auth';
 import { getActiveStoreId, getStore } from '@/src/lib/db/stores';
 import { logEvent } from '@/src/lib/brain/events';
 import { isWordpressApplyWritable } from '@cerevex/contracts';
@@ -19,6 +21,12 @@ import { jobStatusLabel, jobSubject, jobTypeLabel } from '@/lib/job-labels';
 
 async function decide(formData: FormData) {
   'use server';
+  const jar = await cookies();
+  const gate = authorizeApprover({
+    cookie: jar.get(AUTH_COOKIE_NAME)?.value ?? null,
+    internalKey: null,
+  });
+  if (!gate.ok) redirect('/login');
   const draftId = formData.get('draftId') as string;
   const status = formData.get('status') as string;
   const notes = formData.get('notes') as string || '';

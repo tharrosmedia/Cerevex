@@ -5,6 +5,7 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { and, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { isProductionRuntime } from "@cerevex/contracts";
 import { EVENTS, canApproveApply, canMutate } from "@tharros/ads-shared";
 import { oauthConfig } from "@tharros/ads-shared/oauth";
 import { checkDatabase, getDb } from "@tharros/ads-shared/db";
@@ -185,7 +186,7 @@ export function createApp() {
       httpOnly: true,
       sameSite: "Lax",
       path: "/",
-      secure: process.env.NODE_ENV === "production",
+      secure: isProductionRuntime(),
       maxAge: 60 * 60 * 24 * 7,
     });
     childLogger(c.get("requestId")).info({
