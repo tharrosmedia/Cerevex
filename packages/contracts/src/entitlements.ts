@@ -1,17 +1,14 @@
 /**
- * Plan and location entitlements (Pricing and Scholarship 1.1, item 1).
+ * Plan, location, and monthly usage rules (Pricing and Scholarship 1.1).
  *
  * The tenant is the OS client: one business, many stores, ad accounts on the
  * client. A location is one store_id. Only active locations count.
  *
- * Monthly usage is declared here so the next change can share one counter
- * between in-app and MCP. This module does not count, store, or reset usage.
- * When that counter lands it should:
- * - allow 20 creative variations and 10 SEO jobs on Scholarship
- * - leave the paid plan unlimited
- * - count a rec or job once, when it is created
- * - skip rejected, duplicate, and merged
- * - reset on the 1st of each calendar month, America/New_York
+ * Scholarship allows 20 creative variations and 10 SEO jobs a month. Paid has
+ * no usage limit, and both plans are still counted. A variation or job counts
+ * once, at creation. Rejected, duplicate, and merged do not count. The month
+ * is the calendar month of created_at in America/New_York. The stored counter
+ * lives with the ads shared usage helper.
  */
 
 export const PLAN_IDS = ["paid", "scholarship"] as const;
@@ -35,6 +32,10 @@ export type MonthlyCapId = (typeof MONTHLY_CAP_IDS)[number];
 export const MONTHLY_CAP_COUNTED_AT = "creation" as const;
 export const MONTHLY_CAP_EXCLUDED_OUTCOMES = ["rejected", "duplicate", "merged"] as const;
 export const MONTHLY_CAP_RESET = "month_start_et" as const;
+export const USAGE_TIME_ZONE = "America/New_York";
+
+export const USAGE_OUTCOMES = ["created", "rejected", "duplicate", "merged"] as const;
+export type UsageOutcome = (typeof USAGE_OUTCOMES)[number];
 
 export const SCHOLARSHIP_LOCATION_MESSAGE =
   "This Scholarship includes 1 location. Turn the current location off to switch, or move to the paid plan to add every location.";
@@ -51,9 +52,9 @@ export type MonthlyCapSpec = {
   reset: typeof MONTHLY_CAP_RESET;
 };
 
-/** `used` stays null until the shared monthly counter exists. */
+/** Count for this America/New_York month. Zero when nothing is recorded. */
 export type MonthlyCapView = MonthlyCapSpec & {
-  used: number | null;
+  used: number;
 };
 
 export type TenantEntitlements = {
@@ -103,28 +104,90 @@ export function adAccountLimitPerPlatform(plan: PlanId): number | null {
   return plan === "scholarship" ? SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM : null;
 }
 
-function monthlyCap(id: MonthlyCapId, limit: number | null): MonthlyCapView {
+function monthlyCap(id: MonthlyCapId, limit: number | null, used: number): MonthlyCapView {
   return {
     id,
     limit,
-    used: null,
+    used,
     countedAt: MONTHLY_CAP_COUNTED_AT,
     excludedOutcomes: MONTHLY_CAP_EXCLUDED_OUTCOMES,
     reset: MONTHLY_CAP_RESET,
   };
 }
 
-export function monthlyCapsFor(plan: PlanId): TenantEntitlements["monthly"] {
-  if (plan === "paid") {
-    return {
-      creativeVariations: monthlyCap("creative_variations", null),
-      seoJobs: monthlyCap("seo_jobs", null),
-    };
-  }
+export function monthlyUsageLimit(plan: PlanId, kind: MonthlyCapId): number | null {
+  if (plan === "paid") return null;
+  return kind === "creative_variations"
+    ? SCHOLARSHIP_MONTHLY_LIMITS.creativeVariations
+    : SCHOLARSHIP_MONTHLY_LIMITS.seoJobs;
+}
+
+export function monthlyCapsFor(
+  plan: PlanId,
+  used: { creativeVariations?: number; seoJobs?: number } = {},
+): TenantEntitlements["monthly"] {
   return {
-    creativeVariations: monthlyCap("creative_variations", SCHOLARSHIP_MONTHLY_LIMITS.creativeVariations),
-    seoJobs: monthlyCap("seo_jobs", SCHOLARSHIP_MONTHLY_LIMITS.seoJobs),
+    creativeVariations: monthlyCap(
+      "creative_variations",
+      monthlyUsageLimit(plan, "creative_variations"),
+      used.creativeVariations ?? 0,
+    ),
+    seoJobs: monthlyCap("seo_jobs", monthlyUsageLimit(plan, "seo_jobs"), used.seoJobs ?? 0),
   };
+}
+
+export function isUsageOutcome(value: string): value is UsageOutcome {
+  return (USAGE_OUTCOMES as readonly string[]).includes(value);
+}
+
+/** Created counts. Rejected, duplicate, and merged do not. */
+export function usageOutcomeCounts(outcome: UsageOutcome): boolean {
+  return outcome === "created";
+}
+
+/** Under the limit. Paid (limit null) is always within the limit. At the limit, the next one is not. */
+export function isWithinMonthlyLimit(used: number, limit: number | null): boolean {
+  return limit === null || used < limit;
+}
+
+/** The next 1st of the month in America/New_York, written as a plain date. */
+export function nextUsageResetLabel(at: Date = new Date()): string {
+  const [yearText, monthText] = usagePeriodKey(at).split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const onThatDay = new Date(Date.UTC(nextYear, nextMonth - 1, 1, 17, 0, 0));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: USAGE_TIME_ZONE,
+    month: "long",
+    day: "numeric",
+    ...(nextYear !== year ? { year: "numeric" as const } : {}),
+  }).format(onThatDay);
+}
+
+export function monthlyLimitMessage(kind: MonthlyCapId, at: Date = new Date()): string {
+  const amount = kind === "creative_variations" ? "20 creative variations" : "10 SEO jobs";
+  return `You've used all ${amount} this month. More on ${nextUsageResetLabel(at)}, or move to the paid plan for unlimited.`;
+}
+
+/**
+ * Calendar month of `date` in America/New_York, `YYYY-MM`.
+ * DST-safe: the zone rules come from Intl, not a fixed offset.
+ */
+export function usagePeriodKey(date: Date): string {
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Usage time is not a real date.");
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: USAGE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  if (!year || !month) throw new Error("Could not read the usage month.");
+  return `${year}-${month}`;
 }
 
 export function adPlatformPlainName(platform: string): string {

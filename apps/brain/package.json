@@ -23,6 +23,7 @@
   "license": "ISC",
   "dependencies": {
     "@cerevex/contracts": "*",
+    "@tharros/ads-shared": "*",
     "@cerevex/connector-wordpress": "*",
     "@cerevex/connector-shopify": "*",
     "@ai-sdk/openai": "^3.0.99",

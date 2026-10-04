@@ -80,7 +80,7 @@ Email/password only in M1. No Meta/Google OAuth.
 ### clients
 `id`, `workspace_id`, `name`, `pilot_flag`, `status`, `plan` (`paid` \| `scholarship`, default **paid**), `site_id`, `created_at`
 
-`plan` is the tenant plan. Existing rows default to `paid`, which has no location, ad-account, or usage limit. `scholarship` allows 1 active location and 1 active ad account per platform. Nothing is billed from this column. Triggers on `locations`, `ad_accounts`, and a plan change lock the client row with `FOR NO KEY UPDATE`, then take a per-client advisory lock, and refuse a Scholarship write that would pass those limits, including a raw insert. The app locks that row the same way. A write that cannot add an active location or ad account returns before either lock, so a sync, a reconnect, or a rename of that account's external id does not take the client row. Re-activating the same location or the same ad account does not count as a second one. The count is correct under READ COMMITTED, which is what the app and Postgres use by default. Moving from paid to Scholarship is refused while the account is already over the limits. Nothing is turned off automatically.
+`plan` is the tenant plan. Existing rows default to `paid`, which has no location, ad-account, or usage limit. `scholarship` allows 1 active location, 1 active ad account per platform, 20 creative variations a month, and 10 SEO jobs a month. Nothing is billed from this column. Triggers on `locations`, `ad_accounts`, and a plan change lock the client row with `FOR NO KEY UPDATE`, then take a per-client advisory lock, and refuse a Scholarship write that would pass the location and ad-account limits, including a raw insert. The app locks that row the same way. A write that cannot add an active location or ad account returns before either lock, so a sync, a reconnect, or a rename of that account's external id does not take the client row. Re-activating the same location or the same ad account does not count as a second one. The count is correct under READ COMMITTED, which is what the app and Postgres use by default. Moving from paid to Scholarship is refused while the account is already over the limits. Nothing is turned off automatically.
 
 Unique `(workspace_id, name)`. Seed: Got Ductless, KC Prestige, Elmar HVAC with `pilot_flag=true` and `plan=paid`.
 
@@ -88,6 +88,12 @@ Unique `(workspace_id, name)`. Seed: Got Ductless, KC Prestige, Elmar HVAC with 
 `id`, `workspace_id`, `client_id`, `store_id`, `status` (`active` \| `inactive`), `created_at`, `updated_at`
 
 One location is one `store_id` (a Brain store id, no cross-schema foreign key). Only `active` rows count toward the Scholarship location limit. Unique `(client_id, store_id)`. Turning a location off and turning another on is allowed. Turning off the location that matches `clients.site_id` clears `site_id` in the same locked transaction. Linking a site writes the location and `site_id` together under that lock.
+
+### usage_events / usage_counters
+
+`usage_events`: `id`, `workspace_id`, `client_id`, `kind` (`creative_variations` | `seo_jobs`), `item_id`, `outcome` (`created` | `rejected` | `duplicate` | `merged`), `counted`, `period_key` (`YYYY-MM` of `created_at` in America/New_York), `created_at`. Unique `(client_id, kind, item_id)`. The first write wins. Only `created` sets `counted`.
+
+`usage_counters`: `(client_id, kind, period_key)` primary key, `workspace_id`, `used`, `updated_at`. `used` increments by one in the same statement as the first countable insert. A write takes a per-client usage advisory lock and reads the client without locking that row. A creative save takes the same lock before it inserts the idea. The month is the database clock in America/New_York, not a time supplied by the caller. That lock is separate from the Scholarship location lock, which is client row then advisory lock. A store that matches more than one client is not counted. The count is correct under READ COMMITTED. Paid rows are stored too. Scholarship limits are 20 creative variations and 10 SEO jobs. The counter does not bill and does not turn creation off.
 
 ### client_memberships
 `(user_id, client_id)` PK, `role`

@@ -64,6 +64,13 @@
       "when": 1791200000000,
       "tag": "0008_client_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791300000000,
+      "tag": "0009_monthly_usage",
+      "breakpoints": true
     }
   ]
 }
