@@ -35,6 +35,7 @@ const REQUIRED_TABLES = [
   "skill_client_configs",
   "skill_store_configs",
   "locations",
+  "client_audit_log",
 ];
 
 describe("M1 core schema", () => {

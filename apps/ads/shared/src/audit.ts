@@ -9,7 +9,8 @@ import { readWorkspaceCapabilities } from "./capabilities";
 import type { CallRecord } from "./attribution";
 import { readConnectorSettings, resolveCallTrackingForClient } from "./connector-settings";
 import { seasonalityFromSettings } from "./seasonality-calendar";
-import { getDb } from "./db";
+import { getDb, type Database } from "./db";
+import { readApproval, recordRecLifecycle } from "./rec-lifecycle";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
 import { inferApplyJobType } from "./mutation-families";
 import {
@@ -83,6 +84,7 @@ export function toRecommendationPublic(row: typeof recommendations.$inferSelect)
     evidence: (row.evidenceJson as Record<string, unknown>) ?? {},
     proposedMutations: (row.proposedMutationsJson as unknown[]) ?? [],
     status: row.status,
+    approval: readApproval(row.approvalJson),
     schemaVersion: row.schemaVersion,
     createdAt: row.createdAt.toISOString(),
   };
@@ -487,6 +489,16 @@ export class RecommendationNotOpenError extends Error {
   }
 }
 
+export class RecommendationGateError extends Error {
+  readonly reason: "apply_kill_switch" | "account_frozen";
+
+  constructor(reason: "apply_kill_switch" | "account_frozen") {
+    super(reason);
+    this.name = "RecommendationGateError";
+    this.reason = reason;
+  }
+}
+
 export async function decideRecommendation(input: {
   recommendationId: string;
   userId: string | null;
@@ -517,6 +529,16 @@ export async function decideRecommendation(input: {
       (input.action !== "authorize" && row.status === "authorized");
     if (!canDecide) {
       throw new RecommendationNotOpenError();
+    }
+    if (input.action === "authorize") {
+      const workspace = await tx.query.workspaces.findFirst({
+        where: eq(workspaces.id, row.workspaceId),
+      });
+      const account = await tx.query.adAccounts.findFirst({
+        where: eq(adAccounts.id, row.adAccountId),
+      });
+      if (workspace?.applyKillSwitch) throw new RecommendationGateError("apply_kill_switch");
+      if (account?.frozen) throw new RecommendationGateError("account_frozen");
     }
 
     await tx
@@ -594,8 +616,26 @@ export async function decideRecommendation(input: {
       },
     });
 
+    if (input.action === "authorize" || input.action === "deny") {
+      await recordRecLifecycle(
+        {
+          kind: input.action === "authorize" ? "approved" : "rejected",
+          recommendationId: row.id,
+          workspaceId: row.workspaceId,
+          clientId: row.clientId,
+          module: "ads",
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          entityType: "recommendation",
+          entityId: row.id,
+        },
+        tx as unknown as Database,
+      );
+    }
+
+    const fresh = await tx.query.recommendations.findFirst({ where: eq(recommendations.id, row.id) });
     return {
-      recommendation: toRecommendationPublic(updated),
+      recommendation: toRecommendationPublic(fresh ?? updated),
       authorization: authorization ? toAuthorizationPublic(authorization) : null,
     };
   });

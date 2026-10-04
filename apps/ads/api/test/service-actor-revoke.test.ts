@@ -20,6 +20,7 @@ import {
   applyJobs,
   auditLog,
   authorizations,
+  clientAuditLog,
   clients,
   decisions,
   memberships,
@@ -873,12 +874,23 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(staleAudits).toHaveLength(1);
     expect((staleAudits[0]?.payloadJson as { writes?: unknown }).writes).toBe("unknown");
     expect(audits.some((row) => row.action === "apply_fail" || row.action === "apply_success")).toBe(false);
+    const clientRows = await getDb().select().from(clientAuditLog).where(eq(clientAuditLog.entityId, rec.id));
+    const staleClient = clientRows.filter((row) => row.action === "apply_blocked");
+    expect(staleClient).toHaveLength(1);
+    const stalePayload = staleClient[0]?.payloadJson as { after?: { writes?: unknown; blocked?: unknown } };
+    expect(stalePayload.after?.writes).toBe("unknown");
+    expect(stalePayload.after?.blocked).toBe("stale_applying");
+    const storedRec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, rec.id) });
+    expect((storedRec?.approvalJson as { executed_at?: string | null } | null)?.executed_at ?? null).toBeNull();
     const again = await runApplyJob(jobId);
     expect(again.blocked).not.toBe("in_progress");
     expect(again.writes).toBe(false);
+    expect(again.fresh).toBe(false);
     const after = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
     expect(after?.attempts).toBe(1);
     expect(after?.status).toBe("failed");
+    const clientAfter = await getDb().select().from(clientAuditLog).where(eq(clientAuditLog.entityId, rec.id));
+    expect(clientAfter.filter((row) => row.action === "apply_blocked")).toHaveLength(1);
   });
 
   it("writes one apply_success when deny lands during an inline apply", async () => {
@@ -1114,6 +1126,17 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       const success = audits.find((row) => row.action === "apply_success");
       expect((success?.payloadJson as { superseded?: string }).superseded).toBe("stale_applying");
       expect((success?.payloadJson as { writes?: unknown }).writes).toBe(true);
+      const clientRows = await getDb().select().from(clientAuditLog).where(eq(clientAuditLog.entityId, rec.id));
+      expect(
+        clientRows.some(
+          (row) =>
+            row.action === "apply_blocked" &&
+            (row.payloadJson as { after?: { writes?: unknown } }).after?.writes === "unknown",
+        ),
+      ).toBe(true);
+      const applied = clientRows.filter((row) => row.action === "applied");
+      expect(applied).toHaveLength(1);
+      expect((applied[0]?.payloadJson as { after?: { writes?: unknown } }).after?.writes).toBe(true);
     } finally {
       await locker.query("ROLLBACK").catch(() => undefined);
       await locker.end().catch(() => undefined);
