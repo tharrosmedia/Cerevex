@@ -223,6 +223,102 @@ function request(databaseUrl: string, mode: "dry-run" | "apply" | "unconfirmed")
   });
 }
 
+type ApplyJobSeed = {
+  id: string;
+  status: string;
+  createdAt: string;
+  response: Record<string, unknown> | null;
+};
+
+async function insertDuplicateApplyJobs(databaseUrl: string, label: string, jobs: ApplyJobSeed[]): Promise<void> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const workspace = await client.query<{ id: string }>(
+      `INSERT INTO os.workspaces (name) VALUES ($1) RETURNING id`,
+      [`dedup-${label}`],
+    );
+    const workspaceId = workspace.rows[0]!.id;
+    const user = await client.query<{ id: string }>(
+      `INSERT INTO os.users (email, name, password_hash) VALUES ($1, 'Dedup', 'x') RETURNING id`,
+      [`dedup-${label}@example.com`],
+    );
+    const userId = user.rows[0]!.id;
+    const tenant = await client.query<{ id: string }>(
+      `INSERT INTO os.clients (workspace_id, name) VALUES ($1, $2) RETURNING id`,
+      [workspaceId, label],
+    );
+    const clientId = tenant.rows[0]!.id;
+    const account = await client.query<{ id: string }>(
+      `INSERT INTO os.ad_accounts (workspace_id, client_id, platform, external_id, connection_status)
+       VALUES ($1, $2, 'meta', $3, 'connected') RETURNING id`,
+      [workspaceId, clientId, `act-${label}`],
+    );
+    const accountId = account.rows[0]!.id;
+    const recommendation = await client.query<{ id: string }>(
+      `INSERT INTO os.recommendations (workspace_id, client_id, ad_account_id, type, title, rationale)
+       VALUES ($1, $2, $3, 'pause', 'Pause', 'Because') RETURNING id`,
+      [workspaceId, clientId, accountId],
+    );
+    const recommendationId = recommendation.rows[0]!.id;
+    const decision = await client.query<{ id: string }>(
+      `INSERT INTO os.decisions (workspace_id, client_id, recommendation_id, user_id, action)
+       VALUES ($1, $2, $3, $4, 'authorize') RETURNING id`,
+      [workspaceId, clientId, recommendationId, userId],
+    );
+    const decisionId = decision.rows[0]!.id;
+    const authorization = await client.query<{ id: string }>(
+      `INSERT INTO os.authorizations (workspace_id, client_id, recommendation_id, decision_id)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [workspaceId, clientId, recommendationId, decisionId],
+    );
+    const authorizationId = authorization.rows[0]!.id;
+    for (const job of jobs) {
+      await client.query(
+        `INSERT INTO os.apply_jobs (
+           id, workspace_id, client_id, authorization_id, idempotency_key, status, attempts,
+           request_json, response_json, created_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, 1, '{}'::jsonb, $7::jsonb, $8
+         )`,
+        [
+          job.id,
+          workspaceId,
+          clientId,
+          authorizationId,
+          `apply:${job.id}`,
+          job.status,
+          job.response === null ? null : JSON.stringify(job.response),
+          job.createdAt,
+        ],
+      );
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+async function listApplyJobs(databaseUrl: string): Promise<Array<Record<string, unknown>>> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const result = await client.query(
+      `SELECT id::text AS id, authorization_id::text AS authorization_id, status, attempts,
+              response_json, error, created_at, finished_at
+       FROM os.apply_jobs
+       ORDER BY id`,
+    );
+    return result.rows;
+  } finally {
+    await client.end();
+  }
+}
+
+const succeededResponse = {
+  writes: true,
+  outcomes: [{ status: "applied", writes: true }],
+};
+
 afterAll(async () => {
   if (createdDatabases.length === 0) return;
   await withAdmin(async (client) => {
@@ -443,6 +539,202 @@ describe("os production migrate", () => {
       await expect(client.query(`UPDATE os.clients SET plan = 'scholarship' WHERE id = $1`, [paidId])).rejects.toMatchObject({
         code: "23514",
       });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("fails 0007 when two succeeded jobs share an authorization and changes no rows", async () => {
+    const olderId = "11111111-1111-4111-8111-111111111111";
+    const newerId = "22222222-2222-4222-8222-222222222222";
+    const databaseUrl = await cloneBase("dedup_two_succeeded");
+    await insertDuplicateApplyJobs(databaseUrl, "two-succeeded", [
+      {
+        id: olderId,
+        status: "succeeded",
+        createdAt: "2026-01-01T00:00:00Z",
+        response: succeededResponse,
+      },
+      {
+        id: newerId,
+        status: "succeeded",
+        createdAt: "2026-06-01T00:00:00Z",
+        response: succeededResponse,
+      },
+    ]);
+    const before = await listApplyJobs(databaseUrl);
+    expect(before.map((row) => row.id)).toEqual([olderId, newerId]);
+    const ledgerBefore = await ledgerCount(databaseUrl);
+
+    await expect(request(databaseUrl, "apply")).rejects.toThrow(
+      new RegExp(
+        `multiple succeeded apply jobs share an authorization:.*${olderId}, ${newerId}`,
+      ),
+    );
+
+    expect(await listApplyJobs(databaseUrl)).toEqual(before);
+    expect(await pendingTable(databaseUrl)).toBeNull();
+    expect(await ledgerCount(databaseUrl)).toBe(ledgerBefore);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const nullable = await client.query(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema = 'os' AND table_name = 'oauth_pending_connections' AND column_name = 'user_id'`,
+      );
+      expect(nullable.rows[0]?.is_nullable).toBe("NO");
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("keeps the succeeded apply job and drops an older queued duplicate", async () => {
+    const queuedId = "33333333-3333-4333-8333-333333333331";
+    const succeededId = "33333333-3333-4333-8333-333333333332";
+    const databaseUrl = await cloneBase("dedup_succeeded_queued");
+    await insertDuplicateApplyJobs(databaseUrl, "succeeded-queued", [
+      {
+        id: queuedId,
+        status: "queued",
+        createdAt: "2026-01-01T00:00:00Z",
+        response: null,
+      },
+      {
+        id: succeededId,
+        status: "succeeded",
+        createdAt: "2026-06-01T00:00:00Z",
+        response: succeededResponse,
+      },
+    ]);
+
+    const applied = await request(databaseUrl, "apply");
+    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    const jobs = await listApplyJobs(databaseUrl);
+    expect(jobs.map((row) => row.id)).toEqual([succeededId]);
+    expect(jobs[0]).toMatchObject({ status: "succeeded", attempts: 1, response_json: succeededResponse });
+    expect(await pendingTable(databaseUrl)).toContain("apply_jobs_authorization_uidx");
+  });
+
+  it("keeps an older succeeded apply job and drops a newer queued duplicate", async () => {
+    const succeededId = "55555555-5555-4555-8555-555555555551";
+    const queuedId = "55555555-5555-4555-8555-555555555552";
+    const databaseUrl = await cloneBase("dedup_older_succeeded");
+    await insertDuplicateApplyJobs(databaseUrl, "older-succeeded", [
+      {
+        id: succeededId,
+        status: "succeeded",
+        createdAt: "2026-01-01T00:00:00Z",
+        response: succeededResponse,
+      },
+      {
+        id: queuedId,
+        status: "queued",
+        createdAt: "2026-06-01T00:00:00Z",
+        response: null,
+      },
+    ]);
+
+    const applied = await request(databaseUrl, "apply");
+    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    const jobs = await listApplyJobs(databaseUrl);
+    expect(jobs.map((row) => row.id)).toEqual([succeededId]);
+    expect(jobs[0]).toMatchObject({ status: "succeeded", attempts: 1, response_json: succeededResponse });
+  });
+
+  it("keeps a newer succeeded apply job and drops an older failed duplicate", async () => {
+    const failedId = "44444444-4444-4444-8444-444444444441";
+    const succeededId = "44444444-4444-4444-8444-444444444442";
+    const databaseUrl = await cloneBase("dedup_succeeded_failed");
+    await insertDuplicateApplyJobs(databaseUrl, "succeeded-failed", [
+      {
+        id: failedId,
+        status: "failed",
+        createdAt: "2026-01-01T00:00:00Z",
+        response: { writes: false, outcomes: [] },
+      },
+      {
+        id: succeededId,
+        status: "succeeded",
+        createdAt: "2026-06-01T00:00:00Z",
+        response: succeededResponse,
+      },
+    ]);
+
+    const applied = await request(databaseUrl, "apply");
+    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    const jobs = await listApplyJobs(databaseUrl);
+    expect(jobs.map((row) => row.id)).toEqual([succeededId]);
+    expect(jobs[0]).toMatchObject({ status: "succeeded", attempts: 1, response_json: succeededResponse });
+  });
+
+  it("keeps a failed job that recorded outcomes and drops a newer queued duplicate", async () => {
+    const recordedId = "66666666-6666-4666-8666-666666666661";
+    const queuedId = "66666666-6666-4666-8666-666666666662";
+    const recorded = { writes: true, outcomes: [{ status: "applied", writes: true }] };
+    const databaseUrl = await cloneBase("dedup_recorded_failed");
+    await insertDuplicateApplyJobs(databaseUrl, "recorded-failed", [
+      {
+        id: recordedId,
+        status: "failed",
+        createdAt: "2026-01-01T00:00:00Z",
+        response: recorded,
+      },
+      {
+        id: queuedId,
+        status: "queued",
+        createdAt: "2026-06-01T00:00:00Z",
+        response: null,
+      },
+    ]);
+
+    const applied = await request(databaseUrl, "apply");
+    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    const jobs = await listApplyJobs(databaseUrl);
+    expect(jobs.map((row) => row.id)).toEqual([recordedId]);
+    expect(jobs[0]).toMatchObject({ status: "failed", attempts: 1, response_json: recorded });
+  });
+
+  it("keeps the newest failed apply job when neither duplicate succeeded", async () => {
+    const olderId = "77777777-7777-4777-8777-777777777771";
+    const newerId = "77777777-7777-4777-8777-777777777772";
+    const databaseUrl = await cloneBase("dedup_newest_failed");
+    await insertDuplicateApplyJobs(databaseUrl, "newest-failed", [
+      {
+        id: olderId,
+        status: "failed",
+        createdAt: "2026-01-01T00:00:00Z",
+        response: { writes: false, outcomes: [] },
+      },
+      {
+        id: newerId,
+        status: "failed",
+        createdAt: "2026-06-01T00:00:00Z",
+        response: { writes: false, outcomes: [] },
+      },
+    ]);
+
+    const applied = await request(databaseUrl, "apply");
+    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    const jobs = await listApplyJobs(databaseUrl);
+    expect(jobs.map((row) => row.id)).toEqual([newerId]);
+    expect(jobs[0]).toMatchObject({ status: "failed", attempts: 1 });
+  });
+
+  it("applies 0007 on a clean database without changing apply jobs", async () => {
+    const databaseUrl = await cloneBase("dedup_clean");
+    expect(await listApplyJobs(databaseUrl)).toEqual([]);
+    const applied = await request(databaseUrl, "apply");
+    expect(applied.migrationsApplied).toEqual(["0007_service_actor_constraints"]);
+    expect(await listApplyJobs(databaseUrl)).toEqual([]);
+    expect(await pendingTable(databaseUrl)).toContain("apply_jobs_authorization_uidx");
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const nullable = await client.query(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema = 'os' AND table_name = 'oauth_pending_connections' AND column_name = 'user_id'`,
+      );
+      expect(nullable.rows[0]?.is_nullable).toBe("YES");
     } finally {
       await client.end();
     }
