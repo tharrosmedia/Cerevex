@@ -411,6 +411,7 @@ export async function getAuditBundle(auditRunId: string): Promise<AuditBundle> {
   }
   const findingRows = await db.select().from(findings).where(eq(findings.auditRunId, auditRunId));
   const accountIds = ((run.summaryJson as { accountIds?: string[] } | null)?.accountIds ?? []).filter(Boolean);
+  // The id tie-break is arbitrary and only keeps the order stable.
   const recOrder = [asc(recommendations.createdAt), asc(recommendations.id)] as const;
   const recRows =
     accountIds.length > 0
