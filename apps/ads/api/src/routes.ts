@@ -33,6 +33,7 @@ import { signOAuthState, verifyOAuthState } from "./oauth-state";
 import { connectChosenAccounts, createPendingConnection } from "./pending-connect";
 import type { AccessibleAdAccount } from "@tharros/ads-shared";
 import { EntitlementError } from "@tharros/ads-shared/entitlements";
+import { actorRef } from "./auth";
 import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
@@ -42,6 +43,10 @@ const mockConnectSchema = z.object({
   clientId: z.string().uuid(),
   platform: platformSchema,
 });
+
+function storedOAuthUserId(actor: string): string | null {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actor) ? actor : null;
+}
 
 function consoleOrigin(): string {
   return (process.env.CONSOLE_ORIGIN ?? process.env.NEXT_PUBLIC_CONSOLE_ORIGIN ?? "").replace(/\/$/, "");
@@ -77,7 +82,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       });
     }
     const state = await signOAuthState({
-      userId: auth.user.id,
+      userId: actorRef(auth),
       clientId,
       platform,
     });
@@ -150,7 +155,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
         workspaceId: visible.workspaceId,
         clientId: visible.id,
         platform,
-        userId: parsed.userId,
+        userId: storedOAuthUserId(parsed.userId),
         tokens: exchanged.tokens,
         accounts,
       });
@@ -208,7 +213,7 @@ export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: Middleware
       adAccountId: row.id,
     });
     await sendAdAccountSync({
-      requestedBy: auth.user.id,
+      requestedBy: actorRef(auth),
       workspaceId: client.workspaceId,
       clientId: client.id,
       adAccountId: row.id,

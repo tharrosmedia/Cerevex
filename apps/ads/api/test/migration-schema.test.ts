@@ -147,12 +147,12 @@ describe("migration journal schema", () => {
       "0004_site_clients",
       "0005_skill_config",
       "0006_plan_entitlements",
-      "0007_client_audit_log",
+      "0007_service_actor_constraints",
+      "0008_client_audit_log",
     ];
     expect(entries.map((entry) => entry.tag)).toEqual(prefix);
     const applied = entries.slice(0, 6);
-    const pending = entries.find((entry) => entry.tag === "0006_plan_entitlements");
-    if (!pending) throw new Error("0006_plan_entitlements missing");
+    const pending = entries.slice(6);
     const ids = [1, 2, 4, 5, 3, 6];
     expect(applied[4]!.tag).toBe("0004_site_clients");
     expect(applied[5]!.tag).toBe("0005_skill_config");
@@ -202,9 +202,11 @@ describe("migration journal schema", () => {
       const rows = await client.query<{ id: number; hash: string; created_at: string }>(
         `select id, hash, created_at::text from ${migrationsRelation()} order by created_at`,
       );
-      expect(rows.rows).toHaveLength(entries.length);
-      const stamped = rows.rows.find((row) => Number(row.created_at) === pending.when);
-      expect(stamped?.hash).toBe(fileHash(pending.tag));
+      expect(rows.rows).toHaveLength(applied.length + pending.length);
+      for (const entry of pending) {
+        const stamped = rows.rows.find((row) => Number(row.created_at) === entry.when);
+        expect(stamped?.hash).toBe(fileHash(entry.tag));
+      }
       expect((await client.query(`select to_regclass('os.client_audit_log') as name`)).rows[0]?.name).toBe(
         "client_audit_log",
       );
@@ -213,6 +215,13 @@ describe("migration journal schema", () => {
         "skill_client_configs",
       );
       expect((await client.query(`select to_regclass('os.locations') as name`)).rows[0]?.name).toBe("locations");
+      expect((await client.query(`select to_regclass('os.apply_jobs_authorization_uidx') as name`)).rows[0]?.name).toBe(
+        "apply_jobs_authorization_uidx",
+      );
+      const plan = await client.query(
+        `select column_name from information_schema.columns where table_schema = 'os' and table_name = 'clients' and column_name = 'plan'`,
+      );
+      expect(plan.rows).toHaveLength(1);
       const beforeSecond = rows.rows.map((row) => `${row.id}:${row.hash}:${row.created_at}`);
       const second = await runMigrate(databaseUrl);
       expect(second.code, second.stderr).toBe(0);
@@ -221,6 +230,77 @@ describe("migration journal schema", () => {
       );
       expect(again.rows.map((row) => `${row.id}:${row.hash}:${row.created_at}`)).toEqual(beforeSecond);
       expect((await client.query(`select nspname from pg_namespace where nspname = 'drizzle'`)).rows).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  }, 60_000);
+
+  it("applies 0008 on a database whose ledger already has 0000 through 0007", async () => {
+    const entries = journal();
+    const applied = entries.slice(0, 8);
+    const pending = entries[8];
+    expect(applied.map((entry) => entry.tag)).toEqual([
+      "0000_m1_spine",
+      "0001_m2_connect",
+      "0002_m5_apply",
+      "0003_m51",
+      "0004_site_clients",
+      "0005_skill_config",
+      "0006_plan_entitlements",
+      "0007_service_actor_constraints",
+    ]);
+    expect(pending?.tag).toBe("0008_client_audit_log");
+
+    const databaseUrl = await createDatabase(`cerevex_schema_test_${process.pid}_0007`);
+    const setup = new pg.Client({ connectionString: databaseUrl });
+    await setup.connect();
+    try {
+      await applySqlFiles(
+        setup,
+        applied.map((entry) => entry.tag),
+      );
+      await setup.query(
+        `CREATE TABLE ${migrationsRelation()} (
+          id serial PRIMARY KEY,
+          hash text NOT NULL,
+          created_at bigint
+        )`,
+      );
+      for (let index = 0; index < applied.length; index += 1) {
+        const entry = applied[index]!;
+        await setup.query(`INSERT INTO ${migrationsRelation()} (id, hash, created_at) VALUES ($1, $2, $3)`, [
+          index + 1,
+          fileHash(entry.tag),
+          entry.when,
+        ]);
+      }
+      await setup.query(`SELECT setval(pg_get_serial_sequence('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}', 'id'), $1)`, [
+        applied.length,
+      ]);
+      const before = await setup.query(`select to_regclass('os.client_audit_log') as name`);
+      expect(before.rows[0]?.name).toBeNull();
+    } finally {
+      await setup.end();
+    }
+
+    const first = await runMigrate(databaseUrl);
+    expect(first.code, first.stderr).toBe(0);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const rows = await client.query<{ id: number; hash: string; created_at: string }>(
+        `select id, hash, created_at::text from ${migrationsRelation()} order by created_at`,
+      );
+      expect(rows.rows).toHaveLength(entries.length);
+      const stamped = rows.rows.find((row) => Number(row.created_at) === pending!.when);
+      expect(stamped?.hash).toBe(fileHash(pending!.tag));
+      expect((await client.query(`select to_regclass('os.client_audit_log') as name`)).rows[0]?.name).toBe(
+        "client_audit_log",
+      );
+      const second = await runMigrate(databaseUrl);
+      expect(second.code, second.stderr).toBe(0);
+      const again = await client.query(`select count(*)::int as n from ${migrationsRelation()}`);
+      expect(again.rows[0]?.n).toBe(entries.length);
     } finally {
       await client.end();
     }

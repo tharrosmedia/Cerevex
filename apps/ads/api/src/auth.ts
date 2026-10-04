@@ -3,14 +3,15 @@ import { compare } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import { SignJWT, jwtVerify } from "jose";
 import type { AuthContext, Role } from "@tharros/ads-shared";
+import { SERVICE_ACTOR } from "@tharros/ads-shared/actor";
 import { getDb } from "@tharros/ads-shared/db";
-import { clientMemberships, memberships, users } from "@tharros/ads-shared/schema";
+import { clientMemberships, memberships, users, workspaces } from "@tharros/ads-shared/schema";
+import { jwtSecretBytes } from "./jwt-secret";
 
 const SESSION_COOKIE = "tharros_session";
 
 function jwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET ?? "replace-with-a-long-random-local-secret";
-  return new TextEncoder().encode(secret);
+  return jwtSecretBytes();
 }
 
 export function sessionCookieName(): string {
@@ -69,6 +70,7 @@ export async function loadAuthContext(userId: string): Promise<AuthContext | nul
     .where(eq(clientMemberships.userId, userId));
 
   return {
+    principal: "user",
     user: { id: user.id, email: user.email, name: user.name },
     memberships: workspaceRows.map((row) => ({
       workspaceId: row.workspaceId,
@@ -88,12 +90,13 @@ export function extractBearer(header: string | undefined): string | null {
   return token;
 }
 
+/** Header only. A query-string key must not authenticate approve/apply or any other route. */
 export function extractInternalKey(header: string | undefined): string | null {
   const value = header?.trim();
   return value ? value : null;
 }
 
-/** ADS_INTERNAL_KEY is a service secret (Brain BFF), not a feature flag. */
+/** ADS_INTERNAL_KEY is a service secret (Brain BFF), not a feature flag and not a user. */
 export function internalKeyMatches(provided: string | undefined | null): boolean {
   const expected = process.env.ADS_INTERNAL_KEY;
   if (!expected || !provided) return false;
@@ -103,17 +106,60 @@ export function internalKeyMatches(provided: string | undefined | null): boolean
   return timingSafeEqual(a, b);
 }
 
-export async function loadInternalOperatorAuth(): Promise<AuthContext | null> {
-  const db = getDb();
-  const [row] = await db
-    .select({ userId: memberships.userId })
-    .from(memberships)
-    .where(eq(memberships.role, "owner"))
-    .limit(1);
-  if (!row) return null;
-  const auth = await loadAuthContext(row.userId);
-  if (!auth) return null;
-  return { ...auth, principal: "service" };
+export function isServicePrincipal(auth: AuthContext): boolean {
+  return auth.principal === "service" || auth.user == null;
+}
+
+/** Audit actor for this request. The service principal never carries a user id. */
+export function auditActor(auth: AuthContext): { actorType: "user" | "service"; actorId: string | null } {
+  if (isServicePrincipal(auth) || !auth.user) {
+    return { actorType: "service", actorId: null };
+  }
+  return { actorType: "user", actorId: auth.user.id };
+}
+
+/** Event payload reference. `service` is not a users.id. */
+export function actorRef(auth: AuthContext): string {
+  return auth.user?.id ?? SERVICE_ACTOR;
+}
+
+const WORKSPACE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Configured workspace for the internal key. Never inferred from row order. */
+export function internalWorkspaceId(): string | null {
+  const value = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim() ?? "";
+  return WORKSPACE_UUID.test(value) ? value : null;
+}
+
+/**
+ * Production refuses to boot when the service key is set and its workspace is not.
+ * Other environments fail closed on the request instead of exiting.
+ */
+export function assertServiceWorkspaceConfigured(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  if (!process.env.ADS_INTERNAL_KEY?.trim()) return;
+  if (!internalWorkspaceId()) {
+    throw new Error("ADS_INTERNAL_WORKSPACE_ID must be set when ADS_INTERNAL_KEY is set");
+  }
+}
+
+/**
+ * Internal-key requests run as the service principal for one configured workspace.
+ * An unset or unknown workspace id returns null. There is no owner or lowest-id fallback.
+ */
+export async function loadServiceAuth(): Promise<AuthContext | null> {
+  const workspaceId = internalWorkspaceId();
+  if (!workspaceId) return null;
+  const workspace = await getDb().query.workspaces.findFirst({
+    where: eq(workspaces.id, workspaceId),
+  });
+  if (!workspace) return null;
+  return {
+    principal: "service",
+    user: null,
+    memberships: [{ workspaceId: workspace.id, role: "operator" satisfies Role }],
+    clientMemberships: [],
+  };
 }
 
 export { and, eq };

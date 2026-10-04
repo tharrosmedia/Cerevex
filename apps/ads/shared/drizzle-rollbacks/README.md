@@ -8,4 +8,4 @@ Apply one by hand against the database that ran that migration:
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/ads/shared/drizzle-rollbacks/<tag>_rollback.sql
 ```
 
-`0007_client_audit_log_rollback.sql` drops `os.client_audit_log`, the append-only function, and `recommendations.approval_json`, then deletes the `drizzle.__drizzle_migrations` row for that file. The hash is the sha256 of `apps/ads/shared/drizzle/0007_client_audit_log.sql`, and `created_at` is the journal `when` (`1791200000000`). Do not pass this file to `drizzle migrate`.
+`0008_client_audit_log_rollback.sql` drops `os.client_audit_log`, the append-only function, and `recommendations.approval_json`, then deletes the `os.__drizzle_migrations` row for that file. The hash is the sha256 of `apps/ads/shared/drizzle/0008_client_audit_log.sql`, and `created_at` is the journal `when` (`1791200000000`). Do not pass this file to `drizzle migrate`.

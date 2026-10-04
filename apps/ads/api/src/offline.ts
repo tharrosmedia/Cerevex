@@ -44,6 +44,7 @@ import { bundledCallTrackingConnector, callRailConnector, housecallProConnector 
 import { getDb } from "@tharros/ads-shared/db";
 import { adEntities } from "@tharros/ads-shared/schema";
 import { loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
+import { auditActor } from "./auth";
 import { requireMutableClient } from "./connect";
 import { childLogger } from "./logger";
 import { getVisibleClient } from "./tenancy";
@@ -197,8 +198,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "callrail_connect",
       entityType: "client",
       entityId: client.id,
@@ -231,8 +231,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await callRailConnector.disconnect({ workspaceId: client.workspaceId, clientId: client.id });
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "callrail_disconnect",
       entityType: "client",
       entityId: client.id,
@@ -279,8 +278,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "callrail_pull",
       entityType: "client",
       entityId: client.id,
@@ -349,8 +347,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "bundled_connect",
       entityType: "client",
       entityId: client.id,
@@ -391,8 +388,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await bundledCallTrackingConnector.disconnect({ workspaceId: client.workspaceId, clientId: client.id });
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "bundled_disconnect",
       entityType: "client",
       entityId: client.id,
@@ -452,8 +448,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "bundled_pull",
       entityType: "client",
       entityId: client.id,
@@ -561,8 +556,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "crm_connect",
       entityType: "client",
       entityId: client.id,
@@ -590,8 +584,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await housecallProConnector.disconnect({ workspaceId: client.workspaceId, clientId: client.id });
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "crm_disconnect",
       entityType: "client",
       entityId: client.id,
@@ -634,8 +627,7 @@ export function registerOfflineRoutes(app: Hono<AppEnv>, requireAuth: Middleware
     await saveWorkspaceConnectors(client.workspaceId, connectors);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "crm_pull",
       entityType: "client",
       entityId: client.id,

@@ -1,5 +1,5 @@
 -- Skills slice 1 PR 2. Brief 1.0 §4.3 approve/apply record and append-only client audit log.
--- Numbered 0007. Pricing #52 owns 0006. Rebase this journal entry after that migration merges.
+-- Numbered 0008. Service-actor constraints own 0007.
 ALTER TABLE "os"."recommendations" ADD COLUMN "approval_json" jsonb DEFAULT '{"status":"PENDING_APPROVAL","approved_by":null,"approved_at":null,"executed_by":null,"executed_at":null,"apply_result":null,"rolled_back_by":null,"rolled_back_at":null}'::jsonb NOT NULL;
 --> statement-breakpoint
 CREATE TABLE "os"."client_audit_log" (

@@ -9,6 +9,7 @@ import {
   applyModuleOverrideSettings,
   canApproveApply,
   canMutate,
+  type AuthContext,
   capabilityOnBlockedReason,
   CAPABILITY_IDS,
   EVENTS,
@@ -19,10 +20,12 @@ import {
 } from "@tharros/ads-shared";
 import { capabilityPublicMeta, loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
 import { filterOfflineRecommendations } from "./offline";
-import { latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shared/apply";
+import { applyResultAuditAction, latestApplyJob, runApplyJob, toApplyJobPublic } from "@tharros/ads-shared/apply";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
+  RecommendationGateError,
+  RecommendationNotOpenError,
   createAuditRun,
   decideRecommendation,
   getAuditBundle,
@@ -33,8 +36,6 @@ import {
   listAuditRunsForClients,
   listRecommendations,
   listRecommendationsForClients,
-  RecommendationGateError,
-  RecommendationNotOpenError,
   runAuditRun,
   toAuthorizationPublic,
   toFindingPublic,
@@ -46,6 +47,7 @@ import { LifecycleRepeatError, readApproval, recordRecLifecycle } from "@tharros
 import { sendApplyRequested, sendAuditRequested } from "@tharros/ads-shared/inngest";
 import { adAccounts, workspaces } from "@tharros/ads-shared/schema";
 import { eq } from "drizzle-orm";
+import { actorRef, auditActor, isServicePrincipal } from "./auth";
 import { requireMutableClient, requireVisibleAccount } from "./connect";
 import { childLogger } from "./logger";
 import { getVisibleClient, listVisibleClients } from "./tenancy";
@@ -76,7 +78,7 @@ function normalizeDecisionAction(action: "authorize" | "approve" | "deny" | "sno
 
 async function recordApproveRefusal(
   row: { id: string; workspaceId: string; clientId: string },
-  actorId: string,
+  actor: { actorType: "user" | "service"; actorId: string | null },
   reason: string,
 ): Promise<void> {
   await recordRecLifecycle({
@@ -85,12 +87,27 @@ async function recordApproveRefusal(
     workspaceId: row.workspaceId,
     clientId: row.clientId,
     module: "ads",
-    actorType: "user",
-    actorId,
+    actorType: actor.actorType,
+    actorId: actor.actorId,
     entityType: "recommendation",
     entityId: row.id,
     payload: { reason },
   });
+}
+
+const SERVICE_FORBIDDEN = "Service credentials cannot approve or apply.";
+const RECOMMENDATION_NOT_FOUND = "Recommendation not found";
+
+async function recommendationForMutation(auth: AuthContext, id: string) {
+  const row = await getRecommendation(id);
+  if (!row) {
+    throw new HTTPException(404, { message: RECOMMENDATION_NOT_FOUND });
+  }
+  const visible = await getVisibleClient(auth, row.clientId);
+  if (!visible || !canMutate(auth, visible.workspaceId)) {
+    throw new HTTPException(404, { message: RECOMMENDATION_NOT_FOUND });
+  }
+  return { row, client: visible };
 }
 
 export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHandler<AppEnv>) {
@@ -110,10 +127,13 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     await requireWritableCapability(client.workspaceId, "audits");
 
+    const actor = auditActor(auth);
     const run = await createAuditRun({
       workspaceId: client.workspaceId,
       clientId: client.id,
-      requestedBy: auth.user.id,
+      requestedBy: actorRef(auth),
+      actorType: actor.actorType,
+      actorId: actor.actorId,
       adAccountId: parsed.data.adAccountId,
     });
 
@@ -139,7 +159,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     try {
       const ids = await sendAuditRequested({
-        requestedBy: auth.user.id,
+        requestedBy: actorRef(auth),
         workspaceId: client.workspaceId,
         clientId: client.id,
         auditRunId: run.id,
@@ -302,7 +322,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
             connectionStatus: account.connectionStatus,
           }
         : null,
-      canApprove: canApproveApply(auth.user.email) && canMutate(auth, client.workspaceId),
+      canApprove: canApproveApply(auth.user?.email) && canMutate(auth, client.workspaceId) && !isServicePrincipal(auth),
       applyGate: gate,
       writes: false,
     });
@@ -314,13 +334,22 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (!parsed.success) {
       throw new HTTPException(400, { message: "action must be approve, deny, snooze, mark_done, or rollback" });
     }
+    const auth = c.get("auth");
+    const personAction =
+      parsed.data.action === "mark_done" ||
+      parsed.data.action === "rollback" ||
+      parsed.data.action === "authorize" ||
+      parsed.data.action === "approve";
+    if (personAction && isServicePrincipal(auth)) {
+      throw new HTTPException(403, { message: SERVICE_FORBIDDEN });
+    }
+    const { row, client } = await recommendationForMutation(auth, c.req.param("id"));
+    const actor = auditActor(auth);
+    const db = getDb();
+
     if (parsed.data.action === "mark_done" || parsed.data.action === "rollback") {
-      const auth = c.get("auth");
-      const row = await getRecommendation(c.req.param("id"));
-      if (!row) throw new HTTPException(404, { message: "Recommendation not found" });
-      const client = await requireMutableClient(auth, row.clientId);
-      if (!canApproveApply(auth.user.email)) {
-        await recordApproveRefusal(row, auth.user.id, "allowlist");
+      if (!canApproveApply(auth.user?.email)) {
+        await recordApproveRefusal(row, actor, "allowlist");
         throw new HTTPException(403, {
           message: "Approve is limited to the Adam allowlist during soft-launch.",
         });
@@ -330,14 +359,14 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         throw new HTTPException(409, { message: "This recommendation is already marked done." });
       }
       if (parsed.data.action === "mark_done" && approval.status !== "approved") {
-        await recordApproveRefusal(row, auth.user.id, "mark_done_before_approve");
+        await recordApproveRefusal(row, actor, "mark_done_before_approve");
         throw new HTTPException(409, { message: "Approve this recommendation before marking it done." });
       }
       if (parsed.data.action === "rollback" && approval.rolled_back_at) {
         throw new HTTPException(409, { message: "This recommendation is already rolled back." });
       }
       if (parsed.data.action === "rollback" && !approval.executed_at) {
-        await recordApproveRefusal(row, auth.user.id, "rollback_before_execute");
+        await recordApproveRefusal(row, actor, "rollback_before_execute");
         throw new HTTPException(409, { message: "Nothing has been applied yet, so there is nothing to roll back." });
       }
       try {
@@ -347,8 +376,8 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
           workspaceId: row.workspaceId,
           clientId: row.clientId,
           module: "ads",
-          actorType: "user",
-          actorId: auth.user.id,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
           entityType: "recommendation",
           entityId: row.id,
           payload: parsed.data.note ? { note: parsed.data.note } : {},
@@ -365,27 +394,39 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         client: { id: client.id, name: client.name },
         writes: false,
         applied: false,
-        note: parsed.data.action === "mark_done" ? "Marked done. Nothing new was sent to Meta or Google." : "Rollback recorded. Nothing new was sent to Meta or Google.",
+        note:
+          parsed.data.action === "mark_done"
+            ? "Marked done. Nothing new was sent to Meta or Google."
+            : "Rollback recorded. Nothing new was sent to Meta or Google.",
       });
     }
+
     const action = normalizeDecisionAction(parsed.data.action);
-    const row = await getRecommendation(c.req.param("id"));
-    if (!row) {
-      throw new HTTPException(404, { message: "Recommendation not found" });
-    }
-    const auth = c.get("auth");
-    const client = await requireMutableClient(auth, row.clientId);
 
     if (action === "authorize") {
-      if (!canApproveApply(auth.user.email)) {
-        await recordApproveRefusal(row, auth.user.id, "allowlist");
+      if (!canApproveApply(auth.user?.email)) {
+        await recordApproveRefusal(row, actor, "allowlist");
         throw new HTTPException(403, {
           message: "Approve is limited to the Adam allowlist during soft-launch.",
         });
       }
       if (row.status !== "proposed") {
-        await recordApproveRefusal(row, auth.user.id, "not_open");
+        await recordApproveRefusal(row, actor, "not_open");
         throw new HTTPException(409, { message: "This recommendation is no longer open." });
+      }
+      const workspace = await db.query.workspaces.findFirst({
+        where: eq(workspaces.id, client.workspaceId),
+      });
+      const account = await db.query.adAccounts.findFirst({
+        where: eq(adAccounts.id, row.adAccountId),
+      });
+      if (workspace?.applyKillSwitch) {
+        await recordApproveRefusal(row, actor, "apply_kill_switch");
+        throw new HTTPException(409, { message: applyBlockMessage("apply_kill_switch") });
+      }
+      if (account?.frozen) {
+        await recordApproveRefusal(row, actor, "account_frozen");
+        throw new HTTPException(409, { message: applyBlockMessage("account_frozen") });
       }
     }
 
@@ -393,16 +434,17 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     try {
       result = await decideRecommendation({
         recommendationId: row.id,
-        userId: auth.user.id,
+        userId: actor.actorId,
+        actorType: actor.actorType,
         action,
         note: parsed.data.note,
       });
     } catch (error) {
       if (error instanceof RecommendationNotOpenError) {
-        throw new HTTPException(409, { message: "This recommendation is no longer open." });
+        throw new HTTPException(409, { message: error.message });
       }
       if (error instanceof RecommendationGateError) {
-        await recordApproveRefusal(row, auth.user.id, error.reason);
+        await recordApproveRefusal(row, actor, error.reason);
         throw new HTTPException(409, { message: applyBlockMessage(error.reason) });
       }
       throw error;
@@ -436,8 +478,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "apply_attempt",
       entityType: "apply_job",
       entityId: applyJob.id,
@@ -453,8 +494,8 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       await writeAuditEvent({
         workspaceId: client.workspaceId,
         actorType: "worker",
-        actorId: auth.user.id,
-        action: ran.applyJob.status === "succeeded" ? "apply_success" : "apply_fail",
+        actorId: auditActor(auth).actorId,
+        action: applyResultAuditAction(ran),
         entityType: "apply_job",
         entityId: applyJob.id,
         payload: {
@@ -462,6 +503,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
           writes: ran.writes,
           outcomes: ran.outcomes,
           error: ran.applyJob.error,
+          revokedDuringApply: ran.blocked === "revoked_after_write",
         },
       });
       childLogger(c.get("requestId")).info({
@@ -485,7 +527,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     try {
       await sendApplyRequested({
-        requestedBy: auth.user.id,
+        requestedBy: actorRef(auth),
         workspaceId: client.workspaceId,
         clientId: client.id,
         authorizationId: result.authorization!.id,
@@ -516,15 +558,15 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
   app.post("/recommendations/:id/apply", requireAuth, async (c) => {
     assertRecommendationId(c.req.param("id"));
-    const parsed = z.object({ inline: z.boolean().optional() }).safeParse(await c.req.json().catch(() => ({})));
-    const row = await getRecommendation(c.req.param("id"));
-    if (!row) {
-      throw new HTTPException(404, { message: "Recommendation not found" });
-    }
     const auth = c.get("auth");
-    const client = await requireMutableClient(auth, row.clientId);
-    if (!canApproveApply(auth.user.email)) {
-      await recordApproveRefusal(row, auth.user.id, "allowlist");
+    if (isServicePrincipal(auth)) {
+      throw new HTTPException(403, { message: SERVICE_FORBIDDEN });
+    }
+    const parsed = z.object({ inline: z.boolean().optional() }).safeParse(await c.req.json().catch(() => ({})));
+    const { row, client } = await recommendationForMutation(auth, c.req.param("id"));
+    const actor = auditActor(auth);
+    if (!canApproveApply(auth.user?.email)) {
+      await recordApproveRefusal(row, actor, "allowlist");
       throw new HTTPException(403, {
         message: "Apply is limited to the Adam allowlist during soft-launch.",
       });
@@ -545,7 +587,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     });
 
     if (!gate.allowed) {
-      await recordApproveRefusal(row, auth.user.id, gate.blocked ?? "apply_blocked");
+      await recordApproveRefusal(row, actor, gate.blocked ?? "apply_blocked");
       throw new HTTPException(409, {
         message: applyBlockMessage(gate.blocked),
       });
@@ -561,8 +603,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "apply_attempt",
       entityType: "apply_job",
       entityId: applyJob.id,
@@ -574,11 +615,16 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       await writeAuditEvent({
         workspaceId: client.workspaceId,
         actorType: "worker",
-        actorId: auth.user.id,
-        action: ran.applyJob.status === "succeeded" ? "apply_success" : "apply_fail",
+        actorId: auditActor(auth).actorId,
+        action: applyResultAuditAction(ran),
         entityType: "apply_job",
         entityId: applyJob.id,
-        payload: { recommendationId: row.id, writes: ran.writes, outcomes: ran.outcomes },
+        payload: {
+          recommendationId: row.id,
+          writes: ran.writes,
+          outcomes: ran.outcomes,
+          revokedDuringApply: ran.blocked === "revoked_after_write",
+        },
       });
       return c.json({
         ok: ran.applyJob.status === "succeeded",
@@ -590,7 +636,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     try {
       await sendApplyRequested({
-        requestedBy: auth.user.id,
+        requestedBy: actorRef(auth),
         workspaceId: client.workspaceId,
         clientId: client.id,
         authorizationId: authorization!.id,
@@ -654,7 +700,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     return c.json({
       workspace: summary,
       canMutate: workspace ? canMutate(auth, workspace.id) : false,
-      canApprove: canApproveApply(auth.user.email),
+      canApprove: canApproveApply(auth.user?.email) && !isServicePrincipal(auth),
       ...(summary ? capabilityPublicMeta(summary.capabilities) : {}),
     });
   });
@@ -720,8 +766,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (parsed.data.applyKillSwitch !== undefined) {
       await writeAuditEvent({
         workspaceId,
-        actorType: "user",
-        actorId: auth.user.id,
+        ...auditActor(auth),
         action: "kill_flip",
         entityType: "workspace",
         entityId: workspaceId,
@@ -732,7 +777,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     childLogger(c.get("requestId")).info({
       msg: "workspace.updated",
       workspaceId,
-      userId: auth.user.id,
+      ...(auth.user ? { userId: auth.user.id } : { actor: auth.principal }),
       businessType: parsed.data.businessType,
       modules: parsed.data.modules,
       capabilities: parsed.data.capabilities,
@@ -745,7 +790,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     return c.json({
       workspace: summary,
       canMutate: true,
-      canApprove: canApproveApply(auth.user.email),
+      canApprove: canApproveApply(auth.user?.email) && !isServicePrincipal(auth),
       ...capabilityPublicMeta(summary.capabilities),
     });
   });

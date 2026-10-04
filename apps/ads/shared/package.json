@@ -9,9 +9,11 @@
     "./schema": "./src/schema.ts",
     "./inngest": "./src/inngest.ts",
     "./env": "./src/env.ts",
+    "./production-secrets": "./src/production-secrets.ts",
     "./test-database": "./src/test-database.ts",
     "./migration-ledger": "./src/migration-ledger.ts",
     "./migration-journal": "./src/migration-journal.ts",
+    "./prod-migrate": "./src/prod-migrate.ts",
     "./entitlements": "./src/entitlements.ts",
     "./crypto": "./src/crypto.ts",
     "./oauth": "./src/oauth.ts",
@@ -41,10 +43,12 @@
     "./attribution": "./src/attribution.ts",
     "./connector-settings": "./src/connector-settings.ts",
     "./planning-settings": "./src/planning-settings.ts",
-    "./server": "./src/server.ts"
+    "./server": "./src/server.ts",
+    "./actor": "./src/actor.ts"
   },
   "scripts": {
     "migrate": "tsx src/migrate.ts",
+    "migrate:prod": "tsx src/prod-migrate-cli.ts",
     "ledger": "tsx src/query-migration-ledger.ts",
     "seed": "tsx --conditions=react-server src/seed.ts",
     "import:skill-config": "tsx --conditions=react-server src/skill-config-import-cli.ts",

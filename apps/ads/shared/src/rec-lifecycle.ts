@@ -6,6 +6,7 @@
 
 import { sealSkillJobApproval, type RecommendationApproval } from "@cerevex/skills";
 import { and, desc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
+import { resolveAuditActor } from "./actor";
 import { redactSecrets } from "./crypto";
 import { getDb, type Database } from "./db";
 import {
@@ -280,9 +281,10 @@ export async function recordRecLifecycle(input: RecLifecycleInput, db: Database 
 }
 
 async function recordRecLifecycleOn(input: RecLifecycleInput, db: Database): Promise<ClientAuditRow> {
+  const actor = resolveAuditActor(input.actorType, input.actorId);
   const at = "at" in input && input.at ? input.at : new Date().toISOString();
   const storeId = await storeIdFor(db, input.clientId, input.storeId);
-  const approver = await approverName(db, input.actorId, input.approver);
+  const approver = await approverName(db, actor.actorId, input.approver);
 
   const recommendationId = recommendationIdOf(input);
   if (recommendationId && touchesApproval(input.kind)) {
@@ -331,8 +333,8 @@ async function recordRecLifecycleOn(input: RecLifecycleInput, db: Database): Pro
       workspaceId: input.workspaceId,
       clientId: input.clientId,
       storeId,
-      actorType: input.actorType,
-      actorId: input.actorId ?? null,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
       approver,
       module: input.module,
       action: input.kind,

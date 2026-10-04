@@ -110,8 +110,8 @@ One-release legacy aliases (same app; remove after in-flight jobs drain):
 | `OS_INNGEST_APP_ID` | **Set to `cerevex-ads`.** Required in any env that also has `INNGEST_APP_ID=shopify-brain` |
 | `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | Reuse Brain Cloud keys. Do **not** create a second Inngest org |
 | `INNGEST_DEV` | Local Dev Server only (`http://127.0.0.1:43183`). Unset in Cloud |
-| `TOKEN_ENCRYPTION_KEY` | OS token-at-rest (not Brain `ENCRYPTION_KEY`) |
-| `JWT_SECRET` | OS auth (not Brain `APP_PASSWORD`) |
+| `TOKEN_ENCRYPTION_KEY` | OS token-at-rest on ads-api and ads-workers (not Brain `ENCRYPTION_KEY`). Raw value, no trim. Surrounding whitespace fails boot. |
+| `JWT_SECRET` | ads-api auth only (not Brain `APP_PASSWORD`, not required on ads-workers) |
 
 **Clobber rule:** Inngest Cloud **app sync replaces that app’s function set**. If the OS worker is synced to app id `shopify-brain`, SEO functions disappear.
 
@@ -140,7 +140,7 @@ The runner:
 3. Records each file in `os.__drizzle_migrations` (`hash` + `created_at`, same shape as Drizzle)
 4. Prints JSON: `ok`, `migrationsApplied`, `osTables[]`, `publicTableCount`, `publicUnchanged`
 
-The bundle and sibling SQL files cover every current journal tag, `0000` through `0007`. That still does not make this a production migrate.
+The bundle and sibling SQL files cover every current journal tag, `0000` through `0008`. That still does not make this a production migrate.
 
 Drizzle SQL under `apps/ads/shared/drizzle/` is schema-qualified to **`os`** (`CREATE TYPE "os".…`, `CREATE TABLE "os".…`).
 
@@ -201,16 +201,9 @@ Expected public tables (Brain migrations `0001`–`0010`):
 
 ### 2. Do not apply OS migrations from this checklist
 
-This checklist has no production migrate command. `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
+This checklist does not apply OS migrations. The only production migrate command is in the ads README (Production migrate). `ads:db:migrate` and the Bun one-shot are local or other non-production only. The one-shot does not run the journal guards. A local or non-production database that already has `os` tables and only a `drizzle.__drizzle_migrations` ledger is refused until the one-time copy in the ads README.
 
-Manual SQL equivalent (if you use `psql` instead of the migrator):
-
-```sql
-CREATE SCHEMA IF NOT EXISTS os;
-SET search_path TO os, public;
--- then apply apps/ads/shared/drizzle/0000_m1_spine.sql
--- then apply apps/ads/shared/drizzle/0001_m2_connect.sql
-```
+Do not apply OS SQL by hand with `psql`. The bundled one-shot in [One-shot (local / non-production, Bun only)](#one-shot-local--non-production-bun-only) is the only alternative on this page. It is not a production migrate: it needs Bun and a local or other non-production `DATABASE_URL`, writes `os.__drizzle_migrations` for journal tags `0000` through `0005`, and still does not run the journal guards.
 
 ### 3. Verify Brain public / pgvector untouched
 
@@ -267,7 +260,8 @@ Expected `os` tables include:
 Optional API health (needs OS process + same `DATABASE_URL`; no platform writes):
 
 ```bash
-# JWT_SECRET required to boot; META_/GOOGLE_ stay empty
+# ads-api: JWT_SECRET (32+ code points, not the placeholder) and TOKEN_ENCRYPTION_KEY required in any Railway environment
+# ads-workers: TOKEN_ENCRYPTION_KEY only. Workers do not use JWT_SECRET. META_/GOOGLE_ stay empty
 npm run ads:dev
 # other terminal
 curl -sS http://127.0.0.1:43180/health

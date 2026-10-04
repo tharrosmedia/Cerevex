@@ -22,8 +22,10 @@
  * matching Neon pooler/direct twin) is refused even when the opt-in is set.
  * PRODUCTION_NEON_HOST may be a bare host, host:port, or any scheme URL.
  * `postgres://` and `postgresql://` are parsed with the driver, so `?host=`
- * is the host that is denied. Other schemes use the URL hostname. Trailing
- * dots are stripped. Hostnames go through `domainToASCII`; a non-ASCII host
+ * is the host that is denied. Other schemes use the URL hostname. A single
+ * trailing dot is stripped (`127.0.0.1.`, `localhost.`). More than one
+ * trailing dot is refused, including an IDNA form whose ASCII result ends in
+ * `..` (`localhost。。`). Hostnames go through `domainToASCII`; a non-ASCII host
  * that does not convert fails closed. A Neon `options=endpoint=` or
  * `options=project=` id, including one inside `PRODUCTION_DATABASE_URL` or
  * `PGOPTIONS`, matches a configured production endpoint even when the URL host
@@ -38,7 +40,12 @@
  * A non-empty value that does not parse fails closed. A host that still
  * contains `%` after the driver parse is refused unless it is an IPv6 zone
  * id. `domainToASCII` would percent-decode it again; node-postgres looks up
- * the literal name.
+ * the literal name. Surrounding whitespace is part of that name and is
+ * refused. A C0 control or DEL is refused before `domainToASCII`. An IPv4
+ * rewrite is accepted only when every dot-separated part is a decimal or
+ * `0x` hex integer (`127.1`, `0x7f000001`). `127.0x.0x.1` is not. That
+ * rewrite is refused with a trailing dot (`127.1.`, `0x7f000001.`). A
+ * non-ASCII host that converts to an IP is refused.
  *
  * Without PRODUCTION_NEON_HOST or PRODUCTION_DATABASE_URL, an unmarked Neon
  * host is only a normal remote host: refused by default, allowed with the
@@ -103,6 +110,25 @@ function purposeLabel(purpose: string | undefined): string {
   return purpose?.trim() || "this database command";
 }
 
+/** Decimal or `0x` hex. `0x` with no digits does not match. */
+const INET_ATON_PART = /^(?:0x[0-9a-f]+|[0-9]+)$/i;
+
+/** C0 controls, space, and DEL. `domainToASCII` would otherwise swallow these. */
+const HOST_CONTROL = /[\u0000-\u0020\u007f]/;
+
+function isInetAtonForm(host: string): boolean {
+  const bare = host.replace(/\.+$/, "");
+  if (!bare) return false;
+  return bare.split(".").every((part) => INET_ATON_PART.test(part));
+}
+
+/** ASCII `.` on the raw host. IDNA dots are checked after `domainToASCII`. */
+function trailingDotCount(host: string): number {
+  let count = 0;
+  for (let i = host.length - 1; i >= 0 && host.charCodeAt(i) === 0x2e; i -= 1) count += 1;
+  return count;
+}
+
 /**
  * Returns null when a non-empty host is non-ASCII and `domainToASCII` cannot
  * turn it into ASCII, or when that conversion would not be the name
@@ -110,24 +136,38 @@ function purposeLabel(purpose: string | undefined): string {
  * zone id), and socket paths are not passed through `domainToASCII`.
  */
 function normalizeHost(hostname: string): string | null {
-  let host = hostname.trim();
+  // pg does not trim. `127.0.0.1\t` and ` localhost` are literal lookup names.
+  if (hostname !== hostname.trim()) return null;
+  let host = hostname;
   if (!host) return "";
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
   if (host.startsWith("/")) return host.toLowerCase();
   // `domainToASCII` percent-decodes. A leftover `%` is a literal DNS label
   // for pg, except an IPv6 zone id (`fe80::1%eth0`), which `isIP` accepts.
   if (host.includes("%") && isIP(host) !== 6) return null;
+  // `127.0.0.1.` and `localhost.` are loopback. `127.0.0.1..` and `localhost..` are not.
+  const trailingDots = trailingDotCount(host);
+  if (trailingDots > 1) return null;
   if (isIP(host)) return host.toLowerCase().replace(/\.+$/, "");
+  if (HOST_CONTROL.test(host)) return null;
   const ascii = domainToASCII(host);
   if (!ascii || /[^\u0000-\u007f]/.test(ascii)) return null;
+  // `。`, `．`, and `｡` become `.` here. A soft hyphen or zero-width space is
+  // dropped, so `localhost。。` and `localhost.\u200B.` are `localhost..`.
+  if (/\.\.$/.test(ascii)) return null;
   const stripped = ascii.replace(/\.+$/, "").toLowerCase();
   if (!stripped) return null;
-  // ASCII may change only by case folding, trailing dots, or an IPv4 form
-  // `domainToASCII` rewrites to a dotted address (`127.1`, `0x7f000001`).
-  // Any other change is not IDNA and is not the name pg looks up.
+  // Fullwidth digits, ideographic dots, a soft hyphen, or a zero-width space
+  // become an IP here while Node looks the original name up in DNS.
+  if (isIP(stripped) !== 0 && /[^\u0000-\u007f]/.test(host)) return null;
+  // ASCII may change only by case folding, one trailing dot, or an inet_aton
+  // form Node resolves itself (`127.1`, `0x7f.0.0.1`). `127.0x.0x.1` is a DNS name.
+  // A trailing dot on that rewrite (`127.1.`, `0x7f000001.`) is not loopback.
   if (!/[^\u0000-\u007f]/.test(host)) {
     const folded = host.replace(/\.+$/, "").toLowerCase();
-    if (folded !== stripped && isIP(stripped) === 0) return null;
+    const inetAton = folded !== stripped && isIP(stripped) !== 0 && isInetAtonForm(folded);
+    if (folded !== stripped && !inetAton) return null;
+    if (trailingDots > 0 && inetAton) return null;
   }
   return stripped;
 }

@@ -1,4 +1,4 @@
-import { decrypt, encrypt } from '../encryption';
+import { encrypt, readStoredSecret } from '../encryption';
 import type { StoreConfig } from '../types/store';
 
 export type WordpressStoreConfig = {
@@ -49,12 +49,12 @@ export function wordpressApplyBlockedByKillSwitch(store: { config?: StoreConfig 
   return wordpressKillSwitchIsOn(wp.applyKillSwitch);
 }
 
-export function decryptWordpressPluginKey(store: { shopify_access_token?: string; config?: StoreConfig | Record<string, unknown> } | null | undefined): string {
+export function decryptWordpressPluginKey(store: { id?: string; shopify_access_token?: string; config?: StoreConfig | Record<string, unknown> } | null | undefined): string {
   const wp = wordpressConfigFromStore(store);
-  const secret = process.env.ENCRYPTION_KEY || '';
   if (wp.pluginKeyEnc) {
+    const where = { source: 'stores.config.wordpress.pluginKeyEnc', field: 'pluginKeyEnc', storeId: store?.id };
     try {
-      return decrypt(wp.pluginKeyEnc, secret);
+      return readStoredSecret(wp.pluginKeyEnc, where);
     } catch {
       return '';
     }
@@ -63,7 +63,7 @@ export function decryptWordpressPluginKey(store: { shopify_access_token?: string
 }
 
 export function encryptWordpressPluginKey(pluginKey: string): string {
-  return encrypt(pluginKey, process.env.ENCRYPTION_KEY || '');
+  return encrypt(pluginKey, process.env.ENCRYPTION_KEY);
 }
 
 export function wordpressSiteUrl(store: { shopify_domain?: string; config?: StoreConfig | Record<string, unknown> } | null | undefined): string {

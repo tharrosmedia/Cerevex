@@ -386,6 +386,165 @@ describe("test database guard", () => {
     expect(assess("postgres://user:pw@localhost/app").allowed).toBe(true);
   });
 
+  it("does not treat mixed hex-decimal IPv4 text as loopback", () => {
+    for (const host of ["127.0x.0x.1", "0x7f.0x.0x.1"]) {
+      const asHost = assess(`postgres://u:pw@${host}/x`);
+      const asQuery = assess(`postgres://u:pw@db.example.com/x?host=${host}`);
+      expect(asHost.allowed, host).toBe(false);
+      expect(asQuery.allowed, `?host=${host}`).toBe(false);
+      expect(asHost.host, host).toBeNull();
+      expect(asQuery.host, `?host=${host}`).toBeNull();
+      expect(asHost.message, host).toContain("could not be parsed");
+      expect(asHost.message, host).not.toContain("pw");
+      expect(asQuery.message, `?host=${host}`).not.toContain("pw");
+      expect(assess(`postgres://u:pw@${host}/x`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed, host).toBe(false);
+      expect(
+        assess(`postgres://u:pw@db.example.com/x?host=${host}`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed,
+        `?host=${host}`,
+      ).toBe(false);
+    }
+
+    for (const host of ["127.1", "0x7f000001", "0x7f.0.0.1", "127.0.0.1", "localhost"]) {
+      expect(assess(`postgres://user:pw@${host}/app`).allowed, host).toBe(true);
+      expect(assess(`postgres://user:pw@db.example.com/app?host=${host}`).host, `?host=${host}`).toBe(
+        host === "127.0.0.1" || host === "localhost" ? host : "127.0.0.1",
+      );
+      expect(assess(`postgres://user:pw@db.example.com/app?host=${host}`).allowed, `?host=${host}`).toBe(true);
+    }
+  });
+
+  it("does not treat a non-ASCII spelling of an inet_aton form as loopback", () => {
+    const hosts = [
+      "\uFF11\uFF12\uFF17.0x.0x.1",
+      "127.0x.0x.\uFF11",
+      "\uFF10\uFF58\uFF17\uFF46.\uFF10\uFF58.\uFF10\uFF58.\uFF11",
+      "127\u30020x\u30020x\u30021",
+      "127\uFF0E0x\uFF0E0x\uFF0E1",
+      "127.0x\u00AD.0x.1",
+      "127.0\u200Bx.0x.1",
+    ];
+    for (const host of hosts) {
+      const encoded = encodeURIComponent(host);
+      const asHost = assess(`postgres://u:pw@${encoded}/x`);
+      const asQuery = assess(`postgres://u:pw@db.example.com/x?host=${encoded}`);
+      expect(asHost.allowed, host).toBe(false);
+      expect(asQuery.allowed, `?host=${host}`).toBe(false);
+      expect(asHost.host, host).toBeNull();
+      expect(asQuery.host, `?host=${host}`).toBeNull();
+      expect(asHost.message, host).toContain("could not be parsed");
+      expect(asHost.message, host).not.toContain("pw");
+      expect(asQuery.message, `?host=${host}`).not.toContain("pw");
+      expect(assess(`postgres://u:pw@${encoded}/x`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed, host).toBe(false);
+      expect(
+        assess(`postgres://u:pw@db.example.com/x?host=${encoded}`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed,
+        `?host=${host}`,
+      ).toBe(false);
+    }
+  });
+
+  it("refuses extra trailing dots and a trailing dot on an inet_aton rewrite", () => {
+    for (const host of ["127.1.", "0x7f000001.", "0x7f.0.0.1.", "127.0.0.1..", "localhost.."]) {
+      const asHost = assess(`postgres://u:pw@${host}/x`);
+      const asQuery = assess(`postgres://u:pw@db.example.com/x?host=${encodeURIComponent(host)}`);
+      expect(asHost.allowed, host).toBe(false);
+      expect(asQuery.allowed, `?host=${host}`).toBe(false);
+      expect(asHost.host, host).toBeNull();
+      expect(asQuery.host, `?host=${host}`).toBeNull();
+      expect(asHost.message, host).toContain("could not be parsed");
+      expect(asHost.message, host).not.toContain("pw");
+      expect(asQuery.message, `?host=${host}`).not.toContain("pw");
+      expect(assess(`postgres://u:pw@${host}/x`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed, host).toBe(false);
+      expect(
+        assess(`postgres://u:pw@db.example.com/x?host=${encodeURIComponent(host)}`, {
+          ALLOW_NONLOCAL_TEST_DB: "1",
+        }).allowed,
+        `?host=${host}`,
+      ).toBe(false);
+    }
+
+    expect(assess("postgres://user:pw@127.0.0.1./app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@localhost./app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@db.example.com/app?host=127.0.0.1.").host).toBe("127.0.0.1");
+    expect(assess("postgres://user:pw@db.example.com/app?host=localhost.").host).toBe("localhost");
+    expect(assess("postgres://user:pw@127.1/app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@0x7f000001/app").allowed).toBe(true);
+  });
+
+  it("refuses IDNA spellings that become two trailing dots", () => {
+    const hosts = [
+      "localhost\u3002\u3002",
+      "localhost\uFF0E\uFF0E",
+      "localhost\uFF61\uFF61",
+      "localhost.\u3002",
+      "localhost\u3002.",
+      "localhost.\u00AD.",
+      "localhost.\u200B.",
+      "\uFF4C\uFF4F\uFF43\uFF41\uFF4C\uFF48\uFF4F\uFF53\uFF54\uFF0E\uFF0E",
+    ];
+    for (const host of hosts) {
+      const encoded = encodeURIComponent(host);
+      const asHost = assess(`postgres://u:pw@${encoded}/x`);
+      const asQuery = assess(`postgres://u:pw@db.example.com/x?host=${encoded}`);
+      expect(asHost.allowed, host).toBe(false);
+      expect(asQuery.allowed, `?host=${host}`).toBe(false);
+      expect(asHost.host, host).toBeNull();
+      expect(asQuery.host, `?host=${host}`).toBeNull();
+      expect(asHost.message, host).toContain("could not be parsed");
+      expect(asHost.message, host).not.toContain("pw");
+      expect(asQuery.message, `?host=${host}`).not.toContain("pw");
+      expect(assess(`postgres://u:pw@${encoded}/x`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed, host).toBe(false);
+      expect(
+        assess(`postgres://u:pw@db.example.com/x?host=${encoded}`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed,
+        `?host=${host}`,
+      ).toBe(false);
+    }
+    expect(assess("postgres://user:pw@127.0.0.1./app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@localhost./app").allowed).toBe(true);
+    expect(assess("postgres://user:pw@db.example.com/app?host=127.0.0.1.").host).toBe("127.0.0.1");
+    expect(assess("postgres://user:pw@db.example.com/app?host=localhost.").host).toBe("localhost");
+  });
+
+  it("refuses a non-ASCII host that also contains a control character", () => {
+    const host = `\uFF4Cocal\thost`;
+    const encoded = encodeURIComponent(host);
+    const asHost = assess(`postgres://u:pw@${encoded}/x`);
+    const asQuery = assess(`postgres://u:pw@db.example.com/x?host=${encoded}`);
+    expect(asHost.allowed).toBe(false);
+    expect(asQuery.allowed).toBe(false);
+    expect(asHost.host).toBeNull();
+    expect(asQuery.host).toBeNull();
+    expect(asHost.message).toContain("could not be parsed");
+    expect(asHost.message).not.toContain("pw");
+    expect(asQuery.message).not.toContain("pw");
+    expect(assess(`postgres://u:pw@${encoded}/x`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed).toBe(false);
+    expect(
+      assess(`postgres://u:pw@db.example.com/x?host=${encoded}`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed,
+    ).toBe(false);
+  });
+
+  it("refuses a host pg would look up with surrounding whitespace", () => {
+    for (const host of ["127.0.0.1\t", " localhost"]) {
+      const encoded = encodeURIComponent(host);
+      const asHost = assess(`postgres://u:pw@${encoded}/x`);
+      const asQuery = assess(`postgres://u:pw@db.example.com/x?host=${encoded}`);
+      expect(asHost.allowed, JSON.stringify(host)).toBe(false);
+      expect(asQuery.allowed, `?host=${JSON.stringify(host)}`).toBe(false);
+      expect(asHost.host, JSON.stringify(host)).toBeNull();
+      expect(asQuery.host, `?host=${JSON.stringify(host)}`).toBeNull();
+      expect(asHost.message, JSON.stringify(host)).not.toContain("pw");
+      expect(asQuery.message, `?host=${JSON.stringify(host)}`).not.toContain("pw");
+      expect(assess(`postgres://u:pw@${encoded}/x`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed).toBe(false);
+      expect(
+        assess(`postgres://u:pw@db.example.com/x?host=${encoded}`, { ALLOW_NONLOCAL_TEST_DB: "1" }).allowed,
+      ).toBe(false);
+    }
+    expect(assess(CI_URL).allowed).toBe(true);
+    expect(assess("postgres://tharros:tharros@localhost:54329/tharros").allowed).toBe(true);
+    expect(assess("postgres://tharros:tharros@[::1]:5432/tharros").allowed).toBe(true);
+    expect(assess("postgres://user:pw@localhost/db?host=/var/run/postgresql").allowed).toBe(true);
+    expect(assess("postgres://user:pw@localhost/db?host=127.0.0.1").allowed).toBe(true);
+  });
+
   it("does not let a routing endpoint id use ci, test, or br- host labels", () => {
     const password = encodeURIComponent("endpoint=ep-other-branch$pw");
     const ci = `postgres://user:${password}@ci.example.com/app`;

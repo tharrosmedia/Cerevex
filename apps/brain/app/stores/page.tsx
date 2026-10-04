@@ -22,6 +22,7 @@ import {
   wordpressSiteUrl,
   wordpressWorkspaceSettingsFromStore,
 } from '@/src/lib/wordpress';
+import { isProductionRuntime } from '@/lib/runtime-env';
 
 type Platform = 'shopify' | 'wordpress';
 
@@ -36,7 +37,7 @@ async function setActiveStore(storeId: string) {
   const jar = await cookies();
   jar.set('activeStoreId', storeId, {
     path: '/',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProductionRuntime(),
     sameSite: 'lax',
   });
 }

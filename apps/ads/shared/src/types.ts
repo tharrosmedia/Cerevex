@@ -28,14 +28,11 @@ export type ClientMembership = {
 };
 
 export type AuthContext = {
-  user: SessionUser;
+  /** `service` is the internal key. It is never a human user and has no user id. */
+  principal: "user" | "service";
+  user: SessionUser | null;
   memberships: Membership[];
   clientMemberships: ClientMembership[];
-  /**
-   * Set only for the ads internal service key. Session auth leaves this unset,
-   * which is a person. Person lifecycle events refuse `service`.
-   */
-  principal?: "user" | "service";
 };
 
 export type ClientSummary = {

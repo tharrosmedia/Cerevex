@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hash } from "bcryptjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { SkillJobApprovalError } from "@cerevex/skills";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb, getPool } from "@tharros/ads-shared/db";
@@ -18,7 +18,7 @@ import {
   redactAuditValue,
 } from "@tharros/ads-shared/rec-lifecycle";
 import { activateStore, deactivateStore, EntitlementError, setClientPlan } from "@tharros/ads-shared/entitlements";
-import { applyJobs, authorizations, clientAuditLog, clients, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
+import { applyJobs, auditLog, authorizations, clientAuditLog, clients, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
 loadEnv();
@@ -402,38 +402,18 @@ describe("client audit log", () => {
       module: "paid-media",
     });
     const before = await countClientAuditLog(clientId);
-    const db = getDb();
-    const extraEmail = "service-key-extra-owner@example.com";
-    const extraHash = await hash("service-key-extra-only", 10);
-    const extraExisting = await db.query.users.findFirst({ where: eq(users.email, extraEmail) });
-    const extraUser =
-      extraExisting ??
-      (await db.insert(users).values({ email: extraEmail, name: "Service Key Extra", passwordHash: extraHash }).returning())[0];
-    const extraWorkspace =
-      (await db.query.workspaces.findFirst({ where: eq(workspaces.name, "Service Key Extra Workspace") })) ??
-      (await db.insert(workspaces).values({ name: "Service Key Extra Workspace" }).returning())[0];
-    await db
-      .insert(memberships)
-      .values({ userId: extraUser.id, workspaceId: extraWorkspace.id, role: "owner" })
-      .onConflictDoUpdate({
-        target: [memberships.userId, memberships.workspaceId],
-        set: { role: "owner" },
-      });
-    const displaced = await db
-      .select({ userId: memberships.userId, workspaceId: memberships.workspaceId })
-      .from(memberships)
-      .where(and(eq(memberships.role, "owner"), ne(memberships.userId, ownerId)));
-    if (displaced.length > 0) {
-      await db
-        .update(memberships)
-        .set({ role: "operator" })
-        .where(and(eq(memberships.role, "owner"), ne(memberships.userId, ownerId)));
-    }
     const previousKey = process.env.ADS_INTERNAL_KEY;
+    const previousWorkspace = process.env.ADS_INTERNAL_WORKSPACE_ID;
     process.env.ADS_INTERNAL_KEY = "audit-service-key";
+    process.env.ADS_INTERNAL_WORKSPACE_ID = workspaceId;
+    const headers = {
+      "content-type": "application/json",
+      "x-cerevex-internal-key": "audit-service-key",
+    };
     try {
       const bodies = [
         { kind: "approved", clientId, recommendationId: created.id },
+        { kind: "rejected", clientId, recommendationId: created.id },
         { kind: "mark_done", clientId, recommendationId: created.id },
         { kind: "rolled_back", clientId, recommendationId: created.id },
         { kind: "prompt_layer_approved", clientId, version: "forged@v99" },
@@ -441,30 +421,78 @@ describe("client audit log", () => {
       for (const body of bodies) {
         const res = await app.request("/recommendations/lifecycle", {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-cerevex-internal-key": "audit-service-key",
-          },
+          headers,
           body: JSON.stringify(body),
         });
         expect(res.status).toBe(403);
       }
+      for (const action of ["approve", "mark_done", "rollback"]) {
+        const res = await app.request(`/recommendations/${created.id}/decide`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ action }),
+        });
+        expect(res.status).toBe(403);
+      }
+      const apply = await app.request(`/recommendations/${created.id}/apply`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+      });
+      expect(apply.status).toBe(403);
     } finally {
       if (previousKey === undefined) delete process.env.ADS_INTERNAL_KEY;
       else process.env.ADS_INTERNAL_KEY = previousKey;
-      for (const row of displaced) {
-        await db
-          .update(memberships)
-          .set({ role: "owner" })
-          .where(and(eq(memberships.userId, row.userId), eq(memberships.workspaceId, row.workspaceId)));
-      }
+      if (previousWorkspace === undefined) delete process.env.ADS_INTERNAL_WORKSPACE_ID;
+      else process.env.ADS_INTERNAL_WORKSPACE_ID = previousWorkspace;
     }
     expect(await countClientAuditLog(clientId)).toBe(before);
     const rec = await getDb().query.recommendations.findFirst({ where: eq(recommendations.id, created.id) });
     expect(readApproval(rec?.approvalJson).status).toBe("PENDING_APPROVAL");
     expect(rec?.status).toBe("proposed");
+    const humanAudit = await getDb().query.auditLog.findFirst({
+      where: and(eq(auditLog.entityId, created.id), eq(auditLog.actorId, ownerId)),
+    });
+    expect(humanAudit).toBeUndefined();
     const forged = await listClientAuditLog({ clientId, action: "prompt_layer_approved", limit: 100 });
     expect(JSON.stringify(forged.rows)).not.toContain("forged@v99");
+  });
+
+  it("records a service deny as the service actor", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    const previousKey = process.env.ADS_INTERNAL_KEY;
+    const previousWorkspace = process.env.ADS_INTERNAL_WORKSPACE_ID;
+    process.env.ADS_INTERNAL_KEY = "audit-service-key";
+    process.env.ADS_INTERNAL_WORKSPACE_ID = workspaceId;
+    try {
+      const res = await app.request(`/recommendations/${created.id}/decide`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-cerevex-internal-key": "audit-service-key",
+        },
+        body: JSON.stringify({ action: "deny" }),
+      });
+      expect(res.status).toBe(200);
+    } finally {
+      if (previousKey === undefined) delete process.env.ADS_INTERNAL_KEY;
+      else process.env.ADS_INTERNAL_KEY = previousKey;
+      if (previousWorkspace === undefined) delete process.env.ADS_INTERNAL_WORKSPACE_ID;
+      else process.env.ADS_INTERNAL_WORKSPACE_ID = previousWorkspace;
+    }
+    const clientRows = await listClientAuditLog({ clientId, action: "rejected", limit: 100 });
+    const clientRow = clientRows.rows.find((row) => row.entityId === created.id);
+    expect(clientRow?.actorType).toBe("service");
+    expect(clientRow?.actorId).toBeNull();
+    const audit = await getDb().query.auditLog.findFirst({
+      where: and(eq(auditLog.entityId, created.id), eq(auditLog.action, "deny")),
+    });
+    expect(audit?.actorType).toBe("service");
+    expect(audit?.actorId).toBeNull();
+    expect(audit?.actorId).not.toBe(ownerId);
   });
 
   it("returns 404 and writes no audit row for another workspace", async () => {

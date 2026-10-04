@@ -119,6 +119,9 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
       });
     }
     const personKinds = new Set(["approved", "mark_done", "rolled_back", "prompt_layer_approved", "prompt_layer_rolled_back"]);
+    if (!auth.user) {
+      throw new HTTPException(403, { message: "Owner or operator role required" });
+    }
     if (personKinds.has(parsed.data.kind) && !canApproveApply(auth.user.email)) {
       throw new HTTPException(403, { message: "Approve is limited to the Adam allowlist during soft-launch." });
     }
@@ -189,6 +192,9 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
     const parsed = roleSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new HTTPException(400, { message: "userId and role are required" });
     const auth = c.get("auth");
+    if (!auth.user) {
+      throw new HTTPException(403, { message: "Only an admin can change roles." });
+    }
     const db = getDb();
     const membershipRows = await db
       .select()

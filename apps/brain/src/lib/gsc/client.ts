@@ -17,7 +17,7 @@ export function isGscConfigured() {
   return !!getEnv();
 }
 
-export function buildAuthUrl(storeId: string) {
+export function buildAuthUrl(state: string) {
   const env = getEnv();
   if (!env) throw new Error('GSC not configured on host');
   const params = new URLSearchParams({
@@ -27,7 +27,7 @@ export function buildAuthUrl(storeId: string) {
     scope: 'https://www.googleapis.com/auth/webmasters.readonly',
     access_type: 'offline',
     prompt: 'consent',
-    state: storeId,
+    state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
@@ -79,7 +79,11 @@ async function accessTokenForStore(storeId: string) {
   const store = await getStore(storeId);
   const gscCfg = store?.config?.gsc;
   if (!gscCfg?.refreshTokenEnc) throw new Error('GSC not connected for store');
-  const refresh = decrypt(gscCfg.refreshTokenEnc, process.env.ENCRYPTION_KEY!);
+  const refresh = decrypt(gscCfg.refreshTokenEnc, process.env.ENCRYPTION_KEY, {
+    source: 'stores.config.gsc.refreshTokenEnc',
+    field: 'refreshTokenEnc',
+    storeId,
+  });
   const tok = await refreshAccessToken(refresh);
   const access = tok.access_token as string | undefined;
   if (!access) throw new Error('No access token after refresh');

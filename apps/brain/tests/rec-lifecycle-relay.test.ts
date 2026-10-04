@@ -9,7 +9,7 @@ const decide = readFileSync(join(here, '../app/api/ads/decide/route.ts'), 'utf8'
 assert.equal(approve.includes('relayApproveToAuditLog'), false);
 assert.equal(approve.includes('/recommendations/lifecycle'), false);
 assert.equal(approve.includes('rec-lifecycle-relay'), false);
-assert.ok(decide.includes('consoleAuthorized'));
+assert.ok(decide.includes('authorizeApprover'));
 assert.ok(decide.includes('mark_done'));
 assert.ok(decide.includes('rollback'));
 
