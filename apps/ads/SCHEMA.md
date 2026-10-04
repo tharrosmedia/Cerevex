@@ -144,6 +144,13 @@ HTTP Approve and Inngest `ads/apply.requested` (legacy alias `os/apply.requested
 
 Append-only: `UPDATE` and `DELETE` are blocked by database rules.
 
+### client_audit_log
+`id`, `workspace_id`, `client_id`, `store_id`, `actor_type`, `actor_id`, `approver`, `module`, `action`, `entity_type`, `entity_id`, `payload_json`, `created_at`
+
+Append-only per client. Triggers reject `UPDATE`, `DELETE`, and `TRUNCATE` (`55000`), including `TRUNCATE ... CASCADE`. `workspace_id`, `client_id`, and `actor_id` are `ON DELETE RESTRICT`. `ON DELETE SET NULL` on `actor_id` would be an update, and the trigger would refuse it, so a user, client, or workspace that has audit rows cannot be deleted.
+
+The table owner or a superuser can still bypass those triggers with `ALTER TABLE os.client_audit_log DISABLE TRIGGER` or by setting `session_replication_role` to `replica`. The application role is not granted that. Do not run the app as the table owner if the trigger has to hold.
+
 ## M5.1 tables
 
 - `analytics_connections` — GA4 property / first-party pixel token (no OAuth secrets in this slice)

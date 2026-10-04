@@ -18,7 +18,7 @@ import {
   redactAuditValue,
 } from "@tharros/ads-shared/rec-lifecycle";
 import { activateStore, deactivateStore, EntitlementError, setClientPlan } from "@tharros/ads-shared/entitlements";
-import { applyJobs, auditLog, authorizations, clientAuditLog, clients, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
+import { adEntities, applyJobs, auditLog, authorizations, clientAuditLog, clients, memberships, recommendations, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
 loadEnv();
@@ -976,6 +976,261 @@ describe("client audit log", () => {
     }
   }, 60_000);
 
+  it("pages 120 same-transaction rows at 10, 25, and 50 with no drops or duplicates", async () => {
+    const pool = getPool();
+    await pool.query("BEGIN");
+    try {
+      await pool.query(
+        `insert into os.client_audit_log (workspace_id, client_id, actor_type, module, action, entity_type, payload_json)
+         select $1, $2, 'worker', 'paging', 'paging_probe', 'recommendation', jsonb_build_object('n', g)
+         from generate_series(1, 120) as g`,
+        [workspaceId, clientId],
+      );
+      await pool.query("COMMIT");
+    } catch (error) {
+      await pool.query("ROLLBACK");
+      throw error;
+    }
+    for (const limit of [10, 25, 50]) {
+      const seen = new Set<string>();
+      let cursor: string | null = null;
+      let pages = 0;
+      do {
+        const params = new URLSearchParams({ action: "paging_probe", module: "paging", limit: String(limit) });
+        if (cursor) params.set("cursor", cursor);
+        const res = await app.request(`/clients/${clientId}/audit-log?${params.toString()}`, {
+          headers: { authorization: `Bearer ${ownerToken}` },
+        });
+        expect(res.status).toBe(200);
+        const body = (await json(res)) as { rows: { id: string }[]; nextCursor: string | null };
+        expect(body.rows.length).toBeGreaterThan(0);
+        expect(body.rows.length).toBeLessThanOrEqual(limit);
+        if (body.nextCursor) {
+          expect(body.rows.length).toBe(limit);
+          expect(body.nextCursor).toMatch(/\.\d{6}Z\|[0-9a-f-]{36}$/i);
+        }
+        for (const row of body.rows) {
+          expect(seen.has(row.id)).toBe(false);
+          seen.add(row.id);
+        }
+        cursor = body.nextCursor;
+        pages += 1;
+        expect(pages).toBeLessThan(30);
+      } while (cursor);
+      expect(seen.size).toBe(120);
+    }
+  });
+
+  it("returns 400 for a cursor whose id is not a uuid", async () => {
+    const res = await app.request(
+      `/clients/${clientId}/audit-log?cursor=${encodeURIComponent("2026-01-01T00:00:00.123456Z|not-a-uuid")}`,
+      { headers: { authorization: `Bearer ${ownerToken}` } },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses apply after mark_done and ends the authorization", async () => {
+    const externalId = `audit-done-${randomUUID()}`;
+    const [entity] = await getDb()
+      .insert(adEntities)
+      .values({
+        workspaceId,
+        clientId,
+        adAccountId: accountId,
+        platform: "meta",
+        entityType: "ad",
+        externalId,
+        name: "Mark done target",
+        status: "active",
+      })
+      .returning();
+    const created = await insertJobRecommendation(
+      parseRecommendationDraft({
+        ...draftFor({ workspaceId, clientId, adAccountId: accountId }),
+        proposedMutationsJson: [
+          {
+            platform: "meta",
+            action: "pause",
+            target: { entityType: "ad", externalId, name: "Mark done target" },
+            payload: {},
+            execute: false,
+          },
+        ],
+      }),
+      { source: "native:paid-media", module: "paid-media" },
+    );
+    await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+    try {
+      const approved = await app.request(`/recommendations/${created.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      });
+      expect(approved.status).toBe(200);
+      const marked = await app.request(`/recommendations/${created.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "mark_done" }),
+      });
+      expect(marked.status).toBe(200);
+      const [authz] = await getDb()
+        .select()
+        .from(authorizations)
+        .where(eq(authorizations.recommendationId, created.id));
+      expect(authz?.revokedAt).toBeTruthy();
+      const apply = await app.request(`/recommendations/${created.id}/apply`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(apply.status).toBe(409);
+      const job = await getDb().query.applyJobs.findFirst({
+        where: eq(applyJobs.authorizationId, authz!.id),
+      });
+      expect(job).toBeTruthy();
+      const ran = await runApplyJob(job!.id);
+      expect(ran.writes).toBe(false);
+      expect(ran.blocked).toBe("authorization_revoked");
+      const stored = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entity.id) });
+      expect(stored?.status).toBe("active");
+    } finally {
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
+  it("keeps the platform outcome when the settle audit insert fails", async () => {
+    const externalId = `audit-settle-${randomUUID()}`;
+    const [entity] = await getDb()
+      .insert(adEntities)
+      .values({
+        workspaceId,
+        clientId,
+        adAccountId: accountId,
+        platform: "meta",
+        entityType: "ad",
+        externalId,
+        name: "Settle audit target",
+        status: "active",
+      })
+      .returning();
+    const created = await insertJobRecommendation(
+      parseRecommendationDraft({
+        ...draftFor({ workspaceId, clientId, adAccountId: accountId }),
+        proposedMutationsJson: [
+          {
+            platform: "meta",
+            action: "pause",
+            target: { entityType: "ad", externalId, name: "Settle audit target" },
+            payload: {},
+            execute: false,
+          },
+        ],
+      }),
+      { source: "native:paid-media", module: "paid-media" },
+    );
+    await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+    try {
+      const approved = await decideRecommendation({
+        recommendationId: created.id,
+        userId: ownerId,
+        action: "authorize",
+      });
+      const job = await createApplyJobForAuthorization({
+        workspaceId,
+        clientId,
+        authorizationId: approved.authorization!.id,
+        recommendationId: created.id,
+        proposedMutations: created.proposedMutationsJson,
+      });
+      await installAuditProbe(["applied"]);
+      await expect(runApplyJob(job.id)).rejects.toThrow(/audit insert probe|client_audit_log/);
+      const storedJob = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+      expect(storedJob?.status).not.toBe("applying");
+      expect(storedJob?.status).toBe("succeeded");
+      expect((storedJob?.responseJson as { writes?: boolean } | null)?.writes).toBe(true);
+      const stored = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entity.id) });
+      expect(stored?.status).toBe("paused");
+      await dropAuditProbe();
+      const again = await runApplyJob(job.id);
+      expect(again.fresh).toBe(false);
+      expect(again.writes).toBe(true);
+      expect((await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) }))?.status).toBe("succeeded");
+    } finally {
+      await dropAuditProbe();
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
+  it("rolls the claim back when the apply_attempt audit insert fails", async () => {
+    const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
+      source: "native:paid-media",
+      module: "paid-media",
+    });
+    await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+    try {
+      const approved = await decideRecommendation({
+        recommendationId: created.id,
+        userId: ownerId,
+        action: "authorize",
+      });
+      const job = await createApplyJobForAuthorization({
+        workspaceId,
+        clientId,
+        authorizationId: approved.authorization!.id,
+        recommendationId: created.id,
+        proposedMutations: created.proposedMutationsJson,
+      });
+      await installAuditProbe(["apply_attempt"]);
+      await expect(runApplyJob(job.id)).rejects.toThrow(/audit insert probe|client_audit_log/);
+      const stranded = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, job.id) });
+      expect(stranded?.status).toBe("queued");
+      await dropAuditProbe();
+      const ran = await runApplyJob(job.id);
+      expect(ran.applyJob.status).not.toBe("applying");
+      expect(["succeeded", "failed"]).toContain(ran.applyJob.status);
+    } finally {
+      await dropAuditProbe();
+      await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
+  it("refuses the last owner demotion and hides missing and forbidden role changes", async () => {
+    const email = `last-owner-${randomUUID()}@example.com`;
+    const password = "last-owner-local-only";
+    const passwordHash = await hash(password, 10);
+    const [solo] = await getDb().insert(users).values({ email, name: "Solo Owner", passwordHash }).returning();
+    const [soloWorkspace] = await getDb()
+      .insert(workspaces)
+      .values({ name: `Solo ${solo.id}` })
+      .returning();
+    await getDb().insert(memberships).values({ userId: solo.id, workspaceId: soloWorkspace.id, role: "owner" });
+    const soloToken = (await login(email, password)).token;
+    const demote = await app.request("/memberships/role", {
+      method: "POST",
+      headers: { authorization: `Bearer ${soloToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId: solo.id, workspaceId: soloWorkspace.id, role: "operator" }),
+    });
+    expect(demote.status).toBe(409);
+    const still = await getDb().query.memberships.findFirst({
+      where: and(eq(memberships.userId, solo.id), eq(memberships.workspaceId, soloWorkspace.id)),
+    });
+    expect(still?.role).toBe("owner");
+
+    const missing = await app.request("/memberships/role", {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId: randomUUID(), workspaceId, role: "operator" }),
+    });
+    const readonly = await login("pilot.readonly@tharrosmedia.com", "readonly-local-only");
+    const forbidden = await app.request("/memberships/role", {
+      method: "POST",
+      headers: { authorization: `Bearer ${readonly.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId: ownerId, workspaceId, role: "operator" }),
+    });
+    expect(missing.status).toBe(404);
+    expect(forbidden.status).toBe(404);
+  });
+
   it("rolls back the recommendation change when the audit insert fails", async () => {
     const created = await insertJobRecommendation(draftFor({ workspaceId, clientId, adAccountId: accountId }), {
       source: "native:paid-media",
@@ -1013,6 +1268,35 @@ describe("client audit log", () => {
     }
   });
 });
+
+async function installAuditProbe(actions: string[]) {
+  const pool = getPool();
+  const list = actions.map((action) => `'${action.replace(/'/g, "")}'`).join(", ");
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION os.reject_client_audit_insert_probe()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.action = ANY (ARRAY[${list}]::text[]) THEN
+        RAISE EXCEPTION 'audit insert probe' USING ERRCODE = '55000';
+      END IF;
+      RETURN NEW;
+    END;
+    $$
+  `);
+  await pool.query(`DROP TRIGGER IF EXISTS client_audit_log_insert_probe ON os.client_audit_log`);
+  await pool.query(`
+    CREATE TRIGGER client_audit_log_insert_probe
+    BEFORE INSERT ON os.client_audit_log
+    FOR EACH ROW
+    EXECUTE FUNCTION os.reject_client_audit_insert_probe()
+  `);
+}
+
+async function dropAuditProbe() {
+  const pool = getPool();
+  await pool.query(`DROP TRIGGER IF EXISTS client_audit_log_insert_probe ON os.client_audit_log`);
+  await pool.query(`DROP FUNCTION IF EXISTS os.reject_client_audit_insert_probe()`);
+}
 
 async function stressCall(run: () => Promise<unknown>): Promise<string | null> {
   try {

@@ -282,6 +282,7 @@ describe("migration journal schema", () => {
       await setup.query(`SELECT setval(pg_get_serial_sequence('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}', 'id'), $1)`, [
         applied.length,
       ]);
+      await seedLegacyRecommendations(setup, process.pid);
       const before = await setup.query(`select to_regclass('os.client_audit_log') as name`);
       expect(before.rows[0]?.name).toBeNull();
     } finally {
@@ -302,6 +303,31 @@ describe("migration journal schema", () => {
       expect((await client.query(`select to_regclass('os.client_audit_log') as name`)).rows[0]?.name).toBe(
         "client_audit_log",
       );
+      const legacy = await client.query<{ title: string; approval_json: Record<string, string | null> }>(
+        `select title, approval_json from os.recommendations where title like $1 order by title`,
+        [`legacy-backfill-${process.pid}-%`],
+      );
+      const byTitle = new Map(legacy.rows.map((row) => [row.title, row.approval_json]));
+      const prefix = `legacy-backfill-${process.pid}`;
+      expect(byTitle.get(`${prefix}-authorized`)?.status).toBe("approved");
+      expect(byTitle.get(`${prefix}-authorized`)?.executed_at).toBeNull();
+      expect(byTitle.get(`${prefix}-denied`)?.status).toBe("rejected");
+      expect(byTitle.get(`${prefix}-proposed`)?.status).toBe("PENDING_APPROVAL");
+      expect(byTitle.get(`${prefix}-executed`)?.status).toBe("approved");
+      expect(byTitle.get(`${prefix}-executed`)?.executed_by).toBe("cerevex_apply");
+      expect(byTitle.get(`${prefix}-executed`)?.executed_at).toBeTruthy();
+      const stillPending = await client.query(
+        `select count(*)::int as n from os.recommendations
+         where status in ('authorized', 'denied')
+           and approval_json->>'status' = 'PENDING_APPROVAL'
+           and title like $1`,
+        [`legacy-backfill-${process.pid}-%`],
+      );
+      expect(stillPending.rows[0]?.n).toBe(0);
+      const actorFk = await client.query<{ confdeltype: string }>(
+        `select confdeltype from pg_constraint where conname = 'client_audit_log_actor_id_users_id_fk'`,
+      );
+      expect(actorFk.rows[0]?.confdeltype).toBe("r");
       const second = await runMigrate(databaseUrl);
       expect(second.code, second.stderr).toBe(0);
       const again = await client.query(`select count(*)::int as n from ${migrationsRelation()}`);
@@ -413,3 +439,70 @@ describe("migration journal schema", () => {
     }
   }, 60_000);
 });
+
+async function seedLegacyRecommendations(client: pg.Client, pid: number) {
+  const prefix = `legacy-backfill-${pid}`;
+  const seeded = await client.query<{
+    workspace_id: string;
+    client_id: string;
+    account_id: string;
+    user_id: string;
+  }>(
+    `with ws as (
+       insert into os.workspaces (name) values ($1) returning id
+     ),
+     cl as (
+       insert into os.clients (workspace_id, name)
+       select id, $1 from ws returning id, workspace_id
+     ),
+     acct as (
+       insert into os.ad_accounts (workspace_id, client_id, platform, external_id)
+       select workspace_id, id, 'meta', $2 from cl returning id, workspace_id, client_id
+     ),
+     usr as (
+       insert into os.users (email, name, password_hash)
+       values ($3, 'Legacy', 'not-a-login') returning id
+     )
+     select acct.workspace_id, acct.client_id, acct.id as account_id, usr.id as user_id
+     from acct, usr`,
+    [`${prefix}-workspace`, `${prefix}-account`, `${prefix}@example.com`],
+  );
+  const row = seeded.rows[0];
+  if (!row) throw new Error("legacy seed failed");
+  const recs = await client.query<{ id: string; title: string }>(
+    `insert into os.recommendations
+       (workspace_id, client_id, ad_account_id, type, title, rationale, status)
+     values
+       ($1, $2, $3, 'pause_waste', $4, 'legacy', 'authorized'),
+       ($1, $2, $3, 'pause_waste', $5, 'legacy', 'denied'),
+       ($1, $2, $3, 'pause_waste', $6, 'legacy', 'proposed'),
+       ($1, $2, $3, 'pause_waste', $7, 'legacy', 'authorized')
+     returning id, title`,
+    [
+      row.workspace_id,
+      row.client_id,
+      row.account_id,
+      `${prefix}-authorized`,
+      `${prefix}-denied`,
+      `${prefix}-proposed`,
+      `${prefix}-executed`,
+    ],
+  );
+  const executed = recs.rows.find((item) => item.title.endsWith("-executed"));
+  if (!executed) throw new Error("executed legacy rec missing");
+  const decision = await client.query<{ id: string }>(
+    `insert into os.decisions (workspace_id, client_id, recommendation_id, user_id, action)
+     values ($1, $2, $3, $4, 'authorize') returning id`,
+    [row.workspace_id, row.client_id, executed.id, row.user_id],
+  );
+  const authorization = await client.query<{ id: string }>(
+    `insert into os.authorizations (workspace_id, client_id, recommendation_id, decision_id)
+     values ($1, $2, $3, $4) returning id`,
+    [row.workspace_id, row.client_id, executed.id, decision.rows[0]!.id],
+  );
+  await client.query(
+    `insert into os.apply_jobs (workspace_id, client_id, authorization_id, status, response_json, finished_at)
+     values ($1, $2, $3, 'succeeded', '{"writes":true}'::jsonb, now())`,
+    [row.workspace_id, row.client_id, authorization.rows[0]!.id],
+  );
+}

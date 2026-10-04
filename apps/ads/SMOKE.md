@@ -142,6 +142,8 @@ The runner:
 
 The bundle and sibling SQL files cover every current journal tag, `0000` through `0009`. That still does not make this a production migrate.
 
+`os.client_audit_log` is append-only. Triggers reject `UPDATE`, `DELETE`, and `TRUNCATE`. `actor_id` is `ON DELETE RESTRICT`, the same as `client_id` and `workspace_id`, because `ON DELETE SET NULL` is an update the trigger would block. The table owner or a superuser can still bypass the triggers with `DISABLE TRIGGER` or `session_replication_role = replica`. Do not point the app role at the table owner.
+
 Drizzle SQL under `apps/ads/shared/drizzle/` is schema-qualified to **`os`** (`CREATE TYPE "os".…`, `CREATE TABLE "os".…`).
 
 ---
