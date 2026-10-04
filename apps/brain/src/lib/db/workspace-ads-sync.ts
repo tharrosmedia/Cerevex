@@ -1,7 +1,8 @@
-import type {
-  BusinessType,
-  CapabilityOverrides,
-  ModuleFlags,
+import {
+  applySafetyOnIds,
+  type BusinessType,
+  type CapabilityOverrides,
+  type ModuleFlags,
 } from '@cerevex/contracts';
 
 export type AdsWorkspaceSettingsPatch = {
@@ -28,14 +29,38 @@ export function adsWorkspaceSettingsPatch(
 
 /**
  * A 403 from ads is a refusal, not a saved change.
- * Other failures still fall back to the local settings copy.
+ * Other failures still fall back to the local settings copy, except an apply-safety on.
+ * Those ons are saved only when ads accepted the patch.
  */
-export function capabilityPatchShowsSaved(result: {
-  ok: boolean;
-  status?: number;
-  reason?: string;
-}): boolean {
+export function capabilityPatchShowsSaved(
+  result: {
+    ok: boolean;
+    status?: number;
+    reason?: string;
+  },
+  overrides?: Partial<Record<string, string>> | null,
+): boolean {
+  if (applySafetyOnIds(overrides).length > 0) return result.ok;
   if (result.ok) return true;
   if (result.status === 403 || result.reason === "unauthorized") return false;
   return true;
+}
+
+/** Safety ons go out as the owner. The service key is omitted so ads can audit the owner. */
+export function adsCallerHeaders(input: {
+  safetyOn: boolean;
+  internalKey?: string | null;
+  ownerToken?: string | null;
+}): Headers {
+  const headers = new Headers();
+  if (input.safetyOn) {
+    const token = input.ownerToken?.trim();
+    if (token) headers.set('authorization', `Bearer ${token}`);
+    return headers;
+  }
+  const key = input.internalKey?.trim();
+  if (key) headers.set('x-cerevex-internal-key', key);
+  const token = input.ownerToken?.trim();
+  if (token) headers.set('authorization', `Bearer ${token}`);
+  return headers;
 }

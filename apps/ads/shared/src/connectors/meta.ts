@@ -44,7 +44,9 @@ async function graphPost(path: string, accessToken: string, body: Record<string,
 async function graphGet(path: string, accessToken: string): Promise<unknown> {
   const url = path.startsWith("http") ? path : `${GRAPH}/${path}`;
   const separator = url.includes("?") ? "&" : "?";
-  const res = await fetch(`${url}${separator}access_token=${encodeURIComponent(accessToken)}`);
+  const res = await fetch(`${url}${separator}access_token=${encodeURIComponent(accessToken)}`, {
+    signal: AbortSignal.timeout(PLATFORM_WRITE_TIMEOUT_MS),
+  });
   if (!res.ok) {
     throw new Error(`Meta Graph read failed (${res.status})`);
   }

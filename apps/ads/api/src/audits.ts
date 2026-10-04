@@ -22,7 +22,14 @@ import {
 import { applySafetyOnIds, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { capabilityPublicMeta, loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
 import { filterOfflineRecommendations } from "./offline";
-import { applyResultAuditAction, latestApplyJob, runApplyJob, shouldRecordApplyAudit, toApplyJobPublic } from "@tharros/ads-shared/apply";
+import {
+  applyResultAuditAction,
+  latestApplyJob,
+  requeueFailedApplyJob,
+  runApplyJob,
+  shouldRecordApplyAudit,
+  toApplyJobPublic,
+} from "@tharros/ads-shared/apply";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
@@ -467,7 +474,10 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (isServicePrincipal(auth)) {
       throw new HTTPException(403, { message: SERVICE_FORBIDDEN });
     }
-    const parsed = z.object({ inline: z.boolean().optional() }).safeParse(await c.req.json().catch(() => ({})));
+    const parsed = z
+      .object({ inline: z.boolean().optional(), requeue: z.boolean().optional() })
+      .safeParse(await c.req.json().catch(() => ({})));
+    const requeue = parsed.success && parsed.data.requeue === true;
     const { row, client } = await recommendationForMutation(auth, c.req.param("id"));
     if (!canApproveApply(auth.user?.email)) {
       throw new HTTPException(403, {
@@ -502,6 +512,54 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       recommendationId: row.id,
       proposedMutations: row.proposedMutationsJson,
     });
+
+    if (requeue) {
+      assertApplySafetyOwner(auth, client.workspaceId);
+      if (applyJob.status !== "failed") {
+        throw new HTTPException(409, { message: "Only a failed apply can be requeued." });
+      }
+      const requeued = await requeueFailedApplyJob(applyJob.id);
+      if (!requeued.ok) {
+        throw new HTTPException(409, { message: "Only a failed apply can be requeued." });
+      }
+      await writeAuditEvent({
+        workspaceId: client.workspaceId,
+        ...auditActor(auth),
+        action: "apply_requeue",
+        entityType: "apply_job",
+        entityId: applyJob.id,
+        payload: { recommendationId: row.id },
+      });
+      try {
+        await sendApplyRequested({
+          requestedBy: actorRef(auth),
+          workspaceId: client.workspaceId,
+          clientId: client.id,
+          authorizationId: authorization!.id,
+          applyJobId: requeued.applyJob.id,
+        });
+      } catch {
+        /* queued locally even if Inngest is down */
+      }
+      return c.json({
+        ok: true,
+        status: "queued",
+        applyJob: requeued.applyJob,
+        writes: false,
+        name: EVENTS.applyRequested,
+        note: "Failed apply was requeued. Live ads change only after the worker runs.",
+      });
+    }
+
+    if (applyJob.status === "failed" || applyJob.status === "succeeded") {
+      return c.json({
+        ok: applyJob.status === "succeeded",
+        status: applyJob.status,
+        applyJob,
+        writes: false,
+        note: applyJob.status === "succeeded" ? "Apply already finished." : "Apply already failed.",
+      });
+    }
 
     await writeAuditEvent({
       workspaceId: client.workspaceId,

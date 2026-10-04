@@ -5,6 +5,7 @@ import {
   wordpressSyncBlockedReason,
   type CapabilityFlags,
 } from '@cerevex/contracts';
+import { flagsWithConfirmedSafety } from '../ads-confirmed-safety';
 
 function asRecord(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
@@ -22,7 +23,7 @@ export function wordpressFlagsFromWorkspace(workspaceSettings: unknown): Capabil
 }
 
 export function wordpressFlagsFromStore(store: { config?: Record<string, unknown> } | null | undefined): CapabilityFlags {
-  return wordpressFlagsFromWorkspace(wordpressWorkspaceSettingsFromStore(store));
+  return flagsWithConfirmedSafety(wordpressWorkspaceSettingsFromStore(store));
 }
 
 export function wordpressConnectBlockedFromWorkspace(workspaceSettings: unknown): string | null {

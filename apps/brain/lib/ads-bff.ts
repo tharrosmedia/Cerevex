@@ -1,3 +1,4 @@
+import { adsCallerHeaders } from "../src/lib/db/workspace-ads-sync";
 import { isProductionRuntime } from "./runtime-env";
 
 export type AdsFailReason = "not_configured" | "unreachable" | "unauthorized" | "not_found" | "error";
@@ -91,7 +92,16 @@ export function adsApiConfigured(): boolean {
   return Boolean(adsApiUrl());
 }
 
-export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<AdsResult<T>> {
+export type AdsCallOptions = {
+  asOwner?: boolean;
+  ownerToken?: string | null;
+};
+
+export async function adsApi<T>(
+  path: string,
+  init: RequestInit = {},
+  options: AdsCallOptions = {},
+): Promise<AdsResult<T>> {
   const base = adsApiUrl();
   if (!base) {
     return {
@@ -107,10 +117,18 @@ export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<A
     headers.set("content-type", "application/json");
   }
   // Service secrets only — not product flags. APP_PASSWORD is Brain console session.
-  const internalKey = process.env.ADS_INTERNAL_KEY;
-  const token = process.env.ADS_API_TOKEN;
+  // Safety ons drop the service key and send the owner bearer alone.
+  const caller = adsCallerHeaders({
+    safetyOn: options.asOwner === true,
+    internalKey: process.env.ADS_INTERNAL_KEY,
+    ownerToken: options.asOwner ? (options.ownerToken ?? process.env.ADS_API_TOKEN) : process.env.ADS_API_TOKEN,
+  });
+  headers.delete("x-cerevex-internal-key");
+  headers.delete("authorization");
+  const internalKey = caller.get("x-cerevex-internal-key");
+  const authorization = caller.get("authorization");
   if (internalKey) headers.set("x-cerevex-internal-key", internalKey);
-  if (token) headers.set("authorization", `Bearer ${token}`);
+  if (authorization) headers.set("authorization", authorization);
 
   const suffix = path.startsWith("/") ? path : `/${path}`;
   try {

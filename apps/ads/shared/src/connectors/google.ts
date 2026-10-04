@@ -435,6 +435,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       method: "POST",
       headers: googleAdsHeaders(tokens, developerToken),
       body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(PLATFORM_WRITE_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const body = (await res.json()) as {

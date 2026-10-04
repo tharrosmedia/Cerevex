@@ -3,9 +3,9 @@ import {
   isGscApplyWritable,
   isGscRecommendationsOn,
   isGscRecommendationsVisible,
-  resolveWorkspaceCapabilities,
   type CapabilityFlags,
 } from '@cerevex/contracts';
+import { flagsWithConfirmedSafety } from '../ads-confirmed-safety';
 import { gscApplyBlockedByKillSwitch } from './gsc-threshold';
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -20,7 +20,7 @@ export function gscWorkspaceSettingsFromStore(
 }
 
 export function gscFlagsFromStore(store: { config?: Record<string, unknown> } | null | undefined): CapabilityFlags {
-  return resolveWorkspaceCapabilities(gscWorkspaceSettingsFromStore(store));
+  return flagsWithConfirmedSafety(gscWorkspaceSettingsFromStore(store));
 }
 
 export function gscRecommendationsAreVisible(store: { config?: Record<string, unknown> } | null | undefined): boolean {

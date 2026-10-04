@@ -6,8 +6,12 @@ import { loadEnv } from "@tharros/ads-shared/env";
 import { ADS_POOL_MAX, closeDb, getDb } from "@tharros/ads-shared/db";
 import {
   APPLYING_LEASE_MS,
+  APPLY_EXECUTE_DEADLINE_MS,
   PLATFORM_WRITE_TIMEOUT_MS,
+  applyOutcomeWrites,
   applyingLeaseRemainingMs,
+  closeApplyingJob,
+  isAbortedApplyError,
   runApplyJob,
   sanitizeStoredError,
   settledApplyJob,
@@ -949,7 +953,7 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(job?.attempts).toBe(0);
   });
 
-  it("records retry false when apply returns a stored failure", async () => {
+  it("returns a stored failure without another attempt or a queued response", async () => {
     const rec = await insertRec();
     const jobId = await approveQueued(rec.id);
     await getDb()
@@ -957,25 +961,110 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       .set({ status: "failed", error: "connector_rejected", finishedAt: new Date() })
       .where(eq(applyJobs.id, jobId));
     const stored = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+    const before = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
     const res = await app.request(`/recommendations/${rec.id}/apply`, {
       method: "POST",
       headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ inline: true }),
+      body: JSON.stringify({}),
     });
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body.ok).toBe(false);
     expect(body.status).toBe("failed");
+    expect(body.status).not.toBe("queued");
     const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
     expect(job?.status).toBe("failed");
     expect(job?.error).toBe("connector_rejected");
     expect(job?.attempts).toBe(stored?.attempts ?? 0);
     const audits = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
-    const retries = audits.filter(
-      (row) => row.action === "apply_attempt" && (row.payloadJson as { retry?: boolean }).retry !== undefined,
-    );
-    expect(retries.length).toBeGreaterThan(0);
-    expect(retries.every((row) => (row.payloadJson as { retry?: boolean }).retry === false)).toBe(true);
+    const added = audits.filter((row) => !before.some((rowBefore) => rowBefore.id === row.id));
+    expect(added.some((row) => row.action === "apply_attempt" || row.action === "apply_fail")).toBe(false);
+  });
+
+  it("requeues a failed apply for the owner and leaves the platform alone", async () => {
+    const rec = await insertRec();
+    const jobId = await approveQueued(rec.id);
+    await getDb()
+      .update(applyJobs)
+      .set({ status: "failed", error: "stale_applying", finishedAt: new Date(), attempts: 1 })
+      .where(eq(applyJobs.id, jobId));
+    await resetEntity();
+
+    const email = "operator.safety@tharrosmedia.com";
+    const passwordHash = await hash("operator-safety-local", 10);
+    const existing = await getDb().query.users.findFirst({ where: eq(users.email, email) });
+    const operator =
+      existing ?? (await getDb().insert(users).values({ email, name: "Safety operator", passwordHash }).returning())[0];
+    if (!operator) throw new Error("operator missing");
+    if (existing) await getDb().update(users).set({ passwordHash }).where(eq(users.id, operator.id));
+    await getDb().insert(memberships).values({ userId: operator.id, workspaceId, role: "operator" }).onConflictDoNothing();
+    const operatorToken = (await login(email, "operator-safety-local")).token;
+    const previousAllow = process.env.APPROVE_OPERATOR_EMAILS;
+    process.env.APPROVE_OPERATOR_EMAILS = "adam@tharrosmedia.com,operator.safety@tharrosmedia.com";
+    try {
+      const operatorRequeue = await app.request(`/recommendations/${rec.id}/apply`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${operatorToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ requeue: true }),
+      });
+      expect(operatorRequeue.status).toBe(403);
+      expect(String((await json(operatorRequeue)).error)).toMatch(/owner/i);
+      const serviceRequeue = await app.request(`/recommendations/${rec.id}/apply`, {
+        method: "POST",
+        headers: internalHeaders(true),
+        body: JSON.stringify({ requeue: true }),
+      });
+      expect(serviceRequeue.status).toBe(403);
+    } finally {
+      if (previousAllow === undefined) delete process.env.APPROVE_OPERATOR_EMAILS;
+      else process.env.APPROVE_OPERATOR_EMAILS = previousAllow;
+    }
+    expect((await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) }))?.status).toBe("failed");
+
+    const ownerRequeue = await app.request(`/recommendations/${rec.id}/apply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ requeue: true }),
+    });
+    expect(ownerRequeue.status).toBe(200);
+    const queued = await json(ownerRequeue);
+    expect(queued.status).toBe("queued");
+    expect(queued.writes).toBe(false);
+    const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+    expect(job?.status).toBe("queued");
+    expect(job?.error).toBeNull();
+    expect(job?.finishedAt).toBeNull();
+    expect(job?.attempts).toBe(1);
+    expect((await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) }))?.status).toBe("active");
+    const audits = await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId));
+    expect(audits.filter((row) => row.action === "apply_requeue")).toHaveLength(1);
+    expect(audits.some((row) => row.action === "apply_fail")).toBe(false);
+
+    await getDb().update(applyJobs).set({ status: "applying" }).where(eq(applyJobs.id, jobId));
+    const applying = await app.request(`/recommendations/${rec.id}/apply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ requeue: true }),
+    });
+    expect(applying.status).toBe(409);
+    await getDb()
+      .update(applyJobs)
+      .set({ status: "succeeded", error: null, finishedAt: new Date() })
+      .where(eq(applyJobs.id, jobId));
+    const succeeded = await app.request(`/recommendations/${rec.id}/apply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ requeue: true }),
+    });
+    expect(succeeded.status).toBe(409);
+    const replay = await app.request(`/recommendations/${rec.id}/apply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(replay.status).toBe(200);
+    expect((await json(replay)).status).toBe("succeeded");
+    expect((await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) }))?.status).toBe("succeeded");
   });
 
   it("refuses service and operator changes that would let apply write", async () => {
@@ -1222,14 +1311,62 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     });
     const sqlError = 'Failed query: update "os"."ad_entities" set "status" = $1 params: paused';
     expect(sanitizeStoredError(sqlError)).toBe("database_error");
+    expect(sanitizeStoredError('duplicate key value violates unique constraint "apply_jobs_idempotency_idx"')).toBe(
+      "database_error",
+    );
+    expect(sanitizeStoredError('insert or update on table "x" violates foreign key constraint "y"')).toBe(
+      "database_error",
+    );
+    expect(sanitizeStoredError('new row for relation "x" violates check constraint "z"')).toBe("database_error");
+    expect(sanitizeStoredError("SQLSTATE 23505")).toBe("database_error");
+    const platformText = "Meta update rejected params: daily_budget";
+    expect(sanitizeStoredError(platformText)).toBe(platformText);
     expect(sanitizeStoredError("authorization_revoked")).toBe("authorization_revoked");
     expect(settledApplyJob({ writes: true, failed: sqlError, revoked: false }).error).toBe("database_error");
     expect(shouldRecordApplyAudit({ blocked: "in_progress" })).toBe(false);
     expect(shouldRecordApplyAudit({ blocked: "stale_applying" })).toBe(false);
     expect(shouldRecordApplyAudit({ blocked: "revoked_after_write", audited: true })).toBe(false);
+    expect(shouldRecordApplyAudit({ blocked: null, replayed: true })).toBe(false);
     expect(shouldRecordApplyAudit({ blocked: null })).toBe(true);
     expect(PLATFORM_WRITE_TIMEOUT_MS).toBeGreaterThan(0);
     expect(PLATFORM_WRITE_TIMEOUT_MS).toBeLessThan(APPLYING_LEASE_MS / 2);
+    expect(APPLY_EXECUTE_DEADLINE_MS).toBeGreaterThan(PLATFORM_WRITE_TIMEOUT_MS);
+    expect(APPLY_EXECUTE_DEADLINE_MS).toBeLessThan(APPLYING_LEASE_MS);
+    expect(isAbortedApplyError(Object.assign(new Error("timed out"), { name: "TimeoutError" }))).toBe(true);
+    expect(isAbortedApplyError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(true);
+    expect(isAbortedApplyError(new Error("connector_rejected"))).toBe(false);
+    expect(applyOutcomeWrites([{ writes: "unknown", status: "failed" }])).toBe("unknown");
+    expect(applyOutcomeWrites([{ writes: false, status: "failed" }])).toBe(false);
+    expect(
+      applyOutcomeWrites([
+        { writes: true, status: "applied" },
+        { writes: "unknown", status: "failed" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("clamps a future claimedAt to the lease and closes the stuck job", async () => {
+    const rec = await insertRec();
+    const jobId = await approveQueued(rec.id);
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set status = 'applying',
+          response_json = jsonb_build_object('claimedAt', now() + interval '1 year')
+      where id = ${jobId}::uuid
+    `);
+    const job = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+    expect(await applyingLeaseRemainingMs(job?.responseJson)).toBe(APPLYING_LEASE_MS);
+    const ran = await runApplyJob(jobId);
+    expect(ran.blocked).toBe("in_progress");
+    expect(ran.writes).toBe(false);
+    const closed = await closeApplyingJob(jobId);
+    expect(closed.blocked).toBe("stale_applying");
+    expect(closed.applyJob.status).toBe("failed");
+    expect(closed.applyJob.error).toBe("stale_applying");
+    expect((closed.applyJob.response as { writes?: unknown }).writes).toBe("unknown");
+    const again = await closeApplyingJob(jobId);
+    expect(again.replayed).toBe(true);
+    expect(shouldRecordApplyAudit(again)).toBe(false);
   });
 });
 

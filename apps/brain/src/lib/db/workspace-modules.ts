@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import {
+  applySafetyOnIds,
   blockedUnfinishedCapabilityOns,
   isProductionRuntime,
   parseWorkspaceModuleSettings,
@@ -14,6 +15,7 @@ import {
   type WorkspaceModuleSettings,
 } from '@cerevex/contracts';
 import { adsApi } from '@/lib/ads-bff';
+import { adsConfirmedSafetyIds } from '../ads-confirmed-safety';
 import { getActiveStoreId, getStore, updateStore } from './stores';
 import {
   adsWorkspaceSettingsPatch,
@@ -27,7 +29,10 @@ export type WorkspaceProductSettings = WorkspaceModuleSettings & {
 
 export const WORKSPACE_COOKIE = 'cerevex_workspace';
 
-async function patchAdsWorkspaceSettings(input: AdsWorkspaceSettingsPatch) {
+async function patchAdsWorkspaceSettings(
+  input: AdsWorkspaceSettingsPatch,
+  options?: { asOwner?: boolean; ownerToken?: string | null },
+) {
   const body = adsWorkspaceSettingsPatch(input);
   if (!body) {
     return {
@@ -37,10 +42,26 @@ async function patchAdsWorkspaceSettings(input: AdsWorkspaceSettingsPatch) {
       status: 400,
     };
   }
-  return adsApi<{ workspace: { capabilities?: CapabilityFlags } | null }>('/workspace', {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  });
+  return adsApi<{ workspace: { capabilities?: CapabilityFlags } | null }>(
+    '/workspace',
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    },
+    { asOwner: options?.asOwner, ownerToken: options?.ownerToken },
+  );
+}
+
+/** Owner bearer for safety ons. Empty means ads will 401 and the local copy stays unchanged. */
+async function ownerBearer(): Promise<string | null> {
+  const fromEnv = process.env.ADS_API_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const jar = await cookies();
+    return jar.get('tharros_session')?.value?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -112,13 +133,23 @@ export async function saveCapabilityOverrides(overrides: CapabilityOverrides) {
   if (blockedUnfinishedCapabilityOns(overrides).length > 0) {
     throw new Error('Unfinished M5.1 capabilities cannot be turned on.');
   }
-  const patched = await patchAdsWorkspaceSettings({ capabilities: overrides });
-  if (!capabilityPatchShowsSaved(patched)) {
+  const safetyOn = applySafetyOnIds(overrides);
+  const patched = await patchAdsWorkspaceSettings(
+    { capabilities: overrides },
+    safetyOn.length > 0 ? { asOwner: true, ownerToken: await ownerBearer() } : undefined,
+  );
+  if (!capabilityPatchShowsSaved(patched, overrides)) {
     const message = patched.ok ? 'Could not save that capability.' : patched.message;
     throw new Error(message || 'Could not save that capability.');
   }
   const current = await currentSettingsRecord();
-  const next = settingsJsonWithCapabilityOverrides(current, overrides);
+  let next = settingsJsonWithCapabilityOverrides(current, overrides);
+  if (patched.ok && safetyOn.length > 0) {
+    next = {
+      ...next,
+      adsConfirmedSafety: [...new Set([...adsConfirmedSafetyIds(current), ...safetyOn])],
+    };
+  }
   await persistSettings(next);
   if (patched.ok && patched.data.workspace?.capabilities) {
     return {

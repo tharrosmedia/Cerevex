@@ -7,7 +7,7 @@ export type MutationOutcome = {
   status: "applied" | "skipped" | "already_applied" | "failed";
   mode: "mock" | "live";
   reason?: string;
-  writes: boolean;
+  writes: boolean | "unknown";
 };
 
 export type LiveEntityState = {
