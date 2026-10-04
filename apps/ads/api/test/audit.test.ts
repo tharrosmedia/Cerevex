@@ -16,9 +16,11 @@ describe("M3 audit → findings → recommendations", () => {
   let accountId = "";
   let recommendationId = "";
   let auditRunId = "";
+  let workspaceId = "";
 
   beforeAll(async () => {
-    await ensureScopedUser();
+    const { workspace } = await ensureScopedUser();
+    workspaceId = workspace.id;
     ownerToken = (
       await login(
         process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com",
@@ -55,7 +57,7 @@ describe("M3 audit → findings → recommendations", () => {
       expect(restore.status).toBe(200);
     }
     const workspace = await getDb().query.workspaces.findFirst({
-      where: eq(workspaces.name, "Tharros Media"),
+      where: eq(workspaces.id, workspaceId),
     });
     expect(workspace?.applyKillSwitch).toBe(true);
     await closeDb();
@@ -217,7 +219,8 @@ describe("M3 audit → findings → recommendations", () => {
       headers: { authorization: `Bearer ${scopedToken}`, "content-type": "application/json" },
       body: JSON.stringify({ action: "deny" }),
     });
-    expect(decide.status).toBe(403);
+    expect(decide.status).toBe(404);
+    expect(String((await json(decide)).error)).toBe("Recommendation not found");
   });
 
   it("exposes kill switch and canApprove for the Adam owner", async () => {

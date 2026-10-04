@@ -28,7 +28,9 @@ export type ClientMembership = {
 };
 
 export type AuthContext = {
-  user: SessionUser;
+  /** `service` is the internal key. It is never a human user and has no user id. */
+  principal: "user" | "service";
+  user: SessionUser | null;
   memberships: Membership[];
   clientMemberships: ClientMembership[];
 };

@@ -1,6 +1,6 @@
 import { pullGoogleAdAccount } from "@cerevex/jobs-ads-google/pull";
 import { pullMetaAdAccount } from "@cerevex/jobs-ads-meta/pull";
-import { runApplyJob } from "@tharros/ads-shared/apply";
+import { applyResultAuditAction, runApplyJob } from "@tharros/ads-shared/apply";
 import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
 import { runAdAccountSync, syncJobAuditAction } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
@@ -71,7 +71,7 @@ export async function handleApplyRequested({ event, step }: any) {
       workspaceId: event.data.workspaceId,
       actorType: "worker",
       actorId: event.data.requestedBy,
-      action: result.applyJob.status === "succeeded" ? "apply_success" : "apply_fail",
+      action: applyResultAuditAction(result),
       entityType: "apply_job",
       entityId: applyJobId,
       payload: {

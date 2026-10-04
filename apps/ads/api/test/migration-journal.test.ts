@@ -161,8 +161,9 @@ describe("migration journal", () => {
       "0004_site_clients",
       "0005_skill_config",
       "0006_plan_entitlements",
+      "0007_service_actor_constraints",
     ];
-    expect(tags.slice(0, prefix.length)).toEqual(prefix);
+    expect(tags).toEqual(prefix);
     expect(tags).toContain("0006_plan_entitlements");
     for (let index = 1; index < entries.length; index += 1) {
       expect(entries[index]!.idx).toBeGreaterThan(entries[index - 1]!.idx);

@@ -9,6 +9,7 @@ import { rejectAdAccountIfBlocked, withTenantWriteLock } from "@tharros/ads-shar
 import { adAccountSyncEvent, sendAdAccountSync } from "@tharros/ads-shared/inngest";
 import { adAccounts, adEntities, adMetrics, oauthCredentials } from "@tharros/ads-shared/schema";
 import { HTTPException } from "hono/http-exception";
+import { actorRef, auditActor } from "./auth";
 import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 
@@ -149,8 +150,7 @@ export async function disconnectAccount(auth: AuthContext, adAccountId: string) 
   });
   await writeAuditEvent({
     workspaceId: account.workspaceId,
-    actorType: "user",
-    actorId: auth.user.id,
+    ...auditActor(auth),
     action: "oauth_disconnect",
     entityType: "ad_account",
     entityId: account.id,
@@ -172,8 +172,7 @@ export async function setAccountFrozen(auth: AuthContext, adAccountId: string, f
     .returning();
   await writeAuditEvent({
     workspaceId: account.workspaceId,
-    actorType: "user",
-    actorId: auth.user.id,
+    ...auditActor(auth),
     action: "freeze_flip",
     entityType: "ad_account",
     entityId: account.id,
@@ -201,7 +200,7 @@ export async function enqueueAccountSync(auth: AuthContext, adAccountId: string)
     getAdPlatformConnector(account.platform).connectCapability,
   );
   const ids = await sendAdAccountSync({
-    requestedBy: auth.user.id,
+    requestedBy: actorRef(auth),
     workspaceId: client.workspaceId,
     clientId: client.id,
     adAccountId: account.id,

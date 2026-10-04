@@ -15,9 +15,11 @@ describe("M5 Adam-only Approve + freeze", () => {
   let clientId = "";
   let accountId = "";
   let recommendationId = "";
+  let workspaceId = "";
 
   beforeAll(async () => {
-    await ensureScopedUser();
+    const { workspace } = await ensureScopedUser();
+    workspaceId = workspace.id;
     ownerToken = (
       await login(
         process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com",
@@ -26,10 +28,6 @@ describe("M5 Adam-only Approve + freeze", () => {
     ).token;
 
     const db = getDb();
-    const workspace = await db.query.workspaces.findFirst({
-      where: eq(workspaces.name, "Tharros Media"),
-    });
-    if (!workspace) throw new Error("workspace missing");
     const email = "operator@tharrosmedia.com";
     const passwordHash = await hash("operator-local-only", 10);
     const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
@@ -89,7 +87,7 @@ describe("M5 Adam-only Approve + freeze", () => {
         expect(restore.status).toBe(200);
       }
       const workspace = await getDb().query.workspaces.findFirst({
-        where: eq(workspaces.name, "Tharros Media"),
+        where: eq(workspaces.id, workspaceId),
       });
       expect(workspace?.applyKillSwitch).toBe(true);
       await closeDb();

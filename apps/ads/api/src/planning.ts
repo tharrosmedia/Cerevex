@@ -26,6 +26,7 @@ import { getDb } from "@tharros/ads-shared/db";
 import { loadWorkspacePlanning, saveWorkspaceSeasonality } from "@tharros/ads-shared/planning-settings";
 import { adEntities, adMetrics } from "@tharros/ads-shared/schema";
 import { loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
+import { auditActor } from "./auth";
 import { requireMutableClient } from "./connect";
 import { childLogger } from "./logger";
 import { getVisibleClient } from "./tenancy";
@@ -142,8 +143,7 @@ export function registerPlanningRoutes(app: Hono<AppEnv>, requireAuth: Middlewar
     const saved = await saveWorkspaceSeasonality(client.workspaceId, windows);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
-      actorType: "user",
-      actorId: auth.user.id,
+      ...auditActor(auth),
       action: "planning.seasonality_saved",
       entityType: "workspace",
       entityId: client.workspaceId,
