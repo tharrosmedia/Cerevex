@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens, storeTokens, tokenNearExpiry } from "./credentials";
@@ -9,9 +9,26 @@ export type SyncResult = {
   adAccountId: string;
   mode: "mock" | "live";
   entityCount: number;
-  status: "connected" | "error";
+  status: "connected" | "error" | "skipped";
   lastError: string | null;
 };
+
+/** Audit label for a finished sync. A disconnected account is a no-op, not a failure. */
+export function syncJobAuditAction(status: SyncResult["status"]): "jobs.sync_failed" | "jobs.sync_skipped" | "jobs.sync_complete" {
+  if (status === "error") return "jobs.sync_failed";
+  if (status === "skipped") return "jobs.sync_skipped";
+  return "jobs.sync_complete";
+}
+
+function skippedSync(adAccountId: string): SyncResult {
+  return {
+    adAccountId,
+    mode: "mock",
+    entityCount: 0,
+    status: "skipped",
+    lastError: null,
+  };
+}
 
 export async function runAdAccountSync(adAccountId: string): Promise<SyncResult> {
   const db = getDb();
@@ -21,11 +38,17 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
   if (!account) {
     throw new Error("Ad account not found");
   }
+  if (account.connectionStatus === "disconnected") {
+    return skippedSync(adAccountId);
+  }
 
-  await db
+  const stillSyncing = and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected"));
+  const [markedSyncing] = await db
     .update(adAccounts)
     .set({ connectionStatus: "syncing", lastError: null })
-    .where(eq(adAccounts.id, adAccountId));
+    .where(stillSyncing)
+    .returning({ id: adAccounts.id });
+  if (!markedSyncing) return skippedSync(adAccountId);
 
   try {
     const client = await db.query.clients.findFirst({
@@ -41,16 +64,30 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
     const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
     const connector = getAdPlatformConnector(account.platform);
     if (tokenNearExpiry(tokens)) {
-      const refreshed = await connector.refreshTokens(tokens);
-      if (refreshed.accessToken !== tokens.accessToken) {
-        await storeTokens({
-          workspaceId: account.workspaceId,
-          clientId: account.clientId,
-          adAccountId,
-          platform: account.platform,
-          label: tokens.mock ? "mock" : "live",
-          tokens: refreshed,
+      const currentTokens = tokens;
+      const refreshed = await connector.refreshTokens(currentTokens);
+      if (refreshed.accessToken !== currentTokens.accessToken) {
+        const stored = await db.transaction(async (tx) => {
+          const [locked] = await tx
+            .select({ connectionStatus: adAccounts.connectionStatus })
+            .from(adAccounts)
+            .where(eq(adAccounts.id, adAccountId))
+            .for("update");
+          if (!locked || locked.connectionStatus === "disconnected") return false;
+          await storeTokens(
+            {
+              workspaceId: account.workspaceId,
+              clientId: account.clientId,
+              adAccountId,
+              platform: account.platform,
+              label: currentTokens.mock ? "mock" : "live",
+              tokens: refreshed,
+            },
+            tx,
+          );
+          return true;
         });
+        if (!stored) return skippedSync(adAccountId);
         tokens = refreshed;
       }
     }
@@ -63,56 +100,68 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
       allowLive: connector.isLiveAllowed(tokens, capabilities),
     });
 
-    await db.delete(adEntities).where(eq(adEntities.adAccountId, adAccountId));
+    const wrote = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ connectionStatus: adAccounts.connectionStatus })
+        .from(adAccounts)
+        .where(eq(adAccounts.id, adAccountId))
+        .for("update");
+      if (!locked || locked.connectionStatus === "disconnected") return false;
 
-    const inserted = [];
-    for (const entity of pulled.entities) {
-      const [row] = await db
-        .insert(adEntities)
-        .values({
+      await tx.delete(adEntities).where(eq(adEntities.adAccountId, adAccountId));
+
+      const inserted = [];
+      for (const entity of pulled.entities) {
+        const [row] = await tx
+          .insert(adEntities)
+          .values({
+            workspaceId: account.workspaceId,
+            clientId: account.clientId,
+            adAccountId,
+            platform: account.platform,
+            entityType: entity.entityType,
+            externalId: entity.externalId,
+            name: entity.name,
+            status: entity.status,
+            parentExternalId: entity.parentExternalId,
+            rawJson: { source: pulled.mode, ...(entity.raw ?? {}) },
+          })
+          .returning();
+        inserted.push(row);
+      }
+
+      for (const metric of pulled.metrics) {
+        const entity = inserted.find(
+          (row) => row.externalId === metric.entityExternalId && row.entityType === metric.entityType,
+        );
+        if (!entity) continue;
+        await tx.insert(adMetrics).values({
           workspaceId: account.workspaceId,
           clientId: account.clientId,
           adAccountId,
-          platform: account.platform,
-          entityType: entity.entityType,
-          externalId: entity.externalId,
-          name: entity.name,
-          status: entity.status,
-          parentExternalId: entity.parentExternalId,
-          rawJson: { source: pulled.mode, ...(entity.raw ?? {}) },
+          entityId: entity.id,
+          window: metric.window,
+          spendUsd: metric.spendUsd,
+          impressions: metric.impressions,
+          clicks: metric.clicks,
+          conversions: metric.conversions,
+          rawJson: { source: pulled.mode },
+        });
+      }
+
+      const [connected] = await tx
+        .update(adAccounts)
+        .set({
+          connectionStatus: "connected",
+          lastSyncAt: new Date(),
+          lastError: null,
+          externalId: pulled.externalAccountId,
         })
-        .returning();
-      inserted.push(row);
-    }
-
-    for (const metric of pulled.metrics) {
-      const entity = inserted.find(
-        (row) => row.externalId === metric.entityExternalId && row.entityType === metric.entityType,
-      );
-      if (!entity) continue;
-      await db.insert(adMetrics).values({
-        workspaceId: account.workspaceId,
-        clientId: account.clientId,
-        adAccountId,
-        entityId: entity.id,
-        window: metric.window,
-        spendUsd: metric.spendUsd,
-        impressions: metric.impressions,
-        clicks: metric.clicks,
-        conversions: metric.conversions,
-        rawJson: { source: pulled.mode },
-      });
-    }
-
-    await db
-      .update(adAccounts)
-      .set({
-        connectionStatus: "connected",
-        lastSyncAt: new Date(),
-        lastError: null,
-        externalId: pulled.externalAccountId,
-      })
-      .where(eq(adAccounts.id, adAccountId));
+        .where(and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected")))
+        .returning({ id: adAccounts.id });
+      return Boolean(connected);
+    });
+    if (!wrote) return skippedSync(adAccountId);
 
     return {
       adAccountId,
@@ -123,13 +172,15 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";
-    await db
+    const [errored] = await db
       .update(adAccounts)
       .set({
         connectionStatus: "error",
         lastError: message,
       })
-      .where(and(eq(adAccounts.id, adAccountId)));
+      .where(and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected")))
+      .returning({ id: adAccounts.id });
+    if (!errored) return skippedSync(adAccountId);
     return {
       adAccountId,
       mode: "mock",

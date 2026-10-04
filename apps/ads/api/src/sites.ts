@@ -7,6 +7,7 @@ import { canMutate, workspaceIdsFor, type AuthContext } from "@tharros/ads-share
 import { getDb } from "@tharros/ads-shared/db";
 import { clients } from "@tharros/ads-shared/schema";
 import { requireMutableClient } from "./connect";
+import { activateStore, assignClientSite } from "@tharros/ads-shared/entitlements";
 import { writeAuditEvent } from "@tharros/ads-shared/audit";
 import type { AppEnv } from "./types";
 
@@ -20,6 +21,7 @@ export type SiteClient = {
   name: string;
   siteId: string | null;
   status: string;
+  plan: string;
   pilotFlag: boolean;
   createdAt: string;
 };
@@ -31,6 +33,7 @@ function toSiteClient(row: typeof clients.$inferSelect): SiteClient {
     name: row.name,
     siteId: row.siteId ?? null,
     status: row.status,
+    plan: row.plan,
     pilotFlag: row.pilotFlag,
     createdAt: row.createdAt.toISOString(),
   };
@@ -77,7 +80,7 @@ export async function ensureSiteClient(auth: AuthContext, siteId: string, name: 
     ),
   });
   if (sameName) {
-    const [adopted] = await db.update(clients).set({ siteId }).where(eq(clients.id, sameName.id)).returning();
+    const adopted = await assignClientSite(sameName.id, siteId);
     await writeAuditEvent({
       workspaceId,
       actorType: "user",
@@ -102,6 +105,7 @@ export async function ensureSiteClient(auth: AuthContext, siteId: string, name: 
     }));
   if (!row) throw new HTTPException(500, { message: "Could not create the ads client for this site" });
   if (created) {
+    await activateStore(created.id, siteId);
     await writeAuditEvent({
       workspaceId,
       actorType: "user",
@@ -138,11 +142,7 @@ export function registerSiteRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHan
         throw new HTTPException(409, { message: `That site is already linked to ${other.name}.` });
       }
     }
-    const [row] = await db
-      .update(clients)
-      .set({ siteId: parsed.data.siteId })
-      .where(eq(clients.id, client.id))
-      .returning();
+    const row = await assignClientSite(client.id, parsed.data.siteId);
     await writeAuditEvent({
       workspaceId: client.workspaceId,
       actorType: "user",

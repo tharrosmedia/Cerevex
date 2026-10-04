@@ -7,6 +7,11 @@ import { handleAccountSync } from "../handlers";
  * Meta and Google pulls are jobs/ads/meta and jobs/ads/google.
  */
 export const accountSync = inngest.createFunction(
-  { id: ADS_FUNCTION_IDS.accountSync, name: "Ads account sync", triggers: [{ event: EVENTS.accountSync }] },
+  {
+    id: ADS_FUNCTION_IDS.accountSync,
+    name: "Ads account sync",
+    triggers: [{ event: EVENTS.accountSync }],
+    concurrency: { limit: 1, key: "event.data.adAccountId" },
+  },
   handleAccountSync,
 );

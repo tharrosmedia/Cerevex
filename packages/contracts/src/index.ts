@@ -12,6 +12,41 @@ export type {
 } from "./tenancy";
 
 export {
+  PLAN_IDS,
+  LOCATION_STATUSES,
+  SCHOLARSHIP_LOCATION_LIMIT,
+  SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM,
+  SCHOLARSHIP_MONTHLY_LIMITS,
+  MONTHLY_CAP_IDS,
+  MONTHLY_CAP_COUNTED_AT,
+  MONTHLY_CAP_EXCLUDED_OUTCOMES,
+  MONTHLY_CAP_RESET,
+  SCHOLARSHIP_LOCATION_MESSAGE,
+  SCHOLARSHIP_DOWNGRADE_LOCATION_MESSAGE,
+  isPlanId,
+  isLocationStatus,
+  isActiveAdAccountStatus,
+  locationLimit,
+  adAccountLimitPerPlatform,
+  monthlyCapsFor,
+  adPlatformPlainName,
+  adAccountLimitMessage,
+  scholarshipDowngradeAdAccountMessage,
+  decideLocationActivation,
+  decideAdAccountActivation,
+  decideAdAccountActivations,
+} from "./entitlements";
+export type {
+  PlanId,
+  LocationStatus,
+  MonthlyCapId,
+  MonthlyCapSpec,
+  MonthlyCapView,
+  TenantEntitlements,
+  EntitlementDecision,
+} from "./entitlements";
+
+export {
   OS_DECISION_ACTIONS,
   BRAIN_DECISION_ACTIONS,
   DECISION_ACTION_MAP,
