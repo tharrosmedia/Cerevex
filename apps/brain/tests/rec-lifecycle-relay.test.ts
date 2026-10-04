@@ -17,5 +17,7 @@ const page = readFileSync(join(here, '../app/ads/audit-log/page.tsx'), 'utf8');
 assert.ok(page.includes('btn-cta'));
 assert.ok(page.includes('<details>'));
 assert.ok(page.includes('Nobody can edit or delete them'));
+assert.ok(page.includes('cursor: listed.data.nextCursor'));
+assert.equal(page.includes('toISOString'), false);
 
 console.log('rec lifecycle relay removed: ok');

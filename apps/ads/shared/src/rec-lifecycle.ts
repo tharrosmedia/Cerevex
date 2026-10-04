@@ -5,11 +5,12 @@
  */
 
 import { sealSkillJobApproval, type RecommendationApproval } from "@cerevex/skills";
-import { and, desc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { resolveAuditActor } from "./actor";
 import { redactSecrets } from "./crypto";
 import { getDb, type Database } from "./db";
 import {
+  authorizations,
   clientAuditLog,
   clients,
   memberships,
@@ -311,6 +312,10 @@ async function recordRecLifecycleOn(input: RecLifecycleInput, db: Database): Pro
       approval.executed_by = "human";
       approval.executed_at = at;
       approval.apply_result = "Marked done by a person";
+      await db
+        .update(authorizations)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(authorizations.recommendationId, rec.id), isNull(authorizations.revokedAt)));
     }
     if (input.kind === "rolled_back") {
       approval.rolled_back_by = approver;
@@ -433,6 +438,13 @@ export async function insertJobRecommendation(
   });
 }
 
+export class LastOwnerError extends Error {
+  constructor() {
+    super("The workspace needs at least one owner.");
+    this.name = "LastOwnerError";
+  }
+}
+
 export async function setWorkspaceRole(
   input: {
     workspaceId: string;
@@ -442,13 +454,19 @@ export async function setWorkspaceRole(
   },
   db: Database = getDb(),
 ): Promise<void> {
-  const existing = await db.query.memberships.findFirst({
-    where: and(eq(memberships.userId, input.userId), eq(memberships.workspaceId, input.workspaceId)),
-  });
-  if (!existing) throw new Error("Membership not found");
-  if (existing.role === input.role) return;
   await db.transaction(async (tx) => {
     const database = tx as unknown as Database;
+    const locked = await database
+      .select()
+      .from(memberships)
+      .where(eq(memberships.workspaceId, input.workspaceId))
+      .for("update");
+    const existing = locked.find((row) => row.userId === input.userId);
+    if (!existing) throw new Error("Membership not found");
+    if (existing.role === input.role) return;
+    if (existing.role === "owner" && input.role !== "owner" && locked.filter((row) => row.role === "owner").length < 2) {
+      throw new LastOwnerError();
+    }
     await database
       .update(memberships)
       .set({ role: input.role })
@@ -476,17 +494,28 @@ export async function setWorkspaceRole(
   });
 }
 
+const AUDIT_CURSOR_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export class AuditCursorError extends Error {
+  constructor() {
+    super("Invalid audit cursor");
+    this.name = "AuditCursorError";
+  }
+}
+
 export function encodeAuditCursor(createdAt: string, id: string): string {
   return `${createdAt}|${id}`;
 }
 
-export function decodeAuditCursor(cursor: string | null | undefined): { createdAt: Date; id: string } | null {
+/** Keeps the raw timestamp text. A Date would drop the microseconds Postgres stores. */
+export function decodeAuditCursor(cursor: string | null | undefined): { createdAt: string; id: string } | null {
   if (!cursor) return null;
   const split = cursor.lastIndexOf("|");
   if (split <= 0) return null;
-  const createdAt = new Date(cursor.slice(0, split));
+  const createdAt = cursor.slice(0, split);
   const id = cursor.slice(split + 1);
-  if (Number.isNaN(createdAt.getTime()) || !id) return null;
+  if (Number.isNaN(new Date(createdAt).getTime())) return null;
+  if (!AUDIT_CURSOR_UUID.test(id)) throw new AuditCursorError();
   return { createdAt, id };
 }
 
@@ -508,23 +537,23 @@ export async function listClientAuditLog(query: AuditListQuery, db: Database = g
   const cursor = decodeAuditCursor(query.cursor);
   if (cursor) {
     filters.push(
-      or(
-        lt(clientAuditLog.createdAt, cursor.createdAt),
-        and(eq(clientAuditLog.createdAt, cursor.createdAt), lt(clientAuditLog.id, cursor.id)),
-      )!,
+      sql`(${clientAuditLog.createdAt}, ${clientAuditLog.id}) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`,
     );
   }
   const rows = await db
-    .select()
+    .select({
+      row: clientAuditLog,
+      createdAtPrecise: sql<string>`to_char(${clientAuditLog.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+    })
     .from(clientAuditLog)
     .where(and(...filters))
     .orderBy(desc(clientAuditLog.createdAt), desc(clientAuditLog.id))
     .limit(limit + 1);
-  const page = rows.slice(0, limit).map(toPublic);
-  const last = page[page.length - 1];
+  const page = rows.slice(0, limit).map((entry) => toPublic(entry.row));
+  const last = rows[Math.min(limit, rows.length) - 1];
   return {
     rows: page,
-    nextCursor: rows.length > limit && last ? encodeAuditCursor(last.createdAt, last.id) : null,
+    nextCursor: rows.length > limit && last ? encodeAuditCursor(last.createdAtPrecise, last.row.id) : null,
     truncated: false,
     limit,
   };

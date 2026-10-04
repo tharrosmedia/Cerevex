@@ -292,7 +292,9 @@ export const applyJobs = osSchema.table(
 
 /**
  * Append-only client audit log (Brief 1.0 §4.3).
- * UPDATE and DELETE are rejected by a trigger. Admins included.
+ * UPDATE, DELETE, and TRUNCATE are rejected by a trigger. Admins included.
+ * actor_id is ON DELETE RESTRICT, same as client_id and workspace_id.
+ * SET NULL would be an UPDATE, which the trigger refuses.
  */
 export const clientAuditLog = osSchema.table(
   "client_audit_log",
@@ -306,7 +308,7 @@ export const clientAuditLog = osSchema.table(
       .references(() => clients.id, { onDelete: "restrict" }),
     storeId: text("store_id"),
     actorType: text("actor_type").notNull(),
-    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "restrict" }),
     approver: text("approver"),
     module: text("module").notNull(),
     action: text("action").notNull(),

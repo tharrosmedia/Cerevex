@@ -5,7 +5,9 @@ import { z } from "zod";
 import { canApproveApply, canMutate, workspaceRole } from "@tharros/ads-shared";
 import { getDb } from "@tharros/ads-shared/db";
 import {
+  AuditCursorError,
   exportClientAuditLog,
+  LastOwnerError,
   listClientAuditLog,
   LifecycleRepeatError,
   readApproval,
@@ -16,7 +18,8 @@ import {
   type AuditListQuery,
 } from "@tharros/ads-shared/rec-lifecycle";
 import { memberships } from "@tharros/ads-shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import type { AuthContext } from "@tharros/ads-shared";
 import { getRecommendation } from "@tharros/ads-shared/audit";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
@@ -63,12 +66,17 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
     if (!client) throw new HTTPException(404, { message: "Client not found" });
     const url = new URL(c.req.url);
     const limit = Number(url.searchParams.get("limit") ?? "");
-    const result = await listClientAuditLog({
-      ...filtersFrom(url, client.id),
-      limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
-      cursor: url.searchParams.get("cursor"),
-    });
-    return c.json(result);
+    try {
+      const result = await listClientAuditLog({
+        ...filtersFrom(url, client.id),
+        limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+        cursor: url.searchParams.get("cursor"),
+      });
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof AuditCursorError) throw new HTTPException(400, { message: error.message });
+      throw error;
+    }
   });
 
   app.get("/clients/:id/audit-log/export", requireAuth, async (c) => {
@@ -192,27 +200,39 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
     const parsed = roleSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new HTTPException(400, { message: "userId and role are required" });
     const auth = c.get("auth");
-    if (!auth.user) {
-      throw new HTTPException(403, { message: "Only an admin can change roles." });
-    }
+    const workspaceId = parsed.data.workspaceId ?? ownerWorkspaceId(auth);
+    if (!auth.user || !workspaceId) throw new HTTPException(404, { message: "Not found" });
     const db = getDb();
-    const membershipRows = await db
+    const [membership] = await db
       .select()
       .from(memberships)
-      .where(eq(memberships.userId, parsed.data.userId));
-    const membership = parsed.data.workspaceId
-      ? membershipRows.find((row) => row.workspaceId === parsed.data.workspaceId)
-      : membershipRows[0];
-    if (!membership) throw new HTTPException(404, { message: "Membership not found" });
-    if (workspaceRole(auth, membership.workspaceId) !== "owner") {
-      throw new HTTPException(403, { message: "Only an admin can change roles." });
+      .where(and(eq(memberships.userId, parsed.data.userId), eq(memberships.workspaceId, workspaceId)))
+      .limit(1);
+    if (!membership || workspaceRole(auth, workspaceId) !== "owner") {
+      throw new HTTPException(404, { message: "Not found" });
     }
-    await setWorkspaceRole({
-      workspaceId: membership.workspaceId,
-      userId: parsed.data.userId,
-      role: parsed.data.role,
-      actorId: auth.user.id,
-    });
+    try {
+      await setWorkspaceRole({
+        workspaceId,
+        userId: parsed.data.userId,
+        role: parsed.data.role,
+        actorId: auth.user.id,
+      });
+    } catch (error) {
+      if (error instanceof LastOwnerError) throw new HTTPException(409, { message: error.message });
+      if (error instanceof Error && error.message === "Membership not found") {
+        throw new HTTPException(404, { message: "Not found" });
+      }
+      throw error;
+    }
     return c.json({ ok: true, writes: false });
   });
+}
+
+function ownerWorkspaceId(auth: AuthContext): string | null {
+  const owners = auth.memberships
+    .filter((row) => row.role === "owner")
+    .map((row) => row.workspaceId)
+    .sort();
+  return owners[0] ?? null;
 }

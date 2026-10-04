@@ -565,6 +565,9 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     const parsed = z.object({ inline: z.boolean().optional() }).safeParse(await c.req.json().catch(() => ({})));
     const { row, client } = await recommendationForMutation(auth, c.req.param("id"));
     const actor = auditActor(auth);
+    if (readApproval(row.approvalJson).executed_at) {
+      throw new HTTPException(409, { message: "This recommendation is already done. Nothing was written." });
+    }
     if (!canApproveApply(auth.user?.email)) {
       await recordApproveRefusal(row, actor, "allowlist");
       throw new HTTPException(403, {

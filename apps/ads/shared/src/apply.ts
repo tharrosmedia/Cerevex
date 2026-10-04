@@ -283,26 +283,26 @@ function storedRun(job: ApplyJobRow, blocked: string | null = null): ApplyRunRes
 async function claimApplyJob(
   applyJobId: string,
 ): Promise<{ kind: "done"; result: ApplyRunResult } | { kind: "run"; prepared: PreparedApply }> {
-  const [claimed] = await getDb()
-    .update(applyJobs)
-    .set({
-      status: "applying",
-      attempts: sql`${applyJobs.attempts} + 1`,
-      error: null,
-    })
-    .where(and(eq(applyJobs.id, applyJobId), inArray(applyJobs.status, ["queued", "pending"])))
-    .returning();
-
-  if (!claimed) {
-    const existing = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
-    if (!existing) throw new Error("Apply job not found");
-    if (existing.status === "applying") {
-      return { kind: "done" as const, result: storedRun(existing, "in_progress") };
-    }
-    return { kind: "done" as const, result: storedRun(existing) };
-  }
-
   return getDb().transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(applyJobs)
+      .set({
+        status: "applying",
+        attempts: sql`${applyJobs.attempts} + 1`,
+        error: null,
+      })
+      .where(and(eq(applyJobs.id, applyJobId), inArray(applyJobs.status, ["queued", "pending"])))
+      .returning();
+
+    if (!claimed) {
+      const existing = await tx.query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
+      if (!existing) throw new Error("Apply job not found");
+      if (existing.status === "applying") {
+        return { kind: "done" as const, result: storedRun(existing, "in_progress") };
+      }
+      return { kind: "done" as const, result: storedRun(existing) };
+    }
+
     const handle = tx as unknown as ApplyHandle;
     const job = claimed;
 
@@ -600,7 +600,7 @@ async function settleApplyJob(
   jobId: string,
   executed: { outcomes: MutationOutcome[]; failed: string | null; response: Record<string, unknown> },
 ): Promise<ApplyRunResult> {
-  return getDb().transaction(async (tx) => {
+  const settled = await getDb().transaction(async (tx) => {
     const handle = tx as unknown as ApplyHandle;
     const [job] = await tx.select().from(applyJobs).where(eq(applyJobs.id, jobId)).for("update");
     if (!job) throw new Error("Apply job not found");
@@ -654,44 +654,69 @@ async function settleApplyJob(
           revoked_after_write: writes,
         },
       });
-      return saveJob(
-        handle,
-        job,
-        {
-          status: writes ? "succeeded" : "failed",
-          error: writes ? "revoked_after_write" : "authorization_revoked",
-          response,
-          finished: true,
-        },
-        {
-          outcomes: executed.outcomes,
-          writes,
-          blocked: writes ? "revoked_after_write" : "authorization_revoked",
-          clientAudit: {
-            kind: writes ? "applied" : "apply_blocked",
-            recommendation: recommendation ?? null,
-          },
-        },
-      );
-    }
-    const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
-    return saveJob(
-      handle,
-      job,
-      {
-        status: executed.failed ? "failed" : "succeeded",
-        error: executed.failed,
-        response: executed.response,
+      const patch = {
+        status: writes ? "succeeded" : "failed",
+        error: writes ? "revoked_after_write" : "authorization_revoked",
+        response,
         finished: true,
-      },
-      {
+      };
+      const result = await saveJob(handle, job, patch, {
         outcomes: executed.outcomes,
         writes,
-        blocked: null,
-        clientAudit: { kind: writes ? "applied" : "apply_blocked", recommendation: recommendation ?? null },
-      },
-    );
+        blocked: writes ? "revoked_after_write" : "authorization_revoked",
+      });
+      return {
+        result,
+        clientAudit: recommendation
+          ? {
+              kind: (writes ? "applied" : "apply_blocked") as "applied" | "apply_blocked",
+              recommendation,
+              jobId: job.id,
+              status: patch.status,
+              writes,
+              blocked: writes ? "revoked_after_write" : "authorization_revoked",
+              error: patch.error,
+              outcomes: executed.outcomes,
+              response,
+            }
+          : null,
+      };
+    }
+    const writes = executed.outcomes.some((row) => row.writes && row.status === "applied");
+    const patch = {
+      status: executed.failed ? "failed" : "succeeded",
+      error: executed.failed,
+      response: executed.response,
+      finished: true,
+    };
+    const result = await saveJob(handle, job, patch, {
+      outcomes: executed.outcomes,
+      writes,
+      blocked: null,
+    });
+    return {
+      result,
+      clientAudit: recommendation
+        ? {
+            kind: (writes ? "applied" : "apply_blocked") as "applied" | "apply_blocked",
+            recommendation,
+            jobId: job.id,
+            status: patch.status,
+            writes,
+            blocked: null as string | null,
+            error: patch.error,
+            outcomes: executed.outcomes,
+            response: patch.response,
+          }
+        : null,
+    };
   });
+  // The job row already records the platform outcome. The audit insert is next, and a
+  // failure here must stay loud without rolling the job back to `applying`.
+  if (settled.clientAudit) {
+    await writeApplyClientAudit(getDb() as unknown as ApplyHandle, settled.clientAudit);
+  }
+  return settled.result;
 }
 
 export async function runApplyJob(applyJobId: string): Promise<ApplyRunResult> {
