@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import type { Platform } from "@tharros/ads-shared";
+import { jwtSecretBytes } from "./jwt-secret";
 
 export type OAuthState = {
   userId: string;
@@ -8,7 +9,7 @@ export type OAuthState = {
 };
 
 function secret(): Uint8Array {
-  return new TextEncoder().encode(process.env.JWT_SECRET ?? "replace-with-a-long-random-local-secret");
+  return jwtSecretBytes();
 }
 
 export async function signOAuthState(state: OAuthState): Promise<string> {

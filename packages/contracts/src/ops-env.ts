@@ -51,6 +51,11 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
     help: "Soft-launch Approve allowlist (comma-separated). Default adam@tharrosmedia.com. Not a capability — do not store emails in settings_json. Still ANDed with apply + kill switch + freeze.",
   },
   {
+    env: "CONSOLE_OPERATOR_EMAIL",
+    kind: "identity",
+    help: "Label for the shared Brain console session when checking the Approve allowlist. Not a credential: it cannot deny access on its own and does not widen access beyond APP_PASSWORD. Default adam@tharrosmedia.com.",
+  },
+  {
     env: "APP_PASSWORD",
     kind: "secret",
     help: "Brain console session cookie only. Not ads JWT. Not a feature flag. Do not bolt ads RBAC onto this.",
@@ -58,12 +63,17 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "JWT_SECRET",
     kind: "secret",
-    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD.",
+    help: "Ads user sessions (email/password). Separate from Brain APP_PASSWORD. Required in production when NODE_ENV, RAILWAY_ENVIRONMENT, or RAILWAY_ENVIRONMENT_NAME is production after trim and case-folding. The value is trimmed. Unset, empty, whitespace, or the local placeholder exits ads-api boot with status 1. Dev and test use the built-in local fallback when the value is unset, empty, or whitespace, log a warning, and keep running. Never deploy the placeholder.",
   },
   {
     env: "ADS_INTERNAL_KEY",
     kind: "secret",
-    help: "Server-side Brain BFF → ads API service key (x-cerevex-internal-key). Acts as the seeded owner. Never expose to the browser.",
+    help: "Server-side Brain BFF → ads API service key (x-cerevex-internal-key). Acts as the seeded owner. Never expose to the browser. Header only — never a query param.",
+  },
+  {
+    env: "GSC_OAUTH_STATE_SECRET",
+    kind: "secret",
+    help: "HMAC secret for the Brain Search Console OAuth state parameter. Not a feature flag.",
   },
   {
     env: "ADS_API_TOKEN",

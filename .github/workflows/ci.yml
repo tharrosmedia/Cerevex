@@ -70,6 +70,81 @@ jobs:
       - name: Test Brain
         if: needs.changes.outputs.brain == 'true'
         run: npm run test --workspace=@cerevex/brain
+      - name: Build Brain
+        if: needs.changes.outputs.brain == 'true'
+        env:
+          ENCRYPTION_KEY: ci-encryption-key-no-whitespace
+          APP_PASSWORD: ci-app-password
+          ADS_INTERNAL_KEY: ci-internal-key
+          GSC_OAUTH_STATE_SECRET: ci-gsc-state-secret
+          SENTRY_AUTH_TOKEN: ""
+        run: npm run build --workspace=@cerevex/brain
+      - name: Smoke Brain
+        if: needs.changes.outputs.brain == 'true'
+        env:
+          ENCRYPTION_KEY: ci-encryption-key-no-whitespace
+          APP_PASSWORD: ci-app-password
+          ADS_INTERNAL_KEY: ci-internal-key
+          GSC_OAUTH_STATE_SECRET: ci-gsc-state-secret
+          PORT: "3310"
+        run: |
+          set -euo pipefail
+          # setsid makes npm the process-group leader so cleanup stops next-server, not only npm.
+          setsid npm run start --workspace=@cerevex/brain > /tmp/brain-start.log 2>&1 &
+          pid=$!
+          cleanup() {
+            kill -TERM -"$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL -"$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          ready=0
+          for _ in $(seq 1 40); do
+            if curl -sf -o /dev/null http://127.0.0.1:3310/api/health; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+          code_of() {
+            curl -s -o /dev/null -w '%{http_code}' -X "$1" "http://127.0.0.1:3310$2"
+          }
+          not_500() {
+            local code
+            code=$(code_of "$1" "$2")
+            echo "$1 $2 $code"
+            test "$code" != "500"
+          }
+          expect() {
+            local code
+            code=$(code_of "$1" "$2")
+            echo "$1 $2 $code (want $3)"
+            test "$code" = "$3"
+          }
+          not_500 GET /
+          not_500 GET /login
+          not_500 GET /privacy-policy
+          not_500 GET /terms-of-service
+          not_500 GET /data-deletion
+          expect GET /api/health 200
+          expect GET /api/wordpress/plugin 401
+          expect GET /api/wordpress/install-note 401
+          expect GET /api/ads/connect 401
+          expect POST /api/ads/checks 401
+          expect POST /api/ads/sync 401
+          expect POST /api/ads/m51 401
+          expect POST /api/approve 401
+          expect POST /api/ads/decide 401
+          expect GET /api/gsc/oauth/start 401
+          expect GET /api/ads/clients 401
+          not_500 GET /settings
+          not_500 GET /api/ads/pixel
+          not_500 GET /api/gsc/oauth/callback
+          not_500 POST /api/login
+          not_500 OPTIONS /api/ads/collect
+          not_500 GET /api/ads/collect
       - name: Skip (no Brain / SEO changes)
         if: needs.changes.outputs.brain != 'true'
         run: echo "Skipped — apps/ads-only change. Brain + jobs/seo stay independently green."

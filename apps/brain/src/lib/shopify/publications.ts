@@ -1,10 +1,30 @@
-let cachedPubId: { id: string; ts: number } | null = null;
+const cachedPubIds = new Map<string, { id: string; ts: number }>();
 const PUB_CACHE_MS = 1000 * 60 * 5; // 5 min
 
-export async function getOnlineStorePublicationId(adminClient: any): Promise<string> {
+type PublicationClient = {
+  session?: { shop?: string | null };
+  request: (query: string, options?: { variables?: unknown }) => Promise<unknown>;
+};
+
+/** Per-store cache key. A missing key means do not cache (never a process-global id). */
+export function publicationCacheKey(adminClient: PublicationClient | null | undefined, storeId?: string | null): string | null {
+  const explicit = (storeId || '').trim();
+  if (explicit) return `store:${explicit}`;
+  const shop = adminClient?.session?.shop;
+  if (typeof shop === 'string' && shop.trim()) return `shop:${shop.trim().toLowerCase()}`;
+  return null;
+}
+
+export function clearPublicationCache(): void {
+  cachedPubIds.clear();
+}
+
+export async function getOnlineStorePublicationId(adminClient: PublicationClient, storeId?: string | null): Promise<string> {
   const now = Date.now();
-  if (cachedPubId && (now - cachedPubId.ts) < PUB_CACHE_MS) {
-    return cachedPubId.id;
+  const key = publicationCacheKey(adminClient, storeId);
+  if (key) {
+    const hit = cachedPubIds.get(key);
+    if (hit && now - hit.ts < PUB_CACHE_MS) return hit.id;
   }
   const query = `
     query {
@@ -18,18 +38,20 @@ export async function getOnlineStorePublicationId(adminClient: any): Promise<str
       }
     }
   `;
-  const response = await adminClient.request(query, {});
+  const response = (await adminClient.request(query, {})) as {
+    data?: { publications?: { edges?: Array<{ node?: { id?: string; name?: string } }> } };
+  };
   const pubs = response?.data?.publications?.edges || [];
-  const online = pubs.find((e: any) => (e.node?.name || '').toLowerCase().includes('online'));
+  const online = pubs.find((e) => (e.node?.name || '').toLowerCase().includes('online'));
   const pub = online ? online.node : pubs[0]?.node;
   if (!pub?.id) {
     throw new Error('No Online Store publication found. Ensure the Online Store sales channel is enabled.');
   }
-  cachedPubId = { id: pub.id, ts: now };
+  if (key) cachedPubIds.set(key, { id: pub.id, ts: now });
   return pub.id;
 }
 
-export async function publishResource(adminClient: any, resourceId: string, publicationId: string) {
+export async function publishResource(adminClient: PublicationClient, resourceId: string, publicationId: string) {
   const mutation = `
     mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
       publishablePublish(id: $id, input: $input) {
@@ -37,12 +59,12 @@ export async function publishResource(adminClient: any, resourceId: string, publ
       }
     }
   `;
-  const response = await adminClient.request(mutation, {
+  const response = (await adminClient.request(mutation, {
     variables: { id: resourceId, input: [{ publicationId }] },
-  });
+  })) as { data?: { publishablePublish?: { userErrors?: Array<{ message?: string }> } } };
   const errors = response?.data?.publishablePublish?.userErrors || [];
   if (errors.length) {
-    throw new Error(errors.map((e: any) => e.message).join('; '));
+    throw new Error(errors.map((e) => e.message).join('; '));
   }
   return response;
 }
