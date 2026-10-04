@@ -36,6 +36,8 @@ const REQUIRED_TABLES = [
   "skill_store_configs",
   "locations",
   "client_audit_log",
+  "usage_events",
+  "usage_counters",
 ];
 
 describe("M1 core schema", () => {
@@ -79,6 +81,8 @@ describe("M1 core schema", () => {
       "authorizations",
       "apply_jobs",
       "audit_log",
+      "usage_events",
+      "usage_counters",
     ]) {
       expect(withWorkspace.has(table), `${table} missing workspace_id`).toBe(true);
     }

@@ -1,5 +1,5 @@
 import { inngest } from '../client';
-import { createJob } from '@brain/lib/db/jobs';
+import { createJob, stableUsageJobId } from '@brain/lib/db/jobs';
 
 export const ensureJob = inngest.createFunction(
   { id: 'seo-ensure-job', retries: 2, triggers: [{ event: 'seo/ensure-job' }] },
@@ -9,7 +9,13 @@ export const ensureJob = inngest.createFunction(
       return { id: providedJobId };
     }
     return await step.run('ensure-create-job', async () => {
-      return createJob({ storeId, domain: 'seo', type, input: { keyword, platform, brandVoice, mode, shopifyId, liveSnapshot, gscQueries } });
+      return createJob({
+        storeId,
+        domain: 'seo',
+        type,
+        id: event.id ? stableUsageJobId(String(event.id)) : undefined,
+        input: { keyword, platform, brandVoice, mode, shopifyId, liveSnapshot, gscQueries },
+      });
     });
   }
 );

@@ -596,6 +596,54 @@ export const lpSnapshots = osSchema.table(
   ],
 );
 
+/**
+ * One row per creative variation or SEO job. The first write wins.
+ * `counted` is true only for outcome `created`. Retries of the same item id
+ * do not insert again.
+ */
+export const usageEvents = osSchema.table(
+  "usage_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    itemId: text("item_id").notNull(),
+    outcome: text("outcome").notNull(),
+    counted: boolean("counted").notNull(),
+    periodKey: text("period_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("usage_events_client_kind_item_idx").on(table.clientId, table.kind, table.itemId),
+    index("usage_events_client_period_idx").on(table.clientId, table.kind, table.periodKey),
+  ],
+);
+
+/** Running total for one client, kind, and America/New_York month (`YYYY-MM`). */
+export const usageCounters = osSchema.table(
+  "usage_counters",
+  {
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    periodKey: text("period_key").notNull(),
+    used: integer("used").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.clientId, table.kind, table.periodKey] }),
+  ],
+);
+
 export const adMetrics = osSchema.table(
   "ad_metrics",
   {

@@ -1,13 +1,13 @@
 /**
  * Server-side plan checks. The tenant is the OS client id.
  *
- * getEntitlements reports the plan. precheckCanActivateAdAccounts is an
- * unlocked batch pre-check for the connect screen. It does not lock the
- * client row. The real guards are activateStore and rejectAdAccountIfBlocked,
- * which lock the client row with NO KEY UPDATE and check again before writing.
- * Triggers use that same lock, and only when the write can add an active row.
- * setClientPlan refuses an over-limit move to Scholarship and turns nothing
- * off. Monthly counters are not stored here.
+ * getEntitlements reports the plan. Monthly counts come from the shared usage helper.
+ * precheckCanActivateAdAccounts is an unlocked batch pre-check for the connect
+ * screen. It does not lock the client row. The real guards are activateStore and
+ * rejectAdAccountIfBlocked, which lock the client row with NO KEY UPDATE and
+ * check again before writing. Triggers use that same lock, and only when the
+ * write can add an active row. setClientPlan refuses an over-limit move to
+ * Scholarship and turns nothing off.
  */
 import {
   SCHOLARSHIP_AD_ACCOUNTS_PER_PLATFORM,
@@ -28,6 +28,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { adAccounts, clients, locations } from "./schema";
+import { getUsage } from "./usage";
 
 export class EntitlementError extends Error {
   readonly status: 404 | 409;
@@ -128,6 +129,8 @@ export async function getEntitlements(tenantId: string): Promise<TenantEntitleme
     activeByPlatform[row.platform] = (activeByPlatform[row.platform] ?? 0) + 1;
   }
 
+  const usage = await getUsage(client.id);
+
   return {
     tenantId: client.id,
     plan,
@@ -139,7 +142,10 @@ export async function getEntitlements(tenantId: string): Promise<TenantEntitleme
       limitPerPlatform: adAccountLimitPerPlatform(plan),
       activeByPlatform,
     },
-    monthly: monthlyCapsFor(plan),
+    monthly: monthlyCapsFor(plan, {
+      creativeVariations: usage.creativeVariations.used,
+      seoJobs: usage.seoJobs.used,
+    }),
   };
 }
 
