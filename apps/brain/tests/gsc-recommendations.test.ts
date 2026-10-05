@@ -15,7 +15,7 @@ import {
   parsePositionThreshold,
   withGscStoreConfig,
 } from '../src/lib/seo/gsc-threshold';
-import { effectiveApplyFlag } from '../src/lib/ads-apply-gate';
+import { clearAdsApplyGateCache, effectiveApplyFlag } from '../src/lib/ads-apply-gate';
 import { gscApplyIsWritable, gscApplyWriteBlockedReason, gscFlagsFromStore, isGscSourcedJob } from '../src/lib/seo/gsc-flags';
 import {
   GSC_POSITION_EDUCATION,
@@ -64,6 +64,8 @@ assert.equal(effectiveApplyFlag('hidden', true), 'hidden');
 assert.equal(effectiveApplyFlag('on', true), 'on');
 assert.equal(effectiveApplyFlag('on', false), 'hidden');
 assert.equal(effectiveApplyFlag('recommend_only', true), 'recommend_only');
+assert.equal(effectiveApplyFlag(undefined, true), 'on');
+assert.equal(effectiveApplyFlag(undefined, false), 'hidden');
 assert.equal(gscFlagsFromStore(unconfirmedGsc)['seo.gsc.apply'], 'hidden');
 assert.equal(gscFlagsFromStore(unconfirmedGsc)['seo.gsc.recommendations'], 'on');
 assert.equal(await gscApplyIsWritable(unconfirmedGsc), false);
@@ -81,6 +83,60 @@ const confirmedGsc = {
 assert.equal(gscFlagsFromStore(confirmedGsc)['seo.gsc.apply'], 'hidden');
 assert.equal(await gscApplyIsWritable(confirmedGsc), false);
 assert.equal(await gscApplyWriteBlockedReason(confirmedGsc), 'capability_seo_gsc_apply');
+
+const adsWorkspaceId = '11111111-1111-4111-8111-111111111111';
+const previousAdsUrl = process.env.ADS_API_URL;
+const previousAdsWorkspace = process.env.ADS_INTERNAL_WORKSPACE_ID;
+const previousAdsKey = process.env.ADS_INTERNAL_KEY;
+const previousFetch = globalThis.fetch;
+process.env.ADS_API_URL = 'http://ads.test';
+process.env.ADS_INTERNAL_WORKSPACE_ID = adsWorkspaceId;
+process.env.ADS_INTERNAL_KEY = 'test-internal';
+globalThis.fetch = async () =>
+  new Response(
+    JSON.stringify({
+      workspace: {
+        id: adsWorkspaceId,
+        capabilities: { 'seo.gsc.apply': 'on', 'site.wordpress.apply': 'on' },
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+clearAdsApplyGateCache();
+try {
+  const adsOn = { config: { gsc: { applyKillSwitch: false } } };
+  assert.equal(await gscApplyWriteBlockedReason(adsOn), null, 'a missing local key defers to ads');
+  assert.equal(await gscApplyIsWritable(adsOn), true);
+  clearAdsApplyGateCache();
+  const localOff = {
+    config: {
+      workspace: { capabilities: { 'seo.gsc.apply': 'hidden' } },
+      gsc: { applyKillSwitch: false },
+    },
+  };
+  assert.equal(await gscApplyWriteBlockedReason(localOff), 'capability_seo_gsc_apply');
+  assert.equal(await gscApplyIsWritable(localOff), false);
+  clearAdsApplyGateCache();
+  const recommendOnly = {
+    config: {
+      workspace: { capabilities: { 'seo.gsc.apply': 'recommend_only' } },
+      gsc: { applyKillSwitch: false },
+    },
+  };
+  assert.equal(
+    await gscApplyWriteBlockedReason(recommendOnly),
+    'capability_seo_gsc_apply_recommend_only',
+  );
+} finally {
+  clearAdsApplyGateCache();
+  globalThis.fetch = previousFetch;
+  if (previousAdsUrl === undefined) delete process.env.ADS_API_URL;
+  else process.env.ADS_API_URL = previousAdsUrl;
+  if (previousAdsWorkspace === undefined) delete process.env.ADS_INTERNAL_WORKSPACE_ID;
+  else process.env.ADS_INTERNAL_WORKSPACE_ID = previousAdsWorkspace;
+  if (previousAdsKey === undefined) delete process.env.ADS_INTERNAL_KEY;
+  else process.env.ADS_INTERNAL_KEY = previousAdsKey;
+}
 
 assert.equal(parsePositionThreshold(undefined), GSC_DEFAULT_POSITION_THRESHOLD);
 assert.equal(parsePositionThreshold('4.5'), 4.5);

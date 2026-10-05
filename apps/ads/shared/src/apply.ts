@@ -197,8 +197,16 @@ export function isUnconfirmedApplyError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : "";
   const code =
     error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
-  const text = `${message} ${code}`;
-  return /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UND_ERR_|other side closed|network error/i.test(text);
+  const cause =
+    error && typeof error === "object" && "cause" in error ? (error as { cause?: unknown }).cause : undefined;
+  const causeCode =
+    cause && typeof cause === "object" && cause && "code" in cause
+      ? String((cause as { code?: unknown }).code ?? "")
+      : "";
+  const text = `${message} ${code} ${causeCode}`;
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UND_ERR_|other side closed|network error|\bterminated\b/i.test(
+    text,
+  );
 }
 
 export function claimTokenOf(responseJson: unknown): string | null {

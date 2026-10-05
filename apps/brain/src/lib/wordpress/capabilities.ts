@@ -5,7 +5,7 @@ import {
   wordpressSyncBlockedReason,
   type CapabilityFlags,
 } from '@cerevex/contracts';
-import { authoritativeApplyOn, effectiveApplyFlag } from '../ads-apply-gate';
+import { authoritativeApplyOn, effectiveApplyFlag, explicitStoredApplyFlag } from '../ads-apply-gate';
 import { flagsWithConfirmedSafety } from '../ads-confirmed-safety';
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -31,14 +31,13 @@ export function wordpressConnectBlockedFromWorkspace(workspaceSettings: unknown)
   return wordpressConnectBlockedReason(wordpressFlagsFromWorkspace(workspaceSettings));
 }
 
-/** Effective apply is the stored flag AND ads. A local off blocks even when ads says on. */
+/** An explicit local hidden or recommend_only blocks. A missing key defers to ads. */
 export async function wordpressFlagsForGate(
   store: { config?: Record<string, unknown> } | null | undefined,
 ): Promise<CapabilityFlags> {
-  const stored = resolveWorkspaceCapabilities(wordpressWorkspaceSettingsFromStore(store));
   const flags = wordpressFlagsFromStore(store);
   flags['site.wordpress.apply'] = effectiveApplyFlag(
-    stored['site.wordpress.apply'],
+    explicitStoredApplyFlag(wordpressWorkspaceSettingsFromStore(store), 'site.wordpress.apply'),
     await authoritativeApplyOn('site.wordpress.apply'),
   );
   return flags;

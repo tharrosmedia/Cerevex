@@ -203,4 +203,44 @@ describe("connector interfaces", () => {
     else process.env.GOOGLE_ADS_DEVELOPER_TOKEN = previous;
     fetchMock.mockRestore();
   });
+
+  it("treats a 2xx whose body drops after the headers as unconfirmed", async () => {
+    const dropped = () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.error(Object.assign(new TypeError("terminated"), { cause: { code: "UND_ERR_SOCKET" } }));
+        },
+      });
+      return new Response(stream, { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const mutation = {
+      action: "create_ad" as const,
+      target: { entityType: "adset" as const, externalId: "adset-1", name: "HVAC" },
+      payload: { proposedName: "cq-body-drop" },
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "creative-1" }), { status: 200 }));
+    fetchMock.mockResolvedValueOnce(dropped());
+    await expect(
+      metaAdPlatformConnector.applyLive({
+        tokens: { accessToken: "tok", mock: false },
+        mutation: { ...mutation, platform: "meta" },
+        accountExternalId: "act_1",
+      }),
+    ).rejects.toMatchObject({ name: "UnconfirmedPlatformWriteError" });
+
+    const previous = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+    process.env.GOOGLE_ADS_DEVELOPER_TOKEN = "test-developer-token";
+    fetchMock.mockResolvedValueOnce(dropped());
+    await expect(
+      googleAdPlatformConnector.applyLive({
+        tokens: { accessToken: "tok", mock: false },
+        mutation: { ...mutation, platform: "google" },
+        accountExternalId: "customers/1",
+      }),
+    ).rejects.toMatchObject({ name: "UnconfirmedPlatformWriteError" });
+    if (previous === undefined) delete process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+    else process.env.GOOGLE_ADS_DEVELOPER_TOKEN = previous;
+    fetchMock.mockRestore();
+  });
 });

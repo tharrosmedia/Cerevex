@@ -29,12 +29,22 @@ export class UnconfirmedPlatformWriteError extends Error {
   }
 }
 
-/** Read a write response. 5xx and unreadable 2xx stay unconfirmed. A 4xx is a rejection. */
+/** Read a write response. 5xx and a 2xx whose body cannot be read stay unconfirmed. A 4xx is a rejection. */
 export async function readPlatformWriteBody(res: Response, label: string): Promise<unknown> {
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    if (res.ok || res.status >= 500) {
+      throw new UnconfirmedPlatformWriteError(
+        res.status >= 500 ? `${label} (${res.status})` : `${label} returned an unreadable body`,
+      );
+    }
+    throw new Error(`${label} (${res.status})`);
+  }
   if (res.status >= 500) {
     throw new UnconfirmedPlatformWriteError(`${label} (${res.status})`);
   }
-  const text = await res.text();
   if (!res.ok) {
     throw new Error(`${label} (${res.status}): ${text.slice(0, 200)}`);
   }

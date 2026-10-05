@@ -2,10 +2,9 @@ import {
   gscApplyBlockedReason,
   isGscRecommendationsOn,
   isGscRecommendationsVisible,
-  resolveWorkspaceCapabilities,
   type CapabilityFlags,
 } from '@cerevex/contracts';
-import { authoritativeApplyOn, effectiveApplyFlag } from '../ads-apply-gate';
+import { authoritativeApplyOn, effectiveApplyFlag, explicitStoredApplyFlag } from '../ads-apply-gate';
 import { flagsWithConfirmedSafety } from '../ads-confirmed-safety';
 import { gscApplyBlockedByKillSwitch } from './gsc-threshold';
 
@@ -36,9 +35,11 @@ export function gscRecommendationsCanGenerate(store: { config?: Record<string, u
 export async function gscApplyWriteBlockedReason(
   store: { config?: Record<string, unknown> } | null | undefined,
 ): Promise<string | null> {
-  const stored = resolveWorkspaceCapabilities(gscWorkspaceSettingsFromStore(store));
   const flags = gscFlagsFromStore(store);
-  flags['seo.gsc.apply'] = effectiveApplyFlag(stored['seo.gsc.apply'], await authoritativeApplyOn('seo.gsc.apply'));
+  flags['seo.gsc.apply'] = effectiveApplyFlag(
+    explicitStoredApplyFlag(gscWorkspaceSettingsFromStore(store), 'seo.gsc.apply'),
+    await authoritativeApplyOn('seo.gsc.apply'),
+  );
   const flagBlock = gscApplyBlockedReason(flags);
   if (flagBlock) return flagBlock;
   if (gscApplyBlockedByKillSwitch(store)) return 'gsc_apply_kill_switch';
