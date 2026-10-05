@@ -1,10 +1,5 @@
-export const WORDPRESS_PLUGIN_DRIVE_URL =
-  'https://drive.google.com/file/d/185LuzETVb7Tf7_jdrWb34ZhFBxVL22Ju/view?usp=drivesdk';
-
-export const WORDPRESS_PLUGIN_DRIVE_LABEL = 'Download plugin zip';
-
 export const WORDPRESS_PLUGIN_ZIP_UNAVAILABLE =
-  'The in-app plugin zip is not on this server. Use Download plugin zip, or try again after the next deploy.';
+  'The WordPress plugin zip is not on this server. Try again after the next deploy, or use the install note.';
 
 export async function pluginDownloadError(response: Response): Promise<string> {
   if (response.status === 401) return 'Sign in again to download the plugin.';
