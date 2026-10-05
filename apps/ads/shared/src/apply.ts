@@ -19,6 +19,7 @@ import {
   APPLY_EXECUTE_DEADLINE_MS,
   ApplyCallBudgetError,
   PLATFORM_WRITE_TIMEOUT_MS,
+  UnconfirmedPlatformWriteError,
   platformCallBudgetMs,
   runBudgetedPlatformCalls,
 } from "./connectors/write-timeout";
@@ -128,7 +129,18 @@ export function shouldRecordApplyAudit(result: {
 /** A live apply may hold the platform call. Past this, a later caller closes the job without calling the platform. */
 export const APPLYING_LEASE_MS = 2 * 60 * 1000;
 
-export { APPLY_CALL_MARGIN_MS, APPLY_EXECUTE_DEADLINE_MS, PLATFORM_WRITE_TIMEOUT_MS, runBudgetedPlatformCalls };
+/** Execute deadline from lease time still left. Not from when executePrepared started. */
+export function applyExecuteDeadlineAt(remainingMs: number, now = Date.now()): number {
+  return now + Math.max(0, remainingMs - PLATFORM_WRITE_TIMEOUT_MS);
+}
+
+export {
+  APPLY_CALL_MARGIN_MS,
+  APPLY_EXECUTE_DEADLINE_MS,
+  PLATFORM_WRITE_TIMEOUT_MS,
+  UnconfirmedPlatformWriteError,
+  runBudgetedPlatformCalls,
+};
 
 /**
  * A write is succeeded even when a later mutation failed. With no write, a failure stays failed.
@@ -180,12 +192,21 @@ export function isAbortedApplyError(error: unknown): boolean {
 /** The request left this process and the platform result was not confirmed. A skipped call is not this. */
 export function isUnconfirmedApplyError(error: unknown): boolean {
   if (error instanceof ApplyCallBudgetError) return false;
+  if (error instanceof UnconfirmedPlatformWriteError) return true;
   if (isAbortedApplyError(error)) return true;
   const message = error instanceof Error ? error.message : "";
   const code =
     error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
-  const text = `${message} ${code}`;
-  return /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UND_ERR_|other side closed|network error/i.test(text);
+  const cause =
+    error && typeof error === "object" && "cause" in error ? (error as { cause?: unknown }).cause : undefined;
+  const causeCode =
+    cause && typeof cause === "object" && cause && "code" in cause
+      ? String((cause as { code?: unknown }).code ?? "")
+      : "";
+  const text = `${message} ${code} ${causeCode}`;
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UND_ERR_|other side closed|network error|\bterminated\b/i.test(
+    text,
+  );
 }
 
 export function claimTokenOf(responseJson: unknown): string | null {
@@ -954,8 +975,10 @@ async function executePrepared(prepared: PreparedApply): Promise<{
   const mutations = parseApplyMutations(prepared.recommendation.proposedMutationsJson);
   const outcomes: MutationOutcome[] = [];
   let failed: string | null = null;
-  const startedAt = Date.now();
-  const deadlineAt = startedAt + APPLY_EXECUTE_DEADLINE_MS;
+  // The loop clock is the claim, not execute start. A late start must not run past the lease.
+  // One call budget is held back so a call that starts inside the window still ends before the lease.
+  const remainingMs = await applyingLeaseRemainingMs(prepared.job.responseJson);
+  const deadlineAt = applyExecuteDeadlineAt(remainingMs);
   const claimToken = claimTokenOf(prepared.job.responseJson);
   for (const mutation of mutations) {
     if (platformCallBudgetMs(deadlineAt) <= 0) {
@@ -979,6 +1002,9 @@ async function executePrepared(prepared: PreparedApply): Promise<{
       if (applyClaimHooks.beforeWrite) {
         await applyClaimHooks.beforeWrite({ jobId: prepared.job.id, claimToken });
       }
+      // Residual window: this read and the platform HTTP call are not one transaction.
+      // A request Meta or Google already accepted cannot be recalled. settleApplyJob
+      // writes an audit row when that late write finds the claim gone.
       if (!(await claimStillHeld(prepared.job.id, claimToken))) {
         outcomes.push({
           action: mutation.action,
@@ -1023,7 +1049,7 @@ async function executePrepared(prepared: PreparedApply): Promise<{
       }
       const unconfirmed = isUnconfirmedApplyError(error);
       const message = unconfirmed
-        ? "apply_deadline"
+        ? "unconfirmed_write"
         : (sanitizeStoredError(error instanceof Error ? error.message : "Apply mutation failed") ?? "Apply mutation failed");
       outcomes.push({
         action: mutation.action,

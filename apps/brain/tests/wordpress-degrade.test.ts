@@ -15,7 +15,8 @@ import {
   wordpressConnectBlockedFromSource,
 } from '../src/lib/wordpress/connect-config';
 import { wordpressApplyBlockedByKillSwitch } from '../src/lib/wordpress/store';
-import { wordpressFlagsFromStore } from '../src/lib/wordpress/capabilities';
+import { wordpressApplyGateReason, wordpressFlagsFromStore } from '../src/lib/wordpress/capabilities';
+import { clearAdsApplyGateCache } from '../src/lib/ads-apply-gate';
 
 assert.equal(ISOLATION.brainInngestApp, 'Cerevex');
 assert.equal(ISOLATION.osInngestApp, 'cerevex-ads');
@@ -57,6 +58,49 @@ const confirmedApply = wordpressFlagsFromStore({
 });
 assert.equal(confirmedApply['site.wordpress.apply'], 'hidden');
 assert.equal(wordpressApplyBlockedReason(confirmedApply), 'capability_site_wordpress_apply');
+
+const adsWorkspaceId = '11111111-1111-4111-8111-111111111111';
+const previousAdsUrl = process.env.ADS_API_URL;
+const previousAdsWorkspace = process.env.ADS_INTERNAL_WORKSPACE_ID;
+const previousAdsKey = process.env.ADS_INTERNAL_KEY;
+const previousFetch = globalThis.fetch;
+process.env.ADS_API_URL = 'http://ads.test';
+process.env.ADS_INTERNAL_WORKSPACE_ID = adsWorkspaceId;
+process.env.ADS_INTERNAL_KEY = 'test-internal';
+globalThis.fetch = async () =>
+  new Response(
+    JSON.stringify({
+      workspace: { id: adsWorkspaceId, capabilities: { 'site.wordpress.apply': 'on' } },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+clearAdsApplyGateCache();
+try {
+  assert.equal(await wordpressApplyGateReason({ config: { workspace: {} } }), null);
+  clearAdsApplyGateCache();
+  assert.equal(
+    await wordpressApplyGateReason({
+      config: { workspace: { capabilities: { 'site.wordpress.apply': 'hidden' } } },
+    }),
+    'capability_site_wordpress_apply',
+  );
+  clearAdsApplyGateCache();
+  assert.equal(
+    await wordpressApplyGateReason({
+      config: { workspace: { capabilities: { 'site.wordpress.apply': 'recommend_only' } } },
+    }),
+    'capability_site_wordpress_apply_recommend_only',
+  );
+} finally {
+  clearAdsApplyGateCache();
+  globalThis.fetch = previousFetch;
+  if (previousAdsUrl === undefined) delete process.env.ADS_API_URL;
+  else process.env.ADS_API_URL = previousAdsUrl;
+  if (previousAdsWorkspace === undefined) delete process.env.ADS_INTERNAL_WORKSPACE_ID;
+  else process.env.ADS_INTERNAL_WORKSPACE_ID = previousAdsWorkspace;
+  if (previousAdsKey === undefined) delete process.env.ADS_INTERNAL_KEY;
+  else process.env.ADS_INTERNAL_KEY = previousAdsKey;
+}
 
 assert.equal(wordpressApplyBlockedByKillSwitch({}), true);
 assert.equal(wordpressApplyBlockedByKillSwitch({ config: {} }), true);

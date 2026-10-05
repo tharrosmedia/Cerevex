@@ -103,6 +103,26 @@ assert.deepEqual(
   }),
   { workspace: { capabilities: { 'site.wordpress.connect': 'on' } } },
 );
+assert.deepEqual(
+  stripEditableApplyGates({
+    workspace: {
+      capabilities: {
+        'site.wordpress.apply': 'hidden',
+        'seo.gsc.apply': 'recommend_only',
+        'site.wordpress.connect': 'on',
+      },
+    },
+  }),
+  {
+    workspace: {
+      capabilities: {
+        'site.wordpress.apply': 'hidden',
+        'seo.gsc.apply': 'recommend_only',
+        'site.wordpress.connect': 'on',
+      },
+    },
+  },
+);
 
 const ownerHeaders = adsCallerHeaders({ safetyOn: true, internalKey: 'svc', ownerToken: 'owner-jwt' });
 assert.equal(ownerHeaders.get('x-cerevex-internal-key'), null);

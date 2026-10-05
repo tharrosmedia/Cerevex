@@ -26,15 +26,19 @@ export function flagsWithConfirmedSafety(settings: unknown): CapabilityFlags {
   return flags;
 }
 
-/** Drop the editable marker and the two apply gates before a user JSON save or cookie write. */
+/**
+ * Drop the editable marker and a stored on for the two apply gates.
+ * An explicit hidden or recommend_only stays, so a local off survives the save.
+ */
 export function stripEditableWorkspaceSettings(settings: Record<string, unknown>): Record<string, unknown> {
   const next = { ...settings };
   delete next.adsConfirmedSafety;
   const caps = asRecord(next.capabilities);
   if (Object.keys(caps).length > 0) {
     const capabilities = { ...caps };
-    delete capabilities['site.wordpress.apply'];
-    delete capabilities['seo.gsc.apply'];
+    for (const id of STORE_APPLY_GATES) {
+      if (capabilities[id] === 'on') delete capabilities[id];
+    }
     next.capabilities = capabilities;
   }
   return next;

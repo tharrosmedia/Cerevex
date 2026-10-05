@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import pg from "pg";
 import { eq, sql } from "drizzle-orm";
 import { applySafetyCapabilityIds, isApplySafetyCapability, resolveWorkspaceCapabilities } from "@cerevex/contracts";
@@ -9,7 +9,9 @@ import {
   APPLY_CALL_MARGIN_MS,
   APPLY_EXECUTE_DEADLINE_MS,
   PLATFORM_WRITE_TIMEOUT_MS,
+  UnconfirmedPlatformWriteError,
   applyClaimHooks,
+  applyExecuteDeadlineAt,
   applyOutcomeWrites,
   applyingLeaseRemainingMs,
   claimTokenOf,
@@ -23,6 +25,7 @@ import {
   settledApplyJob,
   shouldRecordApplyAudit,
 } from "@tharros/ads-shared/apply";
+import { googleAdPlatformConnector, metaAdPlatformConnector } from "@tharros/ads-shared/connectors";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
 import {
   adAccounts,
@@ -1366,6 +1369,12 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(sanitizeStoredError("rejected SQLSTATE from the ad account")).toBe("rejected SQLSTATE from the ad account");
     expect(sanitizeStoredError("authorization_revoked")).toBe("authorization_revoked");
     expect(isUnconfirmedApplyError(new TypeError("fetch failed"))).toBe(true);
+    expect(
+      isUnconfirmedApplyError(Object.assign(new TypeError("terminated"), { cause: { code: "UND_ERR_SOCKET" } })),
+    ).toBe(true);
+    expect(isUnconfirmedApplyError(new UnconfirmedPlatformWriteError("Meta write failed (500)"))).toBe(true);
+    expect(isUnconfirmedApplyError(new UnconfirmedPlatformWriteError("Meta write failed returned an unreadable body"))).toBe(true);
+    expect(isUnconfirmedApplyError(new Error("Meta write failed (400): no"))).toBe(false);
     expect(isUnconfirmedApplyError(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }))).toBe(true);
     expect(isUnconfirmedApplyError(new Error("No OAuth credentials for this ad account."))).toBe(false);
     expect(settledApplyJob({ writes: true, failed: sqlError, revoked: false }).error).toBe("database_error");
@@ -1378,6 +1387,9 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(PLATFORM_WRITE_TIMEOUT_MS).toBeLessThan(APPLYING_LEASE_MS / 2);
     expect(APPLY_EXECUTE_DEADLINE_MS).toBeGreaterThan(PLATFORM_WRITE_TIMEOUT_MS);
     expect(APPLY_EXECUTE_DEADLINE_MS).toBeLessThan(APPLYING_LEASE_MS);
+    const now = 1_000_000;
+    expect(applyExecuteDeadlineAt(70_000, now)).toBe(now + 70_000 - PLATFORM_WRITE_TIMEOUT_MS);
+    expect(applyExecuteDeadlineAt(70_000, now)).toBeLessThan(now + APPLY_EXECUTE_DEADLINE_MS);
     expect(isAbortedApplyError(Object.assign(new Error("timed out"), { name: "TimeoutError" }))).toBe(true);
     expect(isAbortedApplyError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(true);
     expect(isAbortedApplyError(new Error("connector_rejected"))).toBe(false);
@@ -1661,6 +1673,111 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       expect(unsent.ok).toBe(true);
     } finally {
       await getDb().delete(adEntities).where(eq(adEntities.id, sibling.id));
+      if (snapshot) await getDb().update(workspaces).set({ settingsJson: snapshot }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
+  it("does not requeue a create when the 2xx body drops on Meta or Google", async () => {
+    const dropped = () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.error(Object.assign(new TypeError("terminated"), { cause: { code: "UND_ERR_SOCKET" } }));
+        },
+      });
+      return new Response(stream, { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const mutation = {
+      action: "create_ad" as const,
+      target: { entityType: "adset" as const, externalId: "adset-1", name: "test" },
+      payload: { proposedName: "cq-body-drop" },
+      execute: false,
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const previousDeveloperToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+    process.env.GOOGLE_ADS_DEVELOPER_TOKEN = "test-developer-token";
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "creative-1" }), { status: 200 }));
+    fetchMock.mockResolvedValueOnce(dropped());
+    const metaError = await metaAdPlatformConnector
+      .applyLive({
+        tokens: { accessToken: "tok", mock: false },
+        mutation: { ...mutation, platform: "meta" },
+        live: null,
+        accountExternalId: "act_1",
+      })
+      .catch((error: unknown) => error);
+    expect(metaError).toMatchObject({ name: "UnconfirmedPlatformWriteError" });
+    expect(isUnconfirmedApplyError(metaError)).toBe(true);
+    fetchMock.mockResolvedValueOnce(dropped());
+    const googleError = await googleAdPlatformConnector
+      .applyLive({
+        tokens: { accessToken: "tok", mock: false },
+        mutation: { ...mutation, platform: "google" },
+        live: null,
+        accountExternalId: "customers/1",
+      })
+      .catch((error: unknown) => error);
+    expect(googleError).toMatchObject({ name: "UnconfirmedPlatformWriteError" });
+    expect(isUnconfirmedApplyError(googleError)).toBe(true);
+    fetchMock.mockRestore();
+    if (previousDeveloperToken === undefined) delete process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+    else process.env.GOOGLE_ADS_DEVELOPER_TOKEN = previousDeveloperToken;
+
+    const snapshot = (await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.settingsJson;
+    const on = await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "apply.create_entity": "on" }, workspaceId }),
+    });
+    expect(on.status).toBe(200);
+    try {
+      const [rec] = await getDb()
+        .insert(recommendations)
+        .values({
+          workspaceId,
+          clientId,
+          adAccountId: accountId,
+          type: "creative_variant",
+          title: "Body drop must not requeue",
+          rationale: "A 2xx whose body drops may already have created the ad.",
+          risk: "low",
+          evidenceJson: { writes: false },
+          proposedMutationsJson: [
+            {
+              platform: "meta",
+              action: "create_ad",
+              target: { entityType: "adset", externalId: entityExternalId, name: "test" },
+              payload: { proposedName: "cq-body-drop" },
+              execute: false,
+            },
+          ],
+          status: "proposed",
+          schemaVersion: "1",
+        })
+        .returning();
+      const jobId = await approveQueued(rec.id);
+      const writes = isUnconfirmedApplyError(metaError) && isUnconfirmedApplyError(googleError) ? "unknown" : false;
+      await getDb()
+        .update(applyJobs)
+        .set({
+          status: "failed",
+          error: "unconfirmed_write",
+          finishedAt: new Date(),
+          responseJson: { writes, outcomes: [] },
+        })
+        .where(eq(applyJobs.id, jobId));
+      const before = await getDb().select().from(adEntities).where(eq(adEntities.adAccountId, accountId));
+      const http = await app.request(`/recommendations/${rec.id}/apply`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ requeue: true }),
+      });
+      expect(http.status).toBe(409);
+      const requeued = await requeueFailedApplyJob(jobId);
+      expect(requeued.ok).toBe(false);
+      expect((await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) }))?.status).toBe("failed");
+      const after = await getDb().select().from(adEntities).where(eq(adEntities.adAccountId, accountId));
+      expect(after).toHaveLength(before.length);
+    } finally {
       if (snapshot) await getDb().update(workspaces).set({ settingsJson: snapshot }).where(eq(workspaces.id, workspaceId));
     }
   });

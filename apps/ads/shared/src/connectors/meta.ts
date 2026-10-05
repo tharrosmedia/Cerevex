@@ -13,7 +13,7 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
-import { requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
+import { readPlatformWriteBody, requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -39,11 +39,7 @@ async function graphPost(
     body: params,
     signal: signal ?? signalForPlatformCall() ?? undefined,
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Meta write failed (${res.status}): ${text.slice(0, 200)}`);
-  }
-  return res.json();
+  return readPlatformWriteBody(res, "Meta write failed");
 }
 
 async function graphGet(path: string, accessToken: string, signal?: AbortSignal | null): Promise<unknown> {

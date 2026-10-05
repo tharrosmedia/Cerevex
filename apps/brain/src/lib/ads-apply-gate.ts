@@ -9,9 +9,33 @@ export function clearAdsApplyGateCache(): void {
 }
 
 /**
- * Ads is the gate. A short memory cache avoids a round trip on every render.
+ * Ads is the gate. This cache is per process and lasts 15 seconds, so an ads hide
+ * can take that long to reach this Brain process and the SEO worker.
+ * The SEO worker fails closed unless ADS_API_URL, ADS_INTERNAL_KEY, and
+ * ADS_INTERNAL_WORKSPACE_ID are set in that process.
  * Error, timeout, a non-JSON body, or a workspace id that is not Brain's all fail closed.
  */
+
+/** The raw stored value. A missing key is undefined, not the catalog default of hidden. */
+export function explicitStoredApplyFlag(settings: unknown, id: string): string | undefined {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return undefined;
+  const caps = (settings as { capabilities?: unknown }).capabilities;
+  if (!caps || typeof caps !== 'object' || Array.isArray(caps)) return undefined;
+  const value = (caps as Record<string, unknown>)[id];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * An explicit hidden or recommend_only blocks the write.
+ * A missing key, or a legacy stored on, defers to ads.
+ */
+export function effectiveApplyFlag(
+  local: string | undefined,
+  adsOn: boolean,
+): 'on' | 'hidden' | 'recommend_only' {
+  if (local === 'recommend_only' || local === 'hidden') return local;
+  return adsOn ? 'on' : 'hidden';
+}
 export async function readAuthoritativeApplyFlags(): Promise<Record<string, string> | null> {
   const workspaceId = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim();
   if (!workspaceId) return null;
