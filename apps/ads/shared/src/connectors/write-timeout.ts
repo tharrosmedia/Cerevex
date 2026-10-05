@@ -18,34 +18,6 @@ export class ApplyCallBudgetError extends Error {
   }
 }
 
-/**
- * The request was sent and the platform did not confirm the outcome.
- * A 5xx, or a 2xx whose body is not JSON, can still have landed.
- */
-export class UnconfirmedPlatformWriteError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "UnconfirmedPlatformWriteError";
-  }
-}
-
-/** Read a write response. 5xx and unreadable 2xx stay unconfirmed. A 4xx is a rejection. */
-export async function readPlatformWriteBody(res: Response, label: string): Promise<unknown> {
-  if (res.status >= 500) {
-    throw new UnconfirmedPlatformWriteError(`${label} (${res.status})`);
-  }
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`${label} (${res.status}): ${text.slice(0, 200)}`);
-  }
-  if (!text) throw new UnconfirmedPlatformWriteError(`${label} returned an unreadable body`);
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new UnconfirmedPlatformWriteError(`${label} returned an unreadable body`);
-  }
-}
-
 /** Time a single platform call may still run. Zero means do not start it. */
 export function platformCallBudgetMs(deadlineAt: number, now = Date.now()): number {
   const remaining = deadlineAt - now - APPLY_CALL_MARGIN_MS;

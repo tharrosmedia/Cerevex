@@ -9,22 +9,9 @@ export function clearAdsApplyGateCache(): void {
 }
 
 /**
- * Ads is the gate. This cache is per process and lasts 15 seconds, so an ads hide
- * can take that long to reach this Brain process and the SEO worker.
- * The SEO worker fails closed unless ADS_API_URL, ADS_INTERNAL_KEY, and
- * ADS_INTERNAL_WORKSPACE_ID are set in that process.
+ * Ads is the gate. A short memory cache avoids a round trip on every render.
  * Error, timeout, a non-JSON body, or a workspace id that is not Brain's all fail closed.
  */
-
-/** A write needs the stored flag on and ads on. recommend_only stays recommend_only. */
-export function effectiveApplyFlag(
-  local: string | undefined,
-  adsOn: boolean,
-): 'on' | 'hidden' | 'recommend_only' {
-  if (local === 'recommend_only') return 'recommend_only';
-  if (local === 'on' && adsOn) return 'on';
-  return 'hidden';
-}
 export async function readAuthoritativeApplyFlags(): Promise<Record<string, string> | null> {
   const workspaceId = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim();
   if (!workspaceId) return null;

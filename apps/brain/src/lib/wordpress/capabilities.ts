@@ -5,7 +5,7 @@ import {
   wordpressSyncBlockedReason,
   type CapabilityFlags,
 } from '@cerevex/contracts';
-import { authoritativeApplyOn, effectiveApplyFlag } from '../ads-apply-gate';
+import { authoritativeApplyOn } from '../ads-apply-gate';
 import { flagsWithConfirmedSafety } from '../ads-confirmed-safety';
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -31,16 +31,12 @@ export function wordpressConnectBlockedFromWorkspace(workspaceSettings: unknown)
   return wordpressConnectBlockedReason(wordpressFlagsFromWorkspace(workspaceSettings));
 }
 
-/** Effective apply is the stored flag AND ads. A local off blocks even when ads says on. */
+/** Local flags hide apply. Ads must say this workspace's gate is on, or the write stays blocked. */
 export async function wordpressFlagsForGate(
   store: { config?: Record<string, unknown> } | null | undefined,
 ): Promise<CapabilityFlags> {
-  const stored = resolveWorkspaceCapabilities(wordpressWorkspaceSettingsFromStore(store));
   const flags = wordpressFlagsFromStore(store);
-  flags['site.wordpress.apply'] = effectiveApplyFlag(
-    stored['site.wordpress.apply'],
-    await authoritativeApplyOn('site.wordpress.apply'),
-  );
+  if (await authoritativeApplyOn('site.wordpress.apply')) flags['site.wordpress.apply'] = 'on';
   return flags;
 }
 
