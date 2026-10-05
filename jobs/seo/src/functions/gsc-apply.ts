@@ -22,6 +22,8 @@ export const gscApplyFn = inngest.createFunction(
         return { ok: true, writes: false, reason: action };
       }
       const store = await getStore(storeId);
+      // Ads gate cache is per process (15s). This worker fails closed without
+      // ADS_API_URL, ADS_INTERNAL_KEY, and ADS_INTERNAL_WORKSPACE_ID.
       const blocked = await gscApplyWriteBlockedReason(store);
       if (!store || blocked || !(await gscApplyIsWritable(store)) || !isGscSourcedJob(data)) {
         await logEvent(storeId, data.actor || 'system', 'gsc.apply.blocked', {

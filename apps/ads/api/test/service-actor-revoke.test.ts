@@ -9,7 +9,9 @@ import {
   APPLY_CALL_MARGIN_MS,
   APPLY_EXECUTE_DEADLINE_MS,
   PLATFORM_WRITE_TIMEOUT_MS,
+  UnconfirmedPlatformWriteError,
   applyClaimHooks,
+  applyExecuteDeadlineAt,
   applyOutcomeWrites,
   applyingLeaseRemainingMs,
   claimTokenOf,
@@ -1366,6 +1368,9 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(sanitizeStoredError("rejected SQLSTATE from the ad account")).toBe("rejected SQLSTATE from the ad account");
     expect(sanitizeStoredError("authorization_revoked")).toBe("authorization_revoked");
     expect(isUnconfirmedApplyError(new TypeError("fetch failed"))).toBe(true);
+    expect(isUnconfirmedApplyError(new UnconfirmedPlatformWriteError("Meta write failed (500)"))).toBe(true);
+    expect(isUnconfirmedApplyError(new UnconfirmedPlatformWriteError("Meta write failed returned an unreadable body"))).toBe(true);
+    expect(isUnconfirmedApplyError(new Error("Meta write failed (400): no"))).toBe(false);
     expect(isUnconfirmedApplyError(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }))).toBe(true);
     expect(isUnconfirmedApplyError(new Error("No OAuth credentials for this ad account."))).toBe(false);
     expect(settledApplyJob({ writes: true, failed: sqlError, revoked: false }).error).toBe("database_error");
@@ -1378,6 +1383,9 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(PLATFORM_WRITE_TIMEOUT_MS).toBeLessThan(APPLYING_LEASE_MS / 2);
     expect(APPLY_EXECUTE_DEADLINE_MS).toBeGreaterThan(PLATFORM_WRITE_TIMEOUT_MS);
     expect(APPLY_EXECUTE_DEADLINE_MS).toBeLessThan(APPLYING_LEASE_MS);
+    const now = 1_000_000;
+    expect(applyExecuteDeadlineAt(70_000, now)).toBe(now + 70_000 - PLATFORM_WRITE_TIMEOUT_MS);
+    expect(applyExecuteDeadlineAt(70_000, now)).toBeLessThan(now + APPLY_EXECUTE_DEADLINE_MS);
     expect(isAbortedApplyError(Object.assign(new Error("timed out"), { name: "TimeoutError" }))).toBe(true);
     expect(isAbortedApplyError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(true);
     expect(isAbortedApplyError(new Error("connector_rejected"))).toBe(false);
