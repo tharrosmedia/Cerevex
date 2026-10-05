@@ -645,7 +645,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       const requeued = await requeueFailedApplyJob(applyJob.id, { reconciled });
       if (!requeued.ok) {
         const message =
-          requeued.reason === "write_landed"
+          requeued.reason === "write_landed" || requeued.reason === "not_repeatable"
             ? "That apply may already have changed the ad. Requeue stays closed."
             : requeued.reason === "unreconciled_write"
               ? "Requeue needs a reconciled read of the live ad before it can run again."

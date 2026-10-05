@@ -13,14 +13,17 @@ import {
 } from "@cerevex/contracts";
 import { evaluateApplyGate } from "./apply-gate";
 import { getDefaultSiteConnector } from "./connectors/site";
+import { getAdPlatformConnector } from "./connectors";
 import {
   APPLY_CALL_MARGIN_MS,
   APPLY_EXECUTE_DEADLINE_MS,
   ApplyCallBudgetError,
   PLATFORM_WRITE_TIMEOUT_MS,
+  UnconfirmedPlatformWriteError,
   platformCallBudgetMs,
   runBudgetedPlatformCalls,
 } from "./connectors/write-timeout";
+import { loadTokens } from "./credentials";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { parseApplyMutations } from "./audit-schemas";
@@ -126,7 +129,18 @@ export function shouldRecordApplyAudit(result: {
 /** A live apply may hold the platform call. Past this, a later caller closes the job without calling the platform. */
 export const APPLYING_LEASE_MS = 2 * 60 * 1000;
 
-export { APPLY_CALL_MARGIN_MS, APPLY_EXECUTE_DEADLINE_MS, PLATFORM_WRITE_TIMEOUT_MS, runBudgetedPlatformCalls };
+/** Execute deadline from lease time still left. Not from when executePrepared started. */
+export function applyExecuteDeadlineAt(remainingMs: number, now = Date.now()): number {
+  return now + Math.max(0, remainingMs - PLATFORM_WRITE_TIMEOUT_MS);
+}
+
+export {
+  APPLY_CALL_MARGIN_MS,
+  APPLY_EXECUTE_DEADLINE_MS,
+  PLATFORM_WRITE_TIMEOUT_MS,
+  UnconfirmedPlatformWriteError,
+  runBudgetedPlatformCalls,
+};
 
 /**
  * A write is succeeded even when a later mutation failed. With no write, a failure stays failed.
@@ -178,6 +192,7 @@ export function isAbortedApplyError(error: unknown): boolean {
 /** The request left this process and the platform result was not confirmed. A skipped call is not this. */
 export function isUnconfirmedApplyError(error: unknown): boolean {
   if (error instanceof ApplyCallBudgetError) return false;
+  if (error instanceof UnconfirmedPlatformWriteError) return true;
   if (isAbortedApplyError(error)) return true;
   const message = error instanceof Error ? error.message : "";
   const code =
@@ -545,8 +560,9 @@ export async function closeApplyingJob(
 }
 
 /**
- * A confirmed or unknown write cannot be queued again until a read shows it did not land.
- * Relative budget and bid changes cannot be proven, so they stay closed.
+ * A confirmed or unknown write stays closed unless every action is safe to repeat
+ * and a real platform read proves it did not land after the old claim can no longer be running.
+ * create_ad has no job-scoped key on the platform object, so it is not repeatable.
  * The failed response is kept. A copy is stored on the request so the next claim does not erase it.
  */
 export async function requeueFailedApplyJob(
@@ -554,7 +570,11 @@ export async function requeueFailedApplyJob(
   options: { reconciled?: boolean } = {},
 ): Promise<
   | { ok: true; applyJob: ApplyJobPublic }
-  | { ok: false; reason: "not_failed" | "unreconciled_write" | "write_landed"; applyJob: ApplyJobPublic | null }
+  | {
+      ok: false;
+      reason: "not_failed" | "unreconciled_write" | "write_landed" | "not_repeatable";
+      applyJob: ApplyJobPublic | null;
+    }
 > {
   const current = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
   if (!current || current.status !== "failed") {
@@ -565,13 +585,9 @@ export async function requeueFailedApplyJob(
     if (!options.reconciled) {
       return { ok: false, reason: "unreconciled_write", applyJob: toApplyJobPublic(current) };
     }
-    const landed = await applyWriteLanded(current);
-    if (landed !== false) {
-      return {
-        ok: false,
-        reason: landed === true ? "write_landed" : "unreconciled_write",
-        applyJob: toApplyJobPublic(current),
-      };
+    const decision = await reconciledRequeueDecision(current);
+    if (decision !== "open") {
+      return { ok: false, reason: decision, applyJob: toApplyJobPublic(current) };
     }
   }
   const request = {
@@ -588,8 +604,14 @@ export async function requeueFailedApplyJob(
   return { ok: false, reason: "not_failed", applyJob: again ? toApplyJobPublic(again) : null };
 }
 
-/** Local entity state is the mock platform. A relative spend change cannot be proven either way. */
-async function applyWriteLanded(job: typeof applyJobs.$inferSelect): Promise<boolean | null> {
+/**
+ * Pause is the only action safe to run again: the next claim reads live state and skips an already-paused entity.
+ * Anything else, including create_ad, stays closed once a write may have left this process.
+ * There is no job id on the platform object, so a missing local row is not proof a live create did not land.
+ */
+async function reconciledRequeueDecision(
+  job: typeof applyJobs.$inferSelect,
+): Promise<"open" | "unreconciled_write" | "write_landed" | "not_repeatable"> {
   try {
     const authorization = await getDb().query.authorizations.findFirst({
       where: eq(authorizations.id, job.authorizationId),
@@ -599,37 +621,60 @@ async function applyWriteLanded(job: typeof applyJobs.$inferSelect): Promise<boo
           where: eq(recommendations.id, authorization.recommendationId),
         })
       : null;
-    if (!recommendation) return null;
+    if (!recommendation) return "unreconciled_write";
     const mutations = parseApplyMutations(recommendation.proposedMutationsJson);
-    if (mutations.some((mutation) => mutation.action === "update_budget" || mutation.action === "update_bid")) {
-      return null;
+    if (mutations.length === 0 || mutations.some((mutation) => mutation.action !== "pause")) {
+      return "not_repeatable";
     }
+    if (!(await priorClaimQuiet(job.responseJson))) return "unreconciled_write";
     for (const mutation of mutations) {
-      if (mutation.action === "pause") {
-        const entity = await getDb().query.adEntities.findFirst({
-          where: and(
-            eq(adEntities.adAccountId, recommendation.adAccountId),
-            eq(adEntities.externalId, mutation.target.externalId),
-          ),
-        });
-        if (!entity) return null;
-        return entity.status.toLowerCase() === "paused";
-      }
-      if (mutation.action === "create_ad") {
-        const rows = await getDb()
-          .select({ rawJson: adEntities.rawJson })
-          .from(adEntities)
-          .where(and(eq(adEntities.adAccountId, recommendation.adAccountId), eq(adEntities.entityType, "ad")));
-        return rows.some((row) => {
-          const raw = (row.rawJson as { lastMutation?: unknown; source?: unknown } | null) ?? null;
-          return raw?.lastMutation === "create_ad" || raw?.source === "m51-create-mock";
-        });
-      }
+      const notLanded = await pauseNotLanded(recommendation.adAccountId, job.workspaceId, mutation);
+      if (notLanded === false) return "write_landed";
+      if (notLanded !== true) return "unreconciled_write";
     }
-    return null;
+    return "open";
   } catch {
-    return null;
+    return "unreconciled_write";
   }
+}
+
+/** True only after the lease and one full platform call budget have both elapsed. */
+async function priorClaimQuiet(responseJson: unknown): Promise<boolean> {
+  const claimedAt = claimedAtText(responseJson);
+  if (!claimedAt) return false;
+  const quietMs = APPLYING_LEASE_MS + PLATFORM_WRITE_TIMEOUT_MS;
+  const result = await getDb().execute(sql`
+    select (${claimedAt}::timestamptz + (${quietMs}::int * interval '1 millisecond')) <= now() as quiet
+  `);
+  const quiet = (result.rows[0] as { quiet?: boolean | string } | undefined)?.quiet;
+  return quiet === true || quiet === "t" || quiet === "true";
+}
+
+/**
+ * True when this pause target is not paused on the platform.
+ * Mock accounts use the local row for that external id. Live accounts call the connector.
+ * A missing read stays unknown. Other ads on the account are not consulted.
+ */
+async function pauseNotLanded(
+  adAccountId: string,
+  workspaceId: string,
+  mutation: ReturnType<typeof parseApplyMutations>[number],
+): Promise<boolean | null> {
+  const tokens = await loadTokens(adAccountId);
+  if (!tokens) return null;
+  const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+  const flags = resolveWorkspaceCapabilities(workspace?.settingsJson ?? {});
+  const connector = getAdPlatformConnector(mutation.platform);
+  if (!connector.isLiveAllowed(tokens, flags)) {
+    const entity = await getDb().query.adEntities.findFirst({
+      where: and(eq(adEntities.adAccountId, adAccountId), eq(adEntities.externalId, mutation.target.externalId)),
+    });
+    if (!entity) return null;
+    return entity.status.toLowerCase() !== "paused";
+  }
+  const live = await connector.readLiveEntityState({ tokens, mutation }).catch(() => null);
+  if (!live?.status) return null;
+  return live.status.toLowerCase() !== "paused";
 }
 
 /**
@@ -922,8 +967,10 @@ async function executePrepared(prepared: PreparedApply): Promise<{
   const mutations = parseApplyMutations(prepared.recommendation.proposedMutationsJson);
   const outcomes: MutationOutcome[] = [];
   let failed: string | null = null;
-  const startedAt = Date.now();
-  const deadlineAt = startedAt + APPLY_EXECUTE_DEADLINE_MS;
+  // The loop clock is the claim, not execute start. A late start must not run past the lease.
+  // One call budget is held back so a call that starts inside the window still ends before the lease.
+  const remainingMs = await applyingLeaseRemainingMs(prepared.job.responseJson);
+  const deadlineAt = applyExecuteDeadlineAt(remainingMs);
   const claimToken = claimTokenOf(prepared.job.responseJson);
   for (const mutation of mutations) {
     if (platformCallBudgetMs(deadlineAt) <= 0) {
@@ -947,6 +994,9 @@ async function executePrepared(prepared: PreparedApply): Promise<{
       if (applyClaimHooks.beforeWrite) {
         await applyClaimHooks.beforeWrite({ jobId: prepared.job.id, claimToken });
       }
+      // Residual window: this read and the platform HTTP call are not one transaction.
+      // A request Meta or Google already accepted cannot be recalled. settleApplyJob
+      // writes an audit row when that late write finds the claim gone.
       if (!(await claimStillHeld(prepared.job.id, claimToken))) {
         outcomes.push({
           action: mutation.action,
@@ -991,7 +1041,7 @@ async function executePrepared(prepared: PreparedApply): Promise<{
       }
       const unconfirmed = isUnconfirmedApplyError(error);
       const message = unconfirmed
-        ? "apply_deadline"
+        ? "unconfirmed_write"
         : (sanitizeStoredError(error instanceof Error ? error.message : "Apply mutation failed") ?? "Apply mutation failed");
       outcomes.push({
         action: mutation.action,
@@ -1044,10 +1094,28 @@ async function settleApplyJob(
         (job.responseJson as { blocked?: unknown } | null)?.blocked === "stale_applying");
     const claimLost = !(job.status === "applying" && sameClaim) && !supersededClose;
     if (claimLost) {
+      const recorded = applyOutcomeWrites(executed.outcomes);
+      const sent = recorded === true || recorded === "unknown";
+      if (sent) {
+        await handle.insert(auditLog).values({
+          workspaceId: job.workspaceId,
+          actorType: "worker",
+          actorId: null,
+          action: recorded === true ? "apply_success" : "apply_fail",
+          entityType: "apply_job",
+          entityId: job.id,
+          payloadJson: {
+            authorizationId: job.authorizationId,
+            writes: recorded,
+            outcomes: executed.outcomes,
+            superseded: "claim_lost",
+          },
+        });
+      }
       return {
         result: {
           ...storedRun(job, job.status === "applying" ? "in_progress" : null),
-          audited: true,
+          audited: sent,
           replayed: true,
         },
         clientAudit: null,

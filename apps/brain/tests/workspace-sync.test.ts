@@ -14,6 +14,11 @@ assert.deepEqual(adsWorkspaceSettingsPatch({ modules: { clients: true, sales: fa
 assert.deepEqual(adsWorkspaceSettingsPatch({ capabilities: { apply: 'recommend_only' } }), {
   capabilities: { apply: 'recommend_only' },
 });
+assert.equal(adsWorkspaceSettingsPatch({ capabilities: { apply: 'on' } }), null);
+assert.deepEqual(
+  adsWorkspaceSettingsPatch({ capabilities: { apply: 'on', 'connect.meta': 'on' } }),
+  { capabilities: { 'connect.meta': 'on' } },
+);
 assert.equal(adsWorkspaceSettingsPatch({}), null);
 assert.equal(adsWorkspaceSettingsPatch({ modules: {} }), null);
 assert.equal(adsWorkspaceSettingsPatch({ capabilities: {} }), null);

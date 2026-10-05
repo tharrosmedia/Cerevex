@@ -1,6 +1,7 @@
 import {
   applySafetyOnIds,
   isApplySafetyCapability,
+  isCapabilityId,
   type BusinessType,
   type CapabilityId,
   type CapabilityOverrides,
@@ -25,7 +26,11 @@ export function adsWorkspaceSettingsPatch(
   if (input.businessType) body.businessType = input.businessType;
   if (input.modules && Object.keys(input.modules).length > 0) body.modules = input.modules;
   if (input.capabilities && Object.keys(input.capabilities).length > 0) {
-    body.capabilities = input.capabilities;
+    const capabilities: Record<string, string> = { ...input.capabilities };
+    for (const [id, state] of Object.entries(capabilities)) {
+      if (state === 'on' && isCapabilityId(id) && isApplySafetyCapability(id)) delete capabilities[id];
+    }
+    if (Object.keys(capabilities).length > 0) body.capabilities = capabilities;
   }
   if (Object.keys(body).length === 0) return null;
   if (input.workspaceId) body.workspaceId = input.workspaceId;

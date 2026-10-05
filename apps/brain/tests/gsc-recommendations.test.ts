@@ -15,6 +15,7 @@ import {
   parsePositionThreshold,
   withGscStoreConfig,
 } from '../src/lib/seo/gsc-threshold';
+import { effectiveApplyFlag } from '../src/lib/ads-apply-gate';
 import { gscApplyIsWritable, gscApplyWriteBlockedReason, gscFlagsFromStore, isGscSourcedJob } from '../src/lib/seo/gsc-flags';
 import {
   GSC_POSITION_EDUCATION,
@@ -59,6 +60,10 @@ const unconfirmedGsc = {
     gsc: { applyKillSwitch: false },
   },
 };
+assert.equal(effectiveApplyFlag('hidden', true), 'hidden');
+assert.equal(effectiveApplyFlag('on', true), 'on');
+assert.equal(effectiveApplyFlag('on', false), 'hidden');
+assert.equal(effectiveApplyFlag('recommend_only', true), 'recommend_only');
 assert.equal(gscFlagsFromStore(unconfirmedGsc)['seo.gsc.apply'], 'hidden');
 assert.equal(gscFlagsFromStore(unconfirmedGsc)['seo.gsc.recommendations'], 'on');
 assert.equal(await gscApplyIsWritable(unconfirmedGsc), false);

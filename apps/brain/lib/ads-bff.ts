@@ -93,8 +93,6 @@ export function adsApiConfigured(): boolean {
 }
 
 export type AdsCallOptions = {
-  asOwner?: boolean;
-  ownerToken?: string | null;
   anonymous?: boolean;
 };
 
@@ -124,14 +122,14 @@ export async function adsApi<T>(
     headers.set("content-type", "application/json");
   }
   // Service secrets only — not product flags. APP_PASSWORD is Brain console session.
-  // Safety ons send the logged-in owner bearer alone. The shared ADS_API_TOKEN is not that owner.
+  // Brain does not log in as an ads owner and does not turn apply safety on.
   headers.delete("x-cerevex-internal-key");
   headers.delete("authorization");
   if (!options.anonymous) {
     const caller = adsCallerHeaders({
-      safetyOn: options.asOwner === true,
+      safetyOn: false,
       internalKey: process.env.ADS_INTERNAL_KEY,
-      ownerToken: options.asOwner ? options.ownerToken : process.env.ADS_API_TOKEN,
+      ownerToken: process.env.ADS_API_TOKEN,
     });
     const internalKey = caller.get("x-cerevex-internal-key");
     const authorization = caller.get("authorization");

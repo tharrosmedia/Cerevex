@@ -20,7 +20,6 @@ import { getActiveStoreId, getStore, updateStore } from './stores';
 import {
   adsWorkspaceSettingsPatch,
   capabilityPatchShowsSaved,
-  ownerCapabilitySaveConfirmed,
   type AdsWorkspaceSettingsPatch,
 } from './workspace-ads-sync';
 
@@ -30,10 +29,17 @@ export type WorkspaceProductSettings = WorkspaceModuleSettings & {
 
 export const WORKSPACE_COOKIE = 'cerevex_workspace';
 
-async function patchAdsWorkspaceSettings(
-  input: AdsWorkspaceSettingsPatch,
-  options?: { asOwner?: boolean; ownerToken?: string | null },
-) {
+function assertBrainMaySend(body: AdsWorkspaceSettingsPatch) {
+  const record = body as Record<string, unknown>;
+  if ('applyKillSwitch' in record || 'frozen' in record) {
+    throw new Error('Brain cannot change the ads kill switch or freeze state.');
+  }
+  if (applySafetyOnIds(body.capabilities).length > 0) {
+    throw new Error('Turn this on in Ads. Brain does not turn apply safety on.');
+  }
+}
+
+async function patchAdsWorkspaceSettings(input: AdsWorkspaceSettingsPatch) {
   const body = adsWorkspaceSettingsPatch(input);
   if (!body) {
     return {
@@ -43,30 +49,11 @@ async function patchAdsWorkspaceSettings(
       status: 400,
     };
   }
-  return adsApi<{ workspace: { capabilities?: CapabilityFlags } | null }>(
-    '/workspace',
-    {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    },
-    { asOwner: options?.asOwner, ownerToken: options?.ownerToken },
-  );
-}
-
-/** Real ads user. The shared service token and the browser cookie are not an owner. */
-async function loginAdsOwner(): Promise<{ token: string; userId: string }> {
-  const email = process.env.ADS_OWNER_EMAIL?.trim();
-  const password = process.env.ADS_OWNER_PASSWORD?.trim();
-  if (!email || !password) throw new Error('Ads owner login is not configured.');
-  const result = await adsApi<{ token?: string; user?: { id?: string } }>(
-    '/auth/login',
-    { method: 'POST', body: JSON.stringify({ email, password }) },
-    { anonymous: true },
-  );
-  if (!result.ok || !result.data.token || !result.data.user?.id) {
-    throw new Error(result.ok ? 'Ads owner login failed.' : result.message || 'Ads owner login failed.');
-  }
-  return { token: result.data.token, userId: result.data.user.id };
+  assertBrainMaySend(body);
+  return adsApi<{ workspace: { capabilities?: CapabilityFlags } | null }>('/workspace', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
 }
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -138,32 +125,12 @@ export async function saveCapabilityOverrides(overrides: CapabilityOverrides) {
   if (blockedUnfinishedCapabilityOns(overrides).length > 0) {
     throw new Error('Unfinished M5.1 capabilities cannot be turned on.');
   }
-  const safetyOn = applySafetyOnIds(overrides);
-  const workspaceId = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim() || undefined;
-  let owner: { token: string; userId: string } | null = null;
-  if (safetyOn.length > 0) {
-    if (!workspaceId) throw new Error('Ads owner workspace is not configured.');
-    owner = await loginAdsOwner();
+  if (applySafetyOnIds(overrides).length > 0) {
+    throw new Error('Turn this on in Ads. Brain does not turn apply safety on.');
   }
-  const patched = await patchAdsWorkspaceSettings(
-    { capabilities: overrides, workspaceId },
-    owner ? { asOwner: true, ownerToken: owner.token } : undefined,
-  );
-  if (safetyOn.length > 0) {
-    if (
-      !owner ||
-      !workspaceId ||
-      !ownerCapabilitySaveConfirmed({
-        result: patched,
-        workspaceId,
-        ownerUserId: owner.userId,
-        capabilityIds: safetyOn,
-      })
-    ) {
-      const message = patched.ok ? 'Could not confirm that capability.' : patched.message;
-      throw new Error(message || 'Could not save that capability.');
-    }
-  } else if (!capabilityPatchShowsSaved(patched, overrides)) {
+  const workspaceId = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim() || undefined;
+  const patched = await patchAdsWorkspaceSettings({ capabilities: overrides, workspaceId });
+  if (!capabilityPatchShowsSaved(patched, overrides)) {
     const message = patched.ok ? 'Could not save that capability.' : patched.message;
     throw new Error(message || 'Could not save that capability.');
   }

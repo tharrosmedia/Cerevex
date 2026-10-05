@@ -13,7 +13,7 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
-import { requirePlatformSignal } from "./write-timeout";
+import { readPlatformWriteBody, requirePlatformSignal } from "./write-timeout";
 
 const GOOGLE_ADS = "https://googleads.googleapis.com/v17";
 
@@ -581,10 +581,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       body: JSON.stringify({ mutateOperations: operations }),
       signal: input.signal ?? requirePlatformSignal(input.deadlineAt),
     });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Google Ads write failed (${res.status}): ${text.slice(0, 200)}`);
-    }
+    await readPlatformWriteBody(res, "Google Ads write failed");
     return { action: mutation.action, platform: "google", target: mutation.target, status: "applied", mode: "live", writes: true };
   }
 }

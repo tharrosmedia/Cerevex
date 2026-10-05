@@ -151,6 +151,9 @@ assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/connect'), tr
 assert.equal(isAllowedAdsProxyRequest('POST', '/connectors/clarity/pull'), true);
 assert.equal(isAllowedAdsProxyRequest('GET', `/clients/${recId}/planning`), true);
 assert.equal(isAllowedAdsProxyRequest('POST', `/clients/${recId}/planning/calendar`), true);
+assert.equal(isAllowedAdsProxyRequest('PATCH', '/workspace'), false);
+assert.equal(isAllowedAdsProxyRequest('PATCH', `/ad-accounts/${recId}`), false);
+assert.equal(isAllowedAdsProxyRequest('POST', `/ad-accounts/${recId}`), false);
 
 assert.equal(ADS_CONNECT_PENDING, 'Connecting…');
 assert.ok(!ADS_CONNECT_NO_CLIENT.includes('client'), 'each site owns its ad accounts; no client picker');

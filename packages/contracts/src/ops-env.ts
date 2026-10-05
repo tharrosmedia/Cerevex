@@ -95,17 +95,7 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "ADS_API_TOKEN",
     kind: "secret",
-    help: "Optional ads JWT the Brain BFF can send as Bearer for non-owner calls. Not an apply-safety owner. Not a feature flag.",
-  },
-  {
-    env: "ADS_OWNER_EMAIL",
-    kind: "secret",
-    help: "Optional ads owner email. Brain uses it only to log in before turning an apply-safety capability on. Not a feature flag. Missing email or password fails that save closed.",
-  },
-  {
-    env: "ADS_OWNER_PASSWORD",
-    kind: "secret",
-    help: "Optional ads owner password paired with ADS_OWNER_EMAIL. Never a browser cookie and never the shared ADS_API_TOKEN.",
+    help: "Optional ads JWT the Brain BFF can send as Bearer for non-owner calls. Not an apply-safety owner. Brain never turns an apply-safety capability on. Not a feature flag.",
   },
   {
     env: "ENCRYPTION_KEY",

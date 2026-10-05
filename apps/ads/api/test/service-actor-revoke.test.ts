@@ -9,7 +9,9 @@ import {
   APPLY_CALL_MARGIN_MS,
   APPLY_EXECUTE_DEADLINE_MS,
   PLATFORM_WRITE_TIMEOUT_MS,
+  UnconfirmedPlatformWriteError,
   applyClaimHooks,
+  applyExecuteDeadlineAt,
   applyOutcomeWrites,
   applyingLeaseRemainingMs,
   claimTokenOf,
@@ -1366,6 +1368,9 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(sanitizeStoredError("rejected SQLSTATE from the ad account")).toBe("rejected SQLSTATE from the ad account");
     expect(sanitizeStoredError("authorization_revoked")).toBe("authorization_revoked");
     expect(isUnconfirmedApplyError(new TypeError("fetch failed"))).toBe(true);
+    expect(isUnconfirmedApplyError(new UnconfirmedPlatformWriteError("Meta write failed (500)"))).toBe(true);
+    expect(isUnconfirmedApplyError(new UnconfirmedPlatformWriteError("Meta write failed returned an unreadable body"))).toBe(true);
+    expect(isUnconfirmedApplyError(new Error("Meta write failed (400): no"))).toBe(false);
     expect(isUnconfirmedApplyError(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }))).toBe(true);
     expect(isUnconfirmedApplyError(new Error("No OAuth credentials for this ad account."))).toBe(false);
     expect(settledApplyJob({ writes: true, failed: sqlError, revoked: false }).error).toBe("database_error");
@@ -1378,6 +1383,9 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(PLATFORM_WRITE_TIMEOUT_MS).toBeLessThan(APPLYING_LEASE_MS / 2);
     expect(APPLY_EXECUTE_DEADLINE_MS).toBeGreaterThan(PLATFORM_WRITE_TIMEOUT_MS);
     expect(APPLY_EXECUTE_DEADLINE_MS).toBeLessThan(APPLYING_LEASE_MS);
+    const now = 1_000_000;
+    expect(applyExecuteDeadlineAt(70_000, now)).toBe(now + 70_000 - PLATFORM_WRITE_TIMEOUT_MS);
+    expect(applyExecuteDeadlineAt(70_000, now)).toBeLessThan(now + APPLY_EXECUTE_DEADLINE_MS);
     expect(isAbortedApplyError(Object.assign(new Error("timed out"), { name: "TimeoutError" }))).toBe(true);
     expect(isAbortedApplyError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(true);
     expect(isAbortedApplyError(new Error("connector_rejected"))).toBe(false);
@@ -1436,6 +1444,30 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       (await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) }))?.responseJson,
     ).toMatchObject({ writes: "unknown" });
 
+    const tooSoon = await app.request(`/recommendations/${rec.id}/apply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ requeue: true, reconciled: true }),
+    });
+    expect(tooSoon.status).toBe(409);
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set response_json = response_json || jsonb_build_object('claimedAt', now() - interval '121 seconds')
+      where id = ${jobId}::uuid
+    `);
+    const inFlight = await requeueFailedApplyJob(jobId, { reconciled: true });
+    expect(inFlight.ok).toBe(false);
+    if (!inFlight.ok) expect(inFlight.reason).toBe("unreconciled_write");
+    await getDb().update(adEntities).set({ status: "paused" }).where(eq(adEntities.id, entityId));
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set response_json = response_json || jsonb_build_object('claimedAt', now() - interval '200 seconds')
+      where id = ${jobId}::uuid
+    `);
+    const landed = await requeueFailedApplyJob(jobId, { reconciled: true });
+    expect(landed.ok).toBe(false);
+    if (!landed.ok) expect(landed.reason).toBe("write_landed");
+    await getDb().update(adEntities).set({ status: "active" }).where(eq(adEntities.id, entityId));
     const opened = await app.request(`/recommendations/${rec.id}/apply`, {
       method: "POST",
       headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
@@ -1479,7 +1511,7 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       .where(eq(applyJobs.id, jobId));
     const refused = await requeueFailedApplyJob(jobId, { reconciled: true });
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.reason).toBe("unreconciled_write");
+    if (!refused.ok) expect(refused.reason).toBe("not_repeatable");
     expect((await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) }))?.status).toBe("failed");
   });
 
@@ -1533,7 +1565,7 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
         expect(closed.applyJob.status).toBe("failed");
         const requeued = await requeueFailedApplyJob(claimedId, { reconciled: true });
         expect(requeued.ok).toBe(false);
-        if (!requeued.ok) expect(requeued.reason).toBe("write_landed");
+        if (!requeued.ok) expect(requeued.reason).toBe("not_repeatable");
       };
       const ran = await runApplyJob(jobId);
       expect(ran.writes).toBe(true);
@@ -1551,7 +1583,97 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     }
   });
 
-  it("stops a late runner after requeue so only the new claim writes", async () => {
+  it("keeps an unknown create_ad closed even when this job left no ad of its own", async () => {
+    const snapshot = (await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.settingsJson;
+    const on = await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ capabilities: { "apply.create_entity": "on" }, workspaceId }),
+    });
+    expect(on.status).toBe(200);
+    const [sibling] = await getDb()
+      .insert(adEntities)
+      .values({
+        workspaceId,
+        clientId,
+        adAccountId: accountId,
+        platform: "meta",
+        entityType: "ad",
+        externalId: `sibling-${Date.now()}`,
+        name: "other job ad",
+        status: "active",
+        rawJson: { lastMutation: "create_ad", source: "m51-create-mock" },
+      })
+      .returning();
+    try {
+      const [rec] = await getDb()
+        .insert(recommendations)
+        .values({
+          workspaceId,
+          clientId,
+          adAccountId: accountId,
+          type: "creative_variant",
+          title: "Create that never wrote",
+          rationale: "Another ad on the account must not count as this job.",
+          risk: "low",
+          evidenceJson: { writes: false },
+          proposedMutationsJson: [
+            {
+              platform: "meta",
+              action: "create_ad",
+              target: { entityType: "adset", externalId: entityExternalId, name: "test" },
+              payload: { proposedName: "cq-unsent-ad" },
+              execute: false,
+            },
+          ],
+          status: "proposed",
+          schemaVersion: "1",
+        })
+        .returning();
+      const jobId = await approveQueued(rec.id);
+      await getDb()
+        .update(applyJobs)
+        .set({
+          status: "failed",
+          error: "stale_applying",
+          finishedAt: new Date(),
+          responseJson: {
+            writes: "unknown",
+            blocked: "stale_applying",
+            claimedAt: new Date(Date.now() - 200_000).toISOString(),
+          },
+        })
+        .where(eq(applyJobs.id, jobId));
+      const before = await getDb().select().from(adEntities).where(eq(adEntities.adAccountId, accountId));
+      const refused = await requeueFailedApplyJob(jobId, { reconciled: true });
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.reason).toBe("not_repeatable");
+      const http = await app.request(`/recommendations/${rec.id}/apply`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ requeue: true, reconciled: true }),
+      });
+      expect(http.status).toBe(409);
+      const after = await getDb().select().from(adEntities).where(eq(adEntities.adAccountId, accountId));
+      expect(after).toHaveLength(before.length);
+      expect((await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) }))?.status).toBe("failed");
+      await getDb()
+        .update(applyJobs)
+        .set({
+          status: "failed",
+          error: "connector_rejected",
+          responseJson: { writes: false, outcomes: [] },
+        })
+        .where(eq(applyJobs.id, jobId));
+      const unsent = await requeueFailedApplyJob(jobId, { reconciled: true });
+      expect(unsent.ok).toBe(true);
+    } finally {
+      await getDb().delete(adEntities).where(eq(adEntities.id, sibling.id));
+      if (snapshot) await getDb().update(workspaces).set({ settingsJson: snapshot }).where(eq(workspaces.id, workspaceId));
+    }
+  });
+
+  it("refuses a reconciled requeue while a pause write can still be in flight", async () => {
     const rec = await insertRec();
     const jobId = await approveQueued(rec.id);
     applyClaimHooks.beforeWrite = async ({ jobId: claimedId, claimToken }) => {
@@ -1563,26 +1685,71 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       const closed = await closeApplyingJob(claimedId, claimToken);
       expect(closed.applyJob.status).toBe("failed");
       const requeued = await requeueFailedApplyJob(claimedId, { reconciled: true });
-      expect(requeued.ok).toBe(true);
+      expect(requeued.ok).toBe(false);
+      if (!requeued.ok) expect(requeued.reason).toBe("unreconciled_write");
       applyClaimHooks.beforeWrite = undefined;
-      const second = await runApplyJob(claimedId);
-      expect(second.applyJob.status).toBe("succeeded");
-      expect(second.writes).toBe(true);
     };
     try {
       const first = await runApplyJob(jobId);
-      expect(first.applyJob.status).toBe("succeeded");
-      expect(first.replayed).toBe(true);
+      expect(first.writes).toBe(false);
       const entity = await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) });
-      expect(entity?.status).toBe("paused");
-      const applied = (await getDb().select().from(clientAuditLog).where(eq(clientAuditLog.entityId, rec.id))).filter(
-        (row) => row.action === "applied",
-      );
-      expect(applied).toHaveLength(1);
-      const stale = (await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId))).filter(
+      expect(entity?.status).toBe("active");
+      const success = (await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId))).filter(
         (row) => row.action === "apply_success",
       );
-      expect(stale).toHaveLength(0);
+      expect(success).toHaveLength(0);
+      expect((await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) }))?.status).not.toBe("queued");
+    } finally {
+      applyClaimHooks.beforeWrite = undefined;
+    }
+  });
+
+  it("audits a late write after the claim is replaced and does not audit a fenced skip", async () => {
+    const rec = await insertRec();
+    const jobId = await approveQueued(rec.id);
+    applyClaimHooks.afterWrite = async ({ jobId: claimedId }) => {
+      await getDb().execute(sql`
+        update os.apply_jobs
+        set status = 'applying',
+            response_json = jsonb_build_object('claimedAt', now(), 'claimToken', 'replacement-after-write')
+        where id = ${claimedId}::uuid
+      `);
+    };
+    try {
+      const late = await runApplyJob(jobId);
+      expect(late.audited).toBe(true);
+      expect(late.replayed).toBe(true);
+      const rows = (await getDb().select().from(auditLog).where(eq(auditLog.entityId, jobId))).filter(
+        (row) => row.action === "apply_success",
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.payloadJson).toMatchObject({ superseded: "claim_lost", writes: true });
+      const stored = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, jobId) });
+      expect(stored?.status).toBe("applying");
+      expect(claimTokenOf(stored?.responseJson)).toBe("replacement-after-write");
+    } finally {
+      applyClaimHooks.afterWrite = undefined;
+      await getDb().update(adEntities).set({ status: "active" }).where(eq(adEntities.id, entityId));
+    }
+
+    const quiet = await insertRec();
+    const quietId = await approveQueued(quiet.id);
+    applyClaimHooks.beforeWrite = async ({ jobId: claimedId }) => {
+      await getDb().execute(sql`
+        update os.apply_jobs
+        set status = 'queued',
+            response_json = jsonb_build_object('claimedAt', now(), 'claimToken', 'other-claim')
+        where id = ${claimedId}::uuid
+      `);
+    };
+    try {
+      const skipped = await runApplyJob(quietId);
+      expect(skipped.audited).toBe(false);
+      const rows = (await getDb().select().from(auditLog).where(eq(auditLog.entityId, quietId))).filter(
+        (row) => row.action === "apply_success" || row.action === "apply_fail",
+      );
+      expect(rows).toHaveLength(0);
+      expect((await getDb().query.adEntities.findFirst({ where: eq(adEntities.id, entityId) }))?.status).toBe("active");
     } finally {
       applyClaimHooks.beforeWrite = undefined;
     }
@@ -1619,6 +1786,11 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     );
     expect(blocked.length).toBeGreaterThan(0);
 
+    await getDb().execute(sql`
+      update os.apply_jobs
+      set response_json = response_json || jsonb_build_object('claimedAt', now() - interval '200 seconds')
+      where id = ${jobId}::uuid
+    `);
     const requeued = await requeueFailedApplyJob(jobId, { reconciled: true });
     expect(requeued.ok).toBe(true);
     await getDb().execute(sql`
