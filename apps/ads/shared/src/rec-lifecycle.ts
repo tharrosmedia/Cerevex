@@ -27,6 +27,7 @@ export const CLIENT_AUDIT_ACTIONS = [
   "applied",
   "apply_attempt",
   "apply_blocked",
+  "apply_requeue",
   "approve_refused",
   "mark_done",
   "rolled_back",
@@ -140,7 +141,7 @@ export type RecLifecycleInput =
   | (LifecycleBase & { kind: "rec_created"; source: string; recommendationId: string })
   | (LifecycleBase & { kind: "approved" | "rejected"; recommendationId: string; at?: string })
   | (LifecycleBase & {
-      kind: "applied" | "apply_attempt" | "apply_blocked";
+      kind: "applied" | "apply_attempt" | "apply_blocked" | "apply_requeue";
       recommendationId: string;
       applyResult: string;
       before: unknown;
@@ -361,7 +362,12 @@ function lifecyclePayload(input: RecLifecycleInput, at: string, approver: string
   if (input.kind === "approved" || input.kind === "rejected") {
     return { approver, at, ...extra };
   }
-  if (input.kind === "applied" || input.kind === "apply_attempt" || input.kind === "apply_blocked") {
+  if (
+    input.kind === "applied" ||
+    input.kind === "apply_attempt" ||
+    input.kind === "apply_blocked" ||
+    input.kind === "apply_requeue"
+  ) {
     return {
       ...(input.kind === "applied" ? { executed_by: "cerevex_apply" } : {}),
       apply_result: input.applyResult,
@@ -398,6 +404,7 @@ function recommendationIdOf(input: RecLifecycleInput): string | null {
     case "applied":
     case "apply_attempt":
     case "apply_blocked":
+    case "apply_requeue":
     case "approve_refused":
     case "mark_done":
     case "rolled_back":

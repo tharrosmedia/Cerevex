@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import {
+  applySafetyOnIds,
   blockedUnfinishedCapabilityOns,
   isProductionRuntime,
   parseWorkspaceModuleSettings,
@@ -14,6 +15,7 @@ import {
   type WorkspaceModuleSettings,
 } from '@cerevex/contracts';
 import { adsApi } from '@/lib/ads-bff';
+import { stripEditableWorkspaceSettings } from '../ads-confirmed-safety';
 import { getActiveStoreId, getStore, updateStore } from './stores';
 import {
   adsWorkspaceSettingsPatch,
@@ -27,6 +29,16 @@ export type WorkspaceProductSettings = WorkspaceModuleSettings & {
 
 export const WORKSPACE_COOKIE = 'cerevex_workspace';
 
+function assertBrainMaySend(body: AdsWorkspaceSettingsPatch) {
+  const record = body as Record<string, unknown>;
+  if ('applyKillSwitch' in record || 'frozen' in record) {
+    throw new Error('Brain cannot change the ads kill switch or freeze state.');
+  }
+  if (applySafetyOnIds(body.capabilities).length > 0) {
+    throw new Error('Turn this on in Ads. Brain does not turn apply safety on.');
+  }
+}
+
 async function patchAdsWorkspaceSettings(input: AdsWorkspaceSettingsPatch) {
   const body = adsWorkspaceSettingsPatch(input);
   if (!body) {
@@ -37,6 +49,7 @@ async function patchAdsWorkspaceSettings(input: AdsWorkspaceSettingsPatch) {
       status: 400,
     };
   }
+  assertBrainMaySend(body);
   return adsApi<{ workspace: { capabilities?: CapabilityFlags } | null }>('/workspace', {
     method: 'PATCH',
     body: JSON.stringify(body),
@@ -55,7 +68,7 @@ async function readCookieSettings(): Promise<Record<string, unknown> | null> {
   const raw = jar.get(WORKSPACE_COOKIE)?.value;
   if (!raw) return null;
   try {
-    return asRecord(JSON.parse(raw));
+    return stripEditableWorkspaceSettings(asRecord(JSON.parse(raw)));
   } catch {
     return null;
   }
@@ -112,8 +125,12 @@ export async function saveCapabilityOverrides(overrides: CapabilityOverrides) {
   if (blockedUnfinishedCapabilityOns(overrides).length > 0) {
     throw new Error('Unfinished M5.1 capabilities cannot be turned on.');
   }
-  const patched = await patchAdsWorkspaceSettings({ capabilities: overrides });
-  if (!capabilityPatchShowsSaved(patched)) {
+  if (applySafetyOnIds(overrides).length > 0) {
+    throw new Error('Turn this on in Ads. Brain does not turn apply safety on.');
+  }
+  const workspaceId = process.env.ADS_INTERNAL_WORKSPACE_ID?.trim() || undefined;
+  const patched = await patchAdsWorkspaceSettings({ capabilities: overrides, workspaceId });
+  if (!capabilityPatchShowsSaved(patched, overrides)) {
     const message = patched.ok ? 'Could not save that capability.' : patched.message;
     throw new Error(message || 'Could not save that capability.');
   }
@@ -154,13 +171,14 @@ export async function getWorkspaceProductSettings(): Promise<WorkspaceProductSet
 
 async function currentSettingsRecord(): Promise<Record<string, unknown>> {
   const store = await getActiveStoreRow();
-  const fromStore = asRecord(asRecord(store?.config).workspace);
+  const fromStore = stripEditableWorkspaceSettings(asRecord(asRecord(store?.config).workspace));
   if (Object.keys(fromStore).length > 0) return fromStore;
   return (await readCookieSettings()) ?? {};
 }
 
 async function persistSettings(next: Record<string, unknown>) {
-  await writeCookieSettings(next);
+  const clean = stripEditableWorkspaceSettings(next);
+  await writeCookieSettings(clean);
   const store = await getActiveStoreRow();
   if (!store) return;
   const currentConfig = asRecord(store.config);
@@ -170,6 +188,6 @@ async function persistSettings(next: Record<string, unknown>) {
     shopify_access_token: '',
     platform: store.platform || 'shopify',
     connector_type: store.connector_type || store.platform || 'shopify',
-    config: { ...currentConfig, workspace: next },
+    config: { ...currentConfig, workspace: clean },
   });
 }

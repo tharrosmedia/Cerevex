@@ -35,6 +35,29 @@ const recommendOnly = wordpressFlagsFromStore({
 });
 assert.equal(wordpressApplyBlockedReason(recommendOnly), 'capability_site_wordpress_apply_recommend_only');
 
+const unconfirmedApply = wordpressFlagsFromStore({
+  config: {
+    workspace: {
+      capabilities: { 'site.wordpress.apply': 'on', 'site.wordpress.connect': 'on', 'site.wordpress.sync': 'on' },
+    },
+  },
+});
+assert.equal(unconfirmedApply['site.wordpress.apply'], 'hidden');
+assert.equal(unconfirmedApply['site.wordpress.connect'], 'on');
+assert.equal(unconfirmedApply['site.wordpress.sync'], 'on');
+assert.equal(wordpressApplyBlockedReason(unconfirmedApply), 'capability_site_wordpress_apply');
+
+const confirmedApply = wordpressFlagsFromStore({
+  config: {
+    workspace: {
+      capabilities: { 'site.wordpress.apply': 'on' },
+      adsConfirmedSafety: ['site.wordpress.apply'],
+    },
+  },
+});
+assert.equal(confirmedApply['site.wordpress.apply'], 'hidden');
+assert.equal(wordpressApplyBlockedReason(confirmedApply), 'capability_site_wordpress_apply');
+
 assert.equal(wordpressApplyBlockedByKillSwitch({}), true);
 assert.equal(wordpressApplyBlockedByKillSwitch({ config: {} }), true);
 assert.equal(wordpressApplyBlockedByKillSwitch({ config: { wordpress: {} } }), true);

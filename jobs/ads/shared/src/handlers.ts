@@ -1,6 +1,12 @@
 import { pullGoogleAdAccount } from "@cerevex/jobs-ads-google/pull";
 import { pullMetaAdAccount } from "@cerevex/jobs-ads-meta/pull";
-import { applyResultAuditAction, applyingLeaseRemainingMs, runApplyJob, shouldRecordApplyAudit } from "@tharros/ads-shared/apply";
+import {
+  applyResultAuditAction,
+  applyingLeaseRemainingMs,
+  closeApplyingJob,
+  runApplyJob,
+  shouldRecordApplyAudit,
+} from "@tharros/ads-shared/apply";
 import { runAuditRun, writeAuditEvent } from "@tharros/ads-shared/audit";
 import { runAdAccountSync, syncJobAuditAction } from "@tharros/ads-shared/sync";
 import { writeInngestAudit } from "@tharros/ads-shared/worker-audit";
@@ -67,6 +73,8 @@ export async function handleApplyRequested({ event, step }: any) {
   });
 
   if (result.blocked === "in_progress") {
+    const claimToken =
+      typeof result.applyJob.response?.claimToken === "string" ? result.applyJob.response.claimToken : null;
     const waitMs = await step.run("measure-applying-lease", async () =>
       applyingLeaseRemainingMs(result.applyJob.response),
     );
@@ -75,9 +83,11 @@ export async function handleApplyRequested({ event, step }: any) {
     }
     result = await step.run("recheck-applying-lease", async () => runApplyJob(applyJobId));
     if (result.blocked === "in_progress") {
-      throw new Error("apply_in_progress");
+      result = await step.run("close-stuck-applying", async () => closeApplyingJob(applyJobId, claimToken));
     }
   }
+
+  const recordedWrites = result.applyJob.response?.writes === "unknown" ? "unknown" : result.writes;
 
   if (shouldRecordApplyAudit(result)) {
     await step.run("audit-apply", async () => {
@@ -93,7 +103,7 @@ export async function handleApplyRequested({ event, step }: any) {
           clientId: event.data.clientId,
           authorizationId: event.data.authorizationId,
           applyJobId,
-          writes: result.writes,
+          writes: recordedWrites,
           blocked: result.blocked,
           outcomes: result.outcomes,
           error: result.applyJob.error,
@@ -106,7 +116,7 @@ export async function handleApplyRequested({ event, step }: any) {
     ok: result.applyJob.status === "succeeded",
     applyJobId,
     status: result.applyJob.status,
-    writes: result.writes,
+    writes: recordedWrites,
     blocked: result.blocked,
     outcomes: result.outcomes,
   };

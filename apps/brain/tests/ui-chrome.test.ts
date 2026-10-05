@@ -48,6 +48,8 @@ assert.ok(findingsSrc.includes('SubmitButton'));
 assert.ok(settingsSrc.includes('SubmitButton'));
 assert.ok(capsSrc.includes('SubmitButton'));
 assert.ok(capsSrc.includes('Saving…'));
+assert.ok(capsSrc.includes('Turn on in Ads'));
+assert.ok(!capsSrc.includes('ADS_OWNER_EMAIL'));
 
 const connectSrc = readFileSync(join(here, '../components/ads/connect-buttons.tsx'), 'utf8');
 const checkSrc = readFileSync(join(here, '../components/ads/check-ads-button.tsx'), 'utf8');

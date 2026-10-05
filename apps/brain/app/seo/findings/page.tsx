@@ -178,7 +178,7 @@ export default async function SeoFindings({ searchParams }: { searchParams?: Pro
     const storeId = await getActiveStoreId();
     store = storeId ? await getStore(storeId) : null;
     recsOn = gscRecommendationsAreVisible(store);
-    applyWritable = gscApplyIsWritable(store);
+    applyWritable = await gscApplyIsWritable(store);
     threshold = positionThresholdFromStore(store);
     if (storeId) findings = await listOpenFindings(storeId, 100);
   } catch {}

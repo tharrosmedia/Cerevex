@@ -1,9 +1,11 @@
 import {
   OPERATOR_CAPABILITY_CATALOG_LIST,
   capabilityOnBlockedReason,
+  isApplySafetyCapability,
   isCapabilityId,
   isCapabilityState,
 } from '@cerevex/contracts';
+import { adsSafetySettingsHref } from '@/lib/module-origins';
 import { getWorkspaceProductSettings, saveCapabilityOverrides } from '@/src/lib/db/workspace-modules';
 import { SubmitButton } from '@/components/submit-button';
 
@@ -17,7 +19,7 @@ async function saveCapabilityAction(formData: FormData) {
     redirect('/settings?capabilities=error');
     return;
   }
-  if (capabilityOnBlockedReason(id, state)) {
+  if (capabilityOnBlockedReason(id, state) || (isApplySafetyCapability(id) && state === 'on')) {
     redirect('/settings?capabilities=error');
     return;
   }
@@ -45,7 +47,10 @@ export async function WorkspaceCapabilitiesSettings() {
         Changing a flag here hides it on the next request — no Site Brain redeploy.
       </p>
       <div className="space-y-4">
-        {OPERATOR_CAPABILITY_CATALOG_LIST.map((entry) => (
+        {OPERATOR_CAPABILITY_CATALOG_LIST.map((entry) => {
+          const safety = isApplySafetyCapability(entry.id);
+          const current = settings.capabilities[entry.id];
+          return (
           <form key={entry.id} action={saveCapabilityAction} className="flex items-start justify-between gap-4 border-t pt-3">
             <span>
               <span className="block font-medium">
@@ -57,15 +62,29 @@ export async function WorkspaceCapabilitiesSettings() {
             </span>
             <span className="flex items-center gap-2">
               <input type="hidden" name="id" value={entry.id} />
-              <select name="state" defaultValue={settings.capabilities[entry.id]} className="text-sm border px-2 py-1">
-                <option value="on">On</option>
-                <option value="recommend_only">Recommend only</option>
-                <option value="hidden">Hidden</option>
-              </select>
-              <SubmitButton className="btn-secondary" pendingLabel="Saving…">Save</SubmitButton>
+              {safety ? (
+                <a className="btn-secondary text-sm" href={adsSafetySettingsHref() || '/app/settings'}>Turn on in Ads</a>
+              ) : null}
+              {safety && current === 'on' ? (
+                <input type="hidden" name="state" value="hidden" />
+              ) : (
+                <select
+                  name="state"
+                  defaultValue={safety ? (current === 'recommend_only' ? 'recommend_only' : 'hidden') : current}
+                  className="text-sm border px-2 py-1"
+                >
+                  {safety ? null : <option value="on">On</option>}
+                  <option value="recommend_only">Recommend only</option>
+                  <option value="hidden">Hidden</option>
+                </select>
+              )}
+              <SubmitButton className="btn-secondary" pendingLabel="Saving…">
+                {safety && current === 'on' ? 'Turn off here' : 'Save'}
+              </SubmitButton>
             </span>
           </form>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

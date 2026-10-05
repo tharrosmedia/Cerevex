@@ -22,7 +22,14 @@ import {
 import { applySafetyOnIds, resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { capabilityPublicMeta, loadWorkspaceCapabilities, requireWritableCapability } from "./capabilities";
 import { filterOfflineRecommendations } from "./offline";
-import { applyResultAuditAction, latestApplyJob, runApplyJob, shouldRecordApplyAudit, toApplyJobPublic } from "@tharros/ads-shared/apply";
+import {
+  applyResultAuditAction,
+  latestApplyJob,
+  requeueFailedApplyJob,
+  runApplyJob,
+  shouldRecordApplyAudit,
+  toApplyJobPublic,
+} from "@tharros/ads-shared/apply";
 import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
@@ -56,6 +63,20 @@ import { getVisibleClient, listVisibleClients } from "./tenancy";
 import type { AppEnv } from "./types";
 
 const REC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A requested id must be one of the caller's memberships. Anything else is not found. */
+function memberWorkspace(auth: AuthContext, requested: string | null | undefined): string {
+  const id = requested?.trim();
+  if (id) {
+    if (!auth.memberships.some((row) => row.workspaceId === id)) {
+      throw new HTTPException(404, { message: "Workspace not found" });
+    }
+    return id;
+  }
+  const workspaceId = auth.memberships[0]?.workspaceId;
+  if (!workspaceId) throw new HTTPException(403, { message: "No workspace membership" });
+  return workspaceId;
+}
 
 function assertRecommendationId(id: string) {
   if (!REC_UUID.test(id)) {
@@ -566,7 +587,15 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (isServicePrincipal(auth)) {
       throw new HTTPException(403, { message: SERVICE_FORBIDDEN });
     }
-    const parsed = z.object({ inline: z.boolean().optional() }).safeParse(await c.req.json().catch(() => ({})));
+    const parsed = z
+      .object({
+        inline: z.boolean().optional(),
+        requeue: z.boolean().optional(),
+        reconciled: z.boolean().optional(),
+      })
+      .safeParse(await c.req.json().catch(() => ({})));
+    const requeue = parsed.success && parsed.data.requeue === true;
+    const reconciled = parsed.success && parsed.data.reconciled === true;
     const { row, client } = await recommendationForMutation(auth, c.req.param("id"));
     const actor = auditActor(auth);
     if (readApproval(row.approvalJson).executed_at) {
@@ -607,6 +636,74 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       recommendationId: row.id,
       proposedMutations: row.proposedMutationsJson,
     });
+
+    if (requeue) {
+      assertApplySafetyOwner(auth, client.workspaceId);
+      if (applyJob.status !== "failed") {
+        throw new HTTPException(409, { message: "Only a failed apply can be requeued." });
+      }
+      const requeued = await requeueFailedApplyJob(applyJob.id, { reconciled });
+      if (!requeued.ok) {
+        const message =
+          requeued.reason === "write_landed" || requeued.reason === "not_repeatable"
+            ? "That apply may already have changed the ad. Requeue stays closed."
+            : requeued.reason === "unreconciled_write"
+              ? "Requeue needs a reconciled read of the live ad before it can run again."
+              : "Only a failed apply can be requeued.";
+        throw new HTTPException(409, { message });
+      }
+      await recordRecLifecycle({
+        kind: "apply_requeue",
+        recommendationId: row.id,
+        workspaceId: client.workspaceId,
+        clientId: client.id,
+        module: "ads",
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        entityType: "recommendation",
+        entityId: row.id,
+        applyResult: "queued",
+        before: applyJob.response ?? null,
+        after: { status: "queued", applyJobId: requeued.applyJob.id },
+      });
+      await writeAuditEvent({
+        workspaceId: client.workspaceId,
+        ...auditActor(auth),
+        action: "apply_requeue",
+        entityType: "apply_job",
+        entityId: applyJob.id,
+        payload: { recommendationId: row.id },
+      });
+      try {
+        await sendApplyRequested({
+          requestedBy: actorRef(auth),
+          workspaceId: client.workspaceId,
+          clientId: client.id,
+          authorizationId: authorization!.id,
+          applyJobId: requeued.applyJob.id,
+        });
+      } catch {
+        /* queued locally even if Inngest is down */
+      }
+      return c.json({
+        ok: true,
+        status: "queued",
+        applyJob: requeued.applyJob,
+        writes: false,
+        name: EVENTS.applyRequested,
+        note: "Failed apply was requeued. Live ads change only after the worker runs.",
+      });
+    }
+
+    if (applyJob.status === "failed" || applyJob.status === "succeeded") {
+      return c.json({
+        ok: applyJob.status === "succeeded",
+        status: applyJob.status,
+        applyJob,
+        writes: false,
+        note: applyJob.status === "succeeded" ? "Apply already finished." : "Apply already failed.",
+      });
+    }
 
     await writeAuditEvent({
       workspaceId: client.workspaceId,
@@ -694,6 +791,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         })
         .optional(),
       capabilities: capabilityPatchSchema.optional(),
+      workspaceId: z.string().uuid().optional(),
     })
     .refine(
       (value) =>
@@ -710,16 +808,14 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
   app.get("/workspace", requireAuth, async (c) => {
     const auth = c.get("auth");
-    const workspaceId = auth.memberships[0]?.workspaceId;
-    if (!workspaceId) {
-      throw new HTTPException(403, { message: "No workspace membership" });
-    }
+    const workspaceId = memberWorkspace(auth, c.req.query("workspaceId"));
     const workspace = await getDb().query.workspaces.findFirst({
       where: eq(workspaces.id, workspaceId),
     });
     const summary = workspace ? toWorkspaceSummary(workspace) : null;
     return c.json({
       workspace: summary,
+      ownerUserId: auth.user?.id ?? null,
       canMutate: workspace ? canMutate(auth, workspace.id) : false,
       canApprove: canApproveApply(auth.user?.email) && !isServicePrincipal(auth),
       ...(summary ? capabilityPublicMeta(summary.capabilities) : {}),
@@ -728,18 +824,15 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
   app.patch("/workspace", requireAuth, async (c) => {
     const auth = c.get("auth");
-    const workspaceId = auth.memberships[0]?.workspaceId;
-    if (!workspaceId) {
-      throw new HTTPException(403, { message: "No workspace membership" });
-    }
-    if (!canMutate(auth, workspaceId)) {
-      throw new HTTPException(403, { message: "Only owners and operators can change modules" });
-    }
     const parsed = workspacePatchSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       throw new HTTPException(400, {
         message: "businessType, modules, capabilities, or applyKillSwitch is required",
       });
+    }
+    const workspaceId = memberWorkspace(auth, parsed.data.workspaceId);
+    if (!canMutate(auth, workspaceId)) {
+      throw new HTTPException(403, { message: "Only owners and operators can change modules" });
     }
     const workspace = await getDb().query.workspaces.findFirst({
       where: eq(workspaces.id, workspaceId),
@@ -842,6 +935,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       : toWorkspaceSummary({ ...workspace, settingsJson: next });
     return c.json({
       workspace: summary,
+      ownerUserId: auth.user?.id ?? null,
       canMutate: true,
       canApprove: canApproveApply(auth.user?.email) && !isServicePrincipal(auth),
       ...capabilityPublicMeta(summary.capabilities),

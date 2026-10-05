@@ -149,6 +149,8 @@ assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ADS_INTERNAL_KEY')?
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'GSC_OAUTH_STATE_SECRET')?.requiredInProduction, 'brain');
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ENCRYPTION_KEY')?.requiredInProduction, 'brain');
 assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ADS_API_TOKEN')?.requiredInProduction, undefined);
+assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ADS_OWNER_EMAIL'), undefined);
+assert.equal(OPS_ENV_REGISTRY.find((entry) => entry.env === 'ADS_OWNER_PASSWORD'), undefined);
 assert.deepEqual(
   opsEnvRequiredInProduction('brain').map((entry) => entry.env).sort(),
   ['ADS_INTERNAL_KEY', 'APP_PASSWORD', 'ENCRYPTION_KEY', 'GSC_OAUTH_STATE_SECRET'],

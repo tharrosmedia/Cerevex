@@ -13,7 +13,7 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
-import { PLATFORM_WRITE_TIMEOUT_MS } from "./write-timeout";
+import { requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -26,13 +26,18 @@ function notConfigured(): ConnectorConnectResult {
   };
 }
 
-async function graphPost(path: string, accessToken: string, body: Record<string, string>): Promise<unknown> {
+async function graphPost(
+  path: string,
+  accessToken: string,
+  body: Record<string, string>,
+  signal?: AbortSignal | null,
+): Promise<unknown> {
   const params = new URLSearchParams({ ...body, access_token: accessToken });
   const res = await fetch(`${GRAPH}/${path}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: params,
-    signal: AbortSignal.timeout(PLATFORM_WRITE_TIMEOUT_MS),
+    signal: signal ?? signalForPlatformCall() ?? undefined,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -41,10 +46,12 @@ async function graphPost(path: string, accessToken: string, body: Record<string,
   return res.json();
 }
 
-async function graphGet(path: string, accessToken: string): Promise<unknown> {
+async function graphGet(path: string, accessToken: string, signal?: AbortSignal | null): Promise<unknown> {
   const url = path.startsWith("http") ? path : `${GRAPH}/${path}`;
   const separator = url.includes("?") ? "&" : "?";
-  const res = await fetch(`${url}${separator}access_token=${encodeURIComponent(accessToken)}`);
+  const res = await fetch(`${url}${separator}access_token=${encodeURIComponent(accessToken)}`, {
+    signal: signal ?? signalForPlatformCall() ?? undefined,
+  });
   if (!res.ok) {
     throw new Error(`Meta Graph read failed (${res.status})`);
   }
@@ -291,12 +298,18 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
   async readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
+    deadlineAt?: number;
+    signal?: AbortSignal;
   }): Promise<LiveEntityState | null> {
     if (input.tokens.mock) return null;
     const { mutation, tokens } = input;
     const fields =
       mutation.target.entityType === "campaign" ? "id,name,status,daily_budget" : "id,name,status,bid_amount";
-    const json = (await graphGet(`${mutation.target.externalId}?fields=${fields}`, tokens.accessToken)) as {
+    const json = (await graphGet(
+      `${mutation.target.externalId}?fields=${fields}`,
+      tokens.accessToken,
+      input.signal ?? requirePlatformSignal(input.deadlineAt),
+    )) as {
       id?: string;
       status?: string;
       daily_budget?: string;
@@ -326,7 +339,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
           reason: "Already paused on Meta.",
         };
       }
-      await graphPost(id, tokens.accessToken, { status: "PAUSED" });
+      await graphPost(id, tokens.accessToken, { status: "PAUSED" }, requirePlatformSignal(input.deadlineAt));
       return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
     }
     if (mutation.action === "update_budget") {
@@ -334,7 +347,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       if (next == null) {
         throw new Error("Cannot compute Meta budget change without a current daily budget or absolute amount.");
       }
-      await graphPost(id, tokens.accessToken, { daily_budget: String(Math.round(next * 100)) });
+      await graphPost(id, tokens.accessToken, { daily_budget: String(Math.round(next * 100)) }, requirePlatformSignal(input.deadlineAt));
       return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
     }
     if (mutation.action === "update_bid") {
@@ -342,7 +355,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       if (next == null) {
         throw new Error("Cannot compute Meta bid change without a current bid or absolute amount.");
       }
-      await graphPost(id, tokens.accessToken, { bid_amount: String(Math.round(next * 100)) });
+      await graphPost(id, tokens.accessToken, { bid_amount: String(Math.round(next * 100)) }, requirePlatformSignal(input.deadlineAt));
       return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
     }
     if (mutation.action === "create_ad") {
@@ -364,13 +377,13 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
             ...(imageUrl ? { picture: imageUrl } : {}),
           },
         }),
-      })) as { id?: string };
+      }, requirePlatformSignal(input.deadlineAt))) as { id?: string };
       const created = (await graphPost(`act_${accountId}/ads`, tokens.accessToken, {
         name,
         adset_id: mutation.target.externalId,
         creative: JSON.stringify({ creative_id: creative.id }),
         status: "PAUSED",
-      })) as { id?: string };
+      }, requirePlatformSignal(input.deadlineAt))) as { id?: string };
       return {
         action: mutation.action,
         platform: "meta",
@@ -396,7 +409,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       const placement = typeof mutation.payload.placement === "string" ? mutation.payload.placement : "audience_network";
       await graphPost(id, tokens.accessToken, {
         targeting: JSON.stringify({ publisher_platforms: ["facebook", "instagram"].filter((p) => p !== placement) }),
-      });
+      }, requirePlatformSignal(input.deadlineAt));
       return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
     }
     throw new Error(`Meta mutation ${mutation.action} is not implemented`);

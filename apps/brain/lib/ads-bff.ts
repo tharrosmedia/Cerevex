@@ -1,3 +1,4 @@
+import { adsCallerHeaders } from "../src/lib/db/workspace-ads-sync";
 import { isProductionRuntime } from "./runtime-env";
 
 export type AdsFailReason = "not_configured" | "unreachable" | "unauthorized" | "not_found" | "error";
@@ -91,7 +92,21 @@ export function adsApiConfigured(): boolean {
   return Boolean(adsApiUrl());
 }
 
-export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<AdsResult<T>> {
+export type AdsCallOptions = {
+  anonymous?: boolean;
+};
+
+const ADS_API_TIMEOUT_MS = 8_000;
+
+function jsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function adsApi<T>(
+  path: string,
+  init: RequestInit = {},
+  options: AdsCallOptions = {},
+): Promise<AdsResult<T>> {
   const base = adsApiUrl();
   if (!base) {
     return {
@@ -107,10 +122,20 @@ export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<A
     headers.set("content-type", "application/json");
   }
   // Service secrets only — not product flags. APP_PASSWORD is Brain console session.
-  const internalKey = process.env.ADS_INTERNAL_KEY;
-  const token = process.env.ADS_API_TOKEN;
-  if (internalKey) headers.set("x-cerevex-internal-key", internalKey);
-  if (token) headers.set("authorization", `Bearer ${token}`);
+  // Brain does not log in as an ads owner and does not turn apply safety on.
+  headers.delete("x-cerevex-internal-key");
+  headers.delete("authorization");
+  if (!options.anonymous) {
+    const caller = adsCallerHeaders({
+      safetyOn: false,
+      internalKey: process.env.ADS_INTERNAL_KEY,
+      ownerToken: process.env.ADS_API_TOKEN,
+    });
+    const internalKey = caller.get("x-cerevex-internal-key");
+    const authorization = caller.get("authorization");
+    if (internalKey) headers.set("x-cerevex-internal-key", internalKey);
+    if (authorization) headers.set("authorization", authorization);
+  }
 
   const suffix = path.startsWith("/") ? path : `/${path}`;
   try {
@@ -118,13 +143,23 @@ export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<A
       ...init,
       headers,
       cache: "no-store",
+      signal: AbortSignal.timeout(ADS_API_TIMEOUT_MS),
     });
-    const body = (await res.json().catch(() => ({}))) as { error?: string } & T;
+    const text = await res.text();
+    let parsed: unknown = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+    }
+    const body = jsonObject(parsed) ? (parsed as { error?: string } & T) : null;
     if (res.status === 401 || res.status === 403) {
       return {
         ok: false,
         reason: "unauthorized",
-        message: body.error ?? "Ads module is not authorized.",
+        message: body?.error ?? "Ads module is not authorized.",
         status: res.status,
       };
     }
@@ -132,7 +167,7 @@ export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<A
       return {
         ok: false,
         reason: "not_found",
-        message: body.error ?? "Not found.",
+        message: body?.error ?? "Not found.",
         status: 404,
       };
     }
@@ -140,7 +175,15 @@ export async function adsApi<T>(path: string, init: RequestInit = {}): Promise<A
       return {
         ok: false,
         reason: "error",
-        message: body.error ?? `Ads request failed (${res.status})`,
+        message: body?.error ?? `Ads request failed (${res.status})`,
+        status: res.status,
+      };
+    }
+    if (!body) {
+      return {
+        ok: false,
+        reason: "error",
+        message: "Ads response was not JSON.",
         status: res.status,
       };
     }

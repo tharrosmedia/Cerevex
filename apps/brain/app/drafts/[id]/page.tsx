@@ -8,11 +8,10 @@ import { AUTH_COOKIE_NAME } from '@/lib/auth-cookie';
 import { authorizeApprover } from '@/lib/sensitive-auth';
 import { getActiveStoreId, getStore } from '@/src/lib/db/stores';
 import { logEvent } from '@/src/lib/brain/events';
-import { isWordpressApplyWritable } from '@cerevex/contracts';
 import {
   isWordpressStore,
   wordpressApplyBlockedByKillSwitch,
-  wordpressFlagsFromStore,
+  wordpressApplyGateReason,
 } from '@/src/lib/wordpress';
 import { gscApplyIsWritable, isGscSourcedJob } from '@/src/lib/seo/gsc-flags';
 import { GSC_APPLY_OFF_REVIEW_COPY } from '@/src/lib/seo/gsc-copy';
@@ -87,7 +86,7 @@ async function decide(formData: FormData) {
   const isWordpressJob = job?.type === 'seo.wordpress';
   if (isWordpressJob) {
     const store = job?.storeId ? await getStore(job.storeId) : null;
-    const flags = wordpressFlagsFromStore(store);
+    const applyOff = (await wordpressApplyGateReason(store)) != null;
     if (status === 'rejected' || status === 'snoozed') {
       await updateJobStatus(jobId, status);
       await logEvent(job.storeId, 'human', `wordpress.${status}`, { notes, jobId }, jobId);
@@ -109,12 +108,12 @@ async function decide(formData: FormData) {
       seoTitle: editedPayload?.metaTitle || draft?.metaTitle,
       seoDescription: editedPayload?.metaDescription || draft?.metaDescription,
     };
-    if (!store || !isWordpressStore(store) || !isWordpressApplyWritable(flags) || wordpressApplyBlockedByKillSwitch(store)) {
+    if (!store || !isWordpressStore(store) || applyOff || wordpressApplyBlockedByKillSwitch(store)) {
       await updateJobStatus(jobId, 'approved');
       await logEvent(job.storeId, 'human', 'wordpress.apply.blocked', {
         notes,
         killSwitch: store ? wordpressApplyBlockedByKillSwitch(store) : false,
-        applyOff: !isWordpressApplyWritable(flags),
+        applyOff,
       }, jobId);
       const { revalidatePath } = await import('next/cache');
       revalidatePath('/review');
@@ -202,9 +201,9 @@ export default async function DraftDetail({
     if (j?.storeId) {
       const s = await getStore(j.storeId);
       if (j?.type === 'seo.wordpress') {
-        wordpressApplyOn = isWordpressApplyWritable(wordpressFlagsFromStore(s));
+        wordpressApplyOn = (await wordpressApplyGateReason(s)) == null && !wordpressApplyBlockedByKillSwitch(s);
       }
-      if (gscJob) gscApplyOn = gscApplyIsWritable(s);
+      if (gscJob) gscApplyOn = await gscApplyIsWritable(s);
     }
   } catch {}
 

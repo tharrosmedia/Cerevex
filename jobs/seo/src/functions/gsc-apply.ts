@@ -22,8 +22,8 @@ export const gscApplyFn = inngest.createFunction(
         return { ok: true, writes: false, reason: action };
       }
       const store = await getStore(storeId);
-      const blocked = gscApplyWriteBlockedReason(store);
-      if (!store || blocked || !gscApplyIsWritable(store) || !isGscSourcedJob(data)) {
+      const blocked = await gscApplyWriteBlockedReason(store);
+      if (!store || blocked || !(await gscApplyIsWritable(store)) || !isGscSourcedJob(data)) {
         await logEvent(storeId, data.actor || 'system', 'gsc.apply.blocked', {
           jobId,
           reason: blocked || 'flag_off',

@@ -1,13 +1,12 @@
 import {
   siteCmsPlainError,
-  wordpressApplyBlockedReason,
   type SiteCmsApplyPayload,
   type SiteCmsApplyResult,
 } from '@cerevex/contracts';
 import { createWordPressConnector } from '@cerevex/connector-wordpress';
 import { logEvent } from '../brain/events';
 import { getStore } from '../db/stores';
-import { wordpressFlagsFromStore } from './capabilities';
+import { wordpressApplyGateReason } from './capabilities';
 import {
   decryptWordpressPluginKey,
   isWordpressStore,
@@ -28,7 +27,7 @@ export async function applyWordpressMutation(input: {
       await logEvent(input.storeId, input.actor || 'system', 'wordpress.apply.blocked', { ...result }, input.jobId);
       return result;
     }
-    const blocked = wordpressApplyBlockedReason(wordpressFlagsFromStore(store));
+    const blocked = await wordpressApplyGateReason(store);
     if (blocked) {
       const result = { ok: false, writes: false, code: 'capability_off' as const, reason: siteCmsPlainError('capability_off') };
       await logEvent(input.storeId, input.actor || 'system', 'wordpress.apply.blocked', { ...result, gate: blocked }, input.jobId);

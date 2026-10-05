@@ -15,7 +15,7 @@ import { createJob } from '@/src/lib/db/jobs';
 import { saveDraft } from '@/src/lib/db/drafts';
 import { getActiveStoreId, getStore } from '@/src/lib/db/stores';
 import { logEvent } from '@/src/lib/brain/events';
-import { isWordpressStore, wordpressFlagsFromStore } from '@/src/lib/wordpress';
+import { isWordpressStore, wordpressFlagsForGate } from '@/src/lib/wordpress';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +33,7 @@ export default async function SeoLiveResource({
 
   const storeId = await getActiveStoreId();
   const store = storeId ? await getStore(storeId).catch(() => null) : null;
-  const flags = wordpressFlagsFromStore(store);
+  const flags = await wordpressFlagsForGate(store);
   const wpType = parseWordpressCatalogResourceType(resource.resourceType);
   const canPropose = Boolean(wpType && isWordpressStore(store) && isWordpressApplyVisible(flags));
   const canApply = isWordpressApplyWritable(flags);
@@ -103,7 +103,7 @@ async function proposeWordpressChange(formData: FormData) {
   if (!storeId) redirect('/seo/live');
   const store = await getStore(storeId);
   if (!store || !isWordpressStore(store)) redirect('/seo/live');
-  const flags = wordpressFlagsFromStore(store);
+  const flags = await wordpressFlagsForGate(store);
   if (!isWordpressApplyVisible(flags)) {
     redirect(`/seo/live/${resourceId}?error=` + encodeURIComponent(siteCmsPlainError('capability_off')));
   }

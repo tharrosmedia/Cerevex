@@ -5,6 +5,8 @@ import {
   wordpressSyncBlockedReason,
   type CapabilityFlags,
 } from '@cerevex/contracts';
+import { authoritativeApplyOn } from '../ads-apply-gate';
+import { flagsWithConfirmedSafety } from '../ads-confirmed-safety';
 
 function asRecord(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
@@ -22,11 +24,26 @@ export function wordpressFlagsFromWorkspace(workspaceSettings: unknown): Capabil
 }
 
 export function wordpressFlagsFromStore(store: { config?: Record<string, unknown> } | null | undefined): CapabilityFlags {
-  return wordpressFlagsFromWorkspace(wordpressWorkspaceSettingsFromStore(store));
+  return flagsWithConfirmedSafety(wordpressWorkspaceSettingsFromStore(store));
 }
 
 export function wordpressConnectBlockedFromWorkspace(workspaceSettings: unknown): string | null {
   return wordpressConnectBlockedReason(wordpressFlagsFromWorkspace(workspaceSettings));
+}
+
+/** Local flags hide apply. Ads must say this workspace's gate is on, or the write stays blocked. */
+export async function wordpressFlagsForGate(
+  store: { config?: Record<string, unknown> } | null | undefined,
+): Promise<CapabilityFlags> {
+  const flags = wordpressFlagsFromStore(store);
+  if (await authoritativeApplyOn('site.wordpress.apply')) flags['site.wordpress.apply'] = 'on';
+  return flags;
+}
+
+export async function wordpressApplyGateReason(
+  store: { config?: Record<string, unknown> } | null | undefined,
+): Promise<string | null> {
+  return wordpressApplyBlockedReason(await wordpressFlagsForGate(store));
 }
 
 export function wordpressGateReasons(store: { config?: Record<string, unknown> } | null | undefined) {

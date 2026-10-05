@@ -95,7 +95,7 @@ export const OPS_ENV_REGISTRY: readonly OpsEnvEntry[] = [
   {
     env: "ADS_API_TOKEN",
     kind: "secret",
-    help: "Optional ads JWT the Brain BFF can send as Bearer. Not a feature flag.",
+    help: "Optional ads JWT the Brain BFF can send as Bearer for non-owner calls. Not an apply-safety owner. Brain never turns an apply-safety capability on. Not a feature flag.",
   },
   {
     env: "ENCRYPTION_KEY",
