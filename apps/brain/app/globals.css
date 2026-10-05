@@ -490,6 +490,14 @@ a { color: var(--foreground); }
   margin-top: 0.85rem;
 }
 
+.cx-plugin-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  margin-top: 0.45rem;
+}
+
 .cx-section-head {
   display: flex;
   flex-wrap: wrap;

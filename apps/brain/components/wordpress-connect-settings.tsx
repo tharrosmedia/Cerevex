@@ -94,10 +94,9 @@ export async function WordpressConnectSettings() {
             <>
               <ol className="cx-help" style={{ paddingLeft: '1.2rem' }}>
                 <li>
-                  Install the Cerevex plugin.{' '}
+                  Install the Cerevex plugin.
                   <WordpressPluginDownload
-                    label="Download zip"
-                    trailing={<>{' · '}<a href="/api/wordpress/install-note">Install note</a></>}
+                    trailing={<a href="/api/wordpress/install-note">Install note</a>}
                   />
                 </li>
                 <li>Paste the site URL.</li>

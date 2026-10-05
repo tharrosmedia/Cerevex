@@ -1,15 +1,13 @@
 'use client';
 
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { pluginDownloadError } from '@/src/lib/wordpress/plugin-download';
+import {
+  pluginDownloadError,
+  WORDPRESS_PLUGIN_DRIVE_LABEL,
+  WORDPRESS_PLUGIN_DRIVE_URL,
+} from '@/src/lib/wordpress/plugin-download';
 
-export function WordpressPluginDownload({
-  label,
-  trailing = null,
-}: {
-  label: ReactNode;
-  trailing?: ReactNode;
-}) {
+export function WordpressPluginDownload({ trailing = null }: { trailing?: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -40,7 +38,7 @@ export function WordpressPluginDownload({
       link.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setError('The plugin download failed. Try again, or use the install note.');
+      setError('The in-app download failed. Use Download plugin zip.');
     } finally {
       setPending(false);
     }
@@ -48,10 +46,15 @@ export function WordpressPluginDownload({
 
   return (
     <>
-      <a href="/api/wordpress/plugin" onClick={onDownload} aria-busy={pending}>
-        {pending ? 'Preparing download…' : label}
-      </a>
-      {trailing}
+      <div className="cx-plugin-downloads">
+        <a className="btn-secondary" href={WORDPRESS_PLUGIN_DRIVE_URL} target="_blank" rel="noopener noreferrer">
+          {WORDPRESS_PLUGIN_DRIVE_LABEL}
+        </a>
+        <a href="/api/wordpress/plugin" onClick={onDownload} aria-busy={pending}>
+          {pending ? 'Preparing download…' : 'In-app download'}
+        </a>
+        {trailing}
+      </div>
       {error ? <p className="cx-banner cx-banner-warn" role="alert">{error}</p> : null}
     </>
   );

@@ -11,7 +11,12 @@ import {
   defaultZipPath,
   writeWordpressPluginZip,
 } from '../scripts/pack-wordpress-plugin.mjs';
-import { pluginDownloadError, WORDPRESS_PLUGIN_ZIP_UNAVAILABLE } from '../src/lib/wordpress/plugin-download';
+import {
+  pluginDownloadError,
+  WORDPRESS_PLUGIN_DRIVE_LABEL,
+  WORDPRESS_PLUGIN_DRIVE_URL,
+  WORDPRESS_PLUGIN_ZIP_UNAVAILABLE,
+} from '../src/lib/wordpress/plugin-download';
 import { readWordpressPluginZip, readWordpressPluginZipFile } from '../src/lib/wordpress/plugin-zip';
 
 const execFileAsync = promisify(execFile);
@@ -99,6 +104,12 @@ try {
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }
+
+assert.equal(
+  WORDPRESS_PLUGIN_DRIVE_URL,
+  'https://drive.google.com/file/d/185LuzETVb7Tf7_jdrWb34ZhFBxVL22Ju/view?usp=drivesdk',
+);
+assert.equal(WORDPRESS_PLUGIN_DRIVE_LABEL, 'Download plugin zip');
 
 const unavailable = new Response(JSON.stringify({
   ok: false,
