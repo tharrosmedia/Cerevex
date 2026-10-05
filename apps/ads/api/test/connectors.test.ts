@@ -225,6 +225,7 @@ describe("connector interfaces", () => {
       metaAdPlatformConnector.applyLive({
         tokens: { accessToken: "tok", mock: false },
         mutation: { ...mutation, platform: "meta" },
+        live: null,
         accountExternalId: "act_1",
       }),
     ).rejects.toMatchObject({ name: "UnconfirmedPlatformWriteError" });
@@ -236,6 +237,7 @@ describe("connector interfaces", () => {
       googleAdPlatformConnector.applyLive({
         tokens: { accessToken: "tok", mock: false },
         mutation: { ...mutation, platform: "google" },
+        live: null,
         accountExternalId: "customers/1",
       }),
     ).rejects.toMatchObject({ name: "UnconfirmedPlatformWriteError" });

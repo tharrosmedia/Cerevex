@@ -1701,6 +1701,7 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       .applyLive({
         tokens: { accessToken: "tok", mock: false },
         mutation: { ...mutation, platform: "meta" },
+        live: null,
         accountExternalId: "act_1",
       })
       .catch((error: unknown) => error);
@@ -1711,6 +1712,7 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
       .applyLive({
         tokens: { accessToken: "tok", mock: false },
         mutation: { ...mutation, platform: "google" },
+        live: null,
         accountExternalId: "customers/1",
       })
       .catch((error: unknown) => error);
