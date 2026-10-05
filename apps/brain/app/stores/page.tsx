@@ -7,6 +7,7 @@ import { inngest } from '@/src/inngest/client';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { SubmitButton } from '@/components/submit-button';
+import { WordpressPluginDownload } from '@/components/wordpress-plugin-download';
 import { operatorLoadError } from '@/lib/ui-copy';
 import { formatWhen, platformLabel } from '@/lib/labels';
 import {
@@ -279,8 +280,11 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
           <form action={addWordpressSite} className="cx-form">
             <ol className="cx-help cx-steps">
               <li>
-                Install the Cerevex plugin on your site: <a href="/api/wordpress/plugin">download the plugin</a>{' '}
-                (<a href="/api/wordpress/install-note">install steps</a>).
+                Install the Cerevex plugin on your site:{' '}
+                <WordpressPluginDownload
+                  label="download the plugin"
+                  trailing={<> (<a href="/api/wordpress/install-note">install steps</a>).</>}
+                />
               </li>
               <li>In WordPress, open Settings → Cerevex and copy the plugin key.</li>
             </ol>

@@ -512,6 +512,10 @@ a { color: var(--foreground); }
   background: #fff7ed;
 }
 
+.cx-help .cx-banner {
+  color: var(--foreground);
+}
+
 .cx-filters {
   display: flex;
   flex-wrap: wrap;

@@ -19,6 +19,7 @@ import {
   wordpressWorkspaceSettingsFromStore,
 } from '@/src/lib/wordpress';
 import { StatusBadge } from '@/components/status-badge';
+import { WordpressPluginDownload } from '@/components/wordpress-plugin-download';
 
 async function getActiveStore() {
   const storeId = await getActiveStoreId();
@@ -94,9 +95,10 @@ export async function WordpressConnectSettings() {
               <ol className="cx-help" style={{ paddingLeft: '1.2rem' }}>
                 <li>
                   Install the Cerevex plugin.{' '}
-                  <a href="/api/wordpress/plugin">Download zip</a>
-                  {' · '}
-                  <a href="/api/wordpress/install-note">Install note</a>
+                  <WordpressPluginDownload
+                    label="Download zip"
+                    trailing={<>{' · '}<a href="/api/wordpress/install-note">Install note</a></>}
+                  />
                 </li>
                 <li>Paste the site URL.</li>
                 <li>Paste the plugin key from Settings → Cerevex in WordPress.</li>
