@@ -24,6 +24,7 @@ import {
   runBudgetedPlatformCalls,
 } from "./connectors/write-timeout";
 import { loadTokens } from "./credentials";
+import { META_TOKEN_EXPIRED } from "./meta-graph-error";
 import { isMockToken } from "./live-or-loud";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { siteApplyBlockedReason } from "./lp-intelligence";
@@ -589,6 +590,9 @@ export async function requeueFailedApplyJob(
   const current = await getDb().query.applyJobs.findFirst({ where: eq(applyJobs.id, applyJobId) });
   if (!current || current.status !== "failed") {
     return { ok: false, reason: "not_failed", applyJob: current ? toApplyJobPublic(current) : null };
+  }
+  if (current.error === META_TOKEN_EXPIRED) {
+    return { ok: false, reason: "not_repeatable", applyJob: toApplyJobPublic(current) };
   }
   const writes = (current.responseJson as { writes?: unknown } | null)?.writes;
   if (writes === true || writes === "unknown") {

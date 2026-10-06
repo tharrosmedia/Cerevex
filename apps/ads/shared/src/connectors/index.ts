@@ -58,6 +58,18 @@ export {
   GoogleAdPlatformConnector,
   MockAdPlatformConnector,
 } from "./ad-platform";
+export { checkMetaConnection } from "./meta";
+export type { MetaConnectionCheck } from "./meta";
+export {
+  META_CONNECT_EXTEND_FAILED,
+  META_CONNECT_INCOMPLETE,
+  META_EXPIRING_WITHIN_MS,
+  META_PERMISSION_MISSING,
+  META_RATE_LIMITED,
+  META_REFRESH_FAILED,
+  META_TOKEN_EXPIRED,
+  scrubMetaSecrets,
+} from "../meta-graph-error";
 export { firstPartyAnalyticsConnector, ga4AnalyticsConnector } from "./analytics";
 export { bundledCallTrackingConnector, BundledCallTrackingConnector, twilioEnvCredentials } from "./bundled";
 export { callRailConnector, CallRailConnector, callRailEnvCredentials } from "./callrail";

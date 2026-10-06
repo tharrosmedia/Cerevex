@@ -227,9 +227,10 @@ describe("Meta Graph version", () => {
   });
 
   it("writes pause, budget, bid, create, and placement on the shared Graph version", async () => {
-    const calls: { url: string; body: string }[] = [];
+    const calls: { url: string; body: string; authorization: string }[] = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
-      calls.push({ url: String(url), body: String(init.body ?? "") });
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      calls.push({ url: String(url), body: String(init.body ?? ""), authorization: headers.authorization ?? "" });
       const path = new URL(String(url)).pathname;
       if (path.endsWith("/adcreatives")) return jsonResponse({ id: "cr1" });
       if (path.endsWith("/ads")) return jsonResponse({ id: "ad1" });
@@ -291,15 +292,20 @@ describe("Meta Graph version", () => {
       JSON.stringify({ publisher_platforms: ["facebook", "instagram"] }),
     );
     for (const call of calls) {
-      expect(new URLSearchParams(call.body).get("access_token")).toBe(TOKEN);
+      expect(new URLSearchParams(call.body).get("access_token")).toBeNull();
+      expect(call.authorization).toBe(`Bearer ${TOKEN}`);
+      expect(call.url).not.toContain(TOKEN);
     }
   });
 
   it("logs one warning per response that carries the version header", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     let page = 0;
-    vi.stubGlobal("fetch", async (url: string) => {
-      expect(String(url)).toContain(encodeURIComponent(TOKEN));
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      expect(headers.authorization).toBe(`Bearer ${TOKEN}`);
+      expect(String(url)).not.toContain(TOKEN);
+      expect(String(url)).not.toContain("access_token=");
       page += 1;
       const paging = page === 1
         ? { next: `https://graph.facebook.com/${META_GRAPH_VERSION}/me/adaccounts?after=2` }

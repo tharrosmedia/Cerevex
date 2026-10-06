@@ -5,6 +5,8 @@ import { getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
 import { ApplyCallBudgetError, platformCallBudgetMs } from "./connectors/write-timeout";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { loadTokens } from "./credentials";
+import { isMetaPermissionMissing, isMetaRateLimited, isMetaTokenExpired } from "./meta-graph-error";
+import { ensureFreshPlatformTokens, metaMutationFailure } from "./meta-token";
 import { getDb } from "./db";
 import {
   isBookedJobSignalWritable,
@@ -243,6 +245,7 @@ export async function applyViaConnector(input: {
     .readLiveEntityState({ tokens: input.tokens, mutation: input.mutation, deadlineAt: input.deadlineAt })
     .catch((error: unknown) => {
       if (error instanceof ApplyCallBudgetError) throw error;
+      if (isMetaTokenExpired(error) || isMetaRateLimited(error) || isMetaPermissionMissing(error)) throw error;
       if (input.deadlineAt != null && platformCallBudgetMs(input.deadlineAt) <= 0) throw new ApplyCallBudgetError();
       return null;
     });
@@ -456,11 +459,26 @@ export async function executeMutation(input: {
     };
   }
 
-  return applyViaConnector({
-    platform: input.platform,
-    tokens,
-    mutation: input.mutation,
-    accountExternalId: input.accountExternalId,
-    deadlineAt: input.deadlineAt,
-  });
+  let fresh = tokens;
+  try {
+    fresh = await ensureFreshPlatformTokens({ adAccountId: input.adAccountId, tokens });
+  } catch (error) {
+    const failed = await metaMutationFailure(input.adAccountId, input.mutation, error);
+    if (failed) return failed;
+    throw error;
+  }
+
+  try {
+    return await applyViaConnector({
+      platform: input.platform,
+      tokens: fresh,
+      mutation: input.mutation,
+      accountExternalId: input.accountExternalId,
+      deadlineAt: input.deadlineAt,
+    });
+  } catch (error) {
+    const failed = await metaMutationFailure(input.adAccountId, input.mutation, error);
+    if (failed) return failed;
+    throw error;
+  }
 }
