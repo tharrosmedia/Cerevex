@@ -15,6 +15,7 @@ import {
   testWordpressConnection,
   wordpressApplyBlockedByKillSwitch,
   wordpressConfigFromStore,
+  wordpressConnectFlagsForAddSite,
   wordpressFlagsForGate,
   wordpressWorkspaceSettingsFromStore,
 } from '@/src/lib/wordpress';
@@ -38,12 +39,13 @@ export async function WordpressConnectSettings() {
   } catch {
     store = null;
   }
-  const flags = await wordpressFlagsForGate(store);
-  if (!isWordpressConnectVisible(flags)) return null;
+  const gateFlags = await wordpressFlagsForGate(store);
+  const connectFlags = await wordpressConnectFlagsForAddSite(store);
+  if (!isWordpressConnectVisible(connectFlags)) return null;
 
-  const writable = isWordpressConnectWritable(flags);
-  const syncWritable = isWordpressSyncWritable(flags);
-  const applyWritable = isWordpressApplyWritable(flags);
+  const writable = isWordpressConnectWritable(connectFlags);
+  const syncWritable = isWordpressSyncWritable(gateFlags);
+  const applyWritable = isWordpressApplyWritable(gateFlags);
   const wp = wordpressConfigFromStore(store);
   const connected = isWordpressStore(store) && Boolean(wp.pluginKeyEnc || store?.shopify_access_token);
   const killOn = wordpressApplyBlockedByKillSwitch(store);

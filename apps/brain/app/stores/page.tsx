@@ -8,7 +8,8 @@ import { inngest } from '@/src/inngest/client';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { SubmitButton } from '@/components/submit-button';
-import { WordpressPluginDownload } from '@/components/wordpress-plugin-download';
+import { isWordpressConnectVisible } from '@cerevex/contracts';
+import { WordpressAddSiteDownload } from '@/components/wordpress-add-site-download';
 import { operatorLoadError } from '@/lib/ui-copy';
 import { formatWhen, platformLabel } from '@/lib/labels';
 import {
@@ -21,6 +22,7 @@ import {
   decryptWordpressPluginKey,
   isWordpressStore,
   testWordpressConnection,
+  wordpressConnectFlagsForAddSite,
   wordpressSiteUrl,
   wordpressWorkspaceSettingsFromStore,
 } from '@/src/lib/wordpress';
@@ -166,6 +168,17 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
     loadError = operatorLoadError(e.message) || 'Could not load stores.';
   }
 
+  let wordpressConnectVisible = false;
+  if (platform === 'wordpress') {
+    try {
+      const active = stores.find((store) => store.id === activeId) ?? null;
+      const flags = await wordpressConnectFlagsForAddSite(active);
+      wordpressConnectVisible = isWordpressConnectVisible(flags);
+    } catch {
+      wordpressConnectVisible = false;
+    }
+  }
+
   return (
     <div className="cx-page">
       <PageHeader
@@ -278,14 +291,12 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
           </form>
         ) : null}
 
-        {platform === 'wordpress' ? (
+        {platform === 'wordpress' && wordpressConnectVisible ? (
           <form action={addWordpressSite} className="cx-form">
             <ol className="cx-help cx-steps">
               <li>
                 Install the Cerevex plugin on your site.
-                <WordpressPluginDownload
-                  trailing={<a href="/api/wordpress/install-note">Install steps</a>}
-                />
+                <WordpressAddSiteDownload visible />
               </li>
               <li>In WordPress, open Settings → Cerevex and copy the plugin key.</li>
             </ol>
@@ -303,6 +314,9 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
             </div>
             <SubmitButton className="btn-cta" pendingLabel="Checking connection…">Connect site</SubmitButton>
           </form>
+        ) : null}
+        {platform === 'wordpress' && !wordpressConnectVisible ? (
+          <WordpressAddSiteDownload visible={false} />
         ) : null}
       </section>
     </div>

@@ -17,6 +17,7 @@ export {
   wordpressGateReasons,
   wordpressApplyGateReason,
   wordpressFlagsForGate,
+  wordpressConnectFlagsForAddSite,
 } from './capabilities';
 export { newWordpressStoreConfig, wordpressConnectBlockedFromSource } from './connect-config';
 export { testWordpressConnection, connectWordpressStore, disconnectWordpressStore } from './connect';

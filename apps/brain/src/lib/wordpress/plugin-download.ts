@@ -1,10 +1,12 @@
+import { WORDPRESS_CONNECT_OFF_REASON } from './connect-copy';
+
 export const WORDPRESS_PLUGIN_ZIP_UNAVAILABLE =
   'The WordPress plugin zip is not on this server. Try again after the next deploy, or use the install note.';
 
 export async function pluginDownloadError(response: Response): Promise<string> {
   if (response.status === 401) return 'Sign in again to download the plugin.';
   const fallback = response.status === 404
-    ? 'WordPress is off for this workspace.'
+    ? WORDPRESS_CONNECT_OFF_REASON
     : WORDPRESS_PLUGIN_ZIP_UNAVAILABLE;
   const type = response.headers.get('content-type') || '';
   if (!type.includes('json')) return fallback;
