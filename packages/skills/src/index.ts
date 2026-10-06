@@ -46,6 +46,15 @@ export {
   validateRecommendation,
 } from "./recommendation";
 
+export type { SeededPromptLayer, SeededRule } from "./prompt-seed";
+export { HVAC_USA_LAYER_VERSION, seedPromptLayer } from "./prompt-seed";
+
+export type { AiSpendLog, ResolvedPrompt } from "./resolved-prompt";
+export { SKILL_MODEL_PINS, deterministicSpend, resolveSkillPrompt } from "./resolved-prompt";
+
+export type { SkillJobRun } from "./native-jobs";
+export { runPaidMediaJob, runSeoAuditJob, runSeoResearchJob } from "./native-jobs";
+
 export type { PromptPrecedenceId } from "./prompt-layer";
 export {
   PROMPT_LAYER_MISSING_FALLBACK,

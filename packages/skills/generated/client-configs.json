@@ -401,8 +401,8 @@
         }
       ],
       "promptLayer": {
-        "seeded": false,
-        "version": null,
+        "seeded": true,
+        "version": "hvac-usa@v1",
         "path": "clients/hvac-usa/prompt-layer.md"
       }
     },

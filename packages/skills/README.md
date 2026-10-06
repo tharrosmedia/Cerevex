@@ -32,7 +32,7 @@ const procedure = loadPromptLayerRef();
 
 A requested version that is not the vendored pin throws. The loader checks the content hash and only reads files inside the pin.
 
-Prompt-layer precedence, highest first: compliance, profile facts, client layer (a store layer refines the client layer), template defaults. If no layer exists, fall back to the profile. Seeding a layer is a later PR.
+Prompt-layer precedence, highest first: compliance, profile facts, client layer (a store layer refines the client layer), template defaults. If no layer exists, fall back to the profile. Slice 1 seeds the HVAC USA client layer from the profile (`seedPromptLayer`). Other clients stay unseeded. Seeding cites profile fields. It is not learning.
 
 ## Recommendation ingestion
 

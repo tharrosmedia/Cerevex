@@ -284,6 +284,13 @@ function emptyLayer(layerPath: string): { seeded: false; version: null; path: st
   return { seeded: false, version: null, path: layerPath };
 }
 
+/** Slice 1 seeds the HVAC USA client layer from the profile. Store layers stay empty. */
+function clientLayer(slug: InScopeClientSlug): { seeded: boolean; version: string | null; path: string } {
+  const path = clientPromptLayerPath(slug);
+  if (slug === "hvac-usa") return { seeded: true, version: "hvac-usa@v1", path };
+  return { seeded: false, version: null, path };
+}
+
 function makeStore(input: {
   storeKey: string;
   role: StoreRole;
@@ -494,7 +501,7 @@ export function parseProfile(input: {
     openQuestions,
     stores,
     extras,
-    promptLayer: emptyLayer(clientPromptLayerPath(slug)),
+    promptLayer: clientLayer(slug),
   };
 }
 

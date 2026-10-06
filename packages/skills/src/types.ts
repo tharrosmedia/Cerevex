@@ -6,7 +6,7 @@
  * import. Brain rows stay store_id-keyed; `brainStoreId` is filled later,
  * with no cross-schema foreign key.
  *
- * Prompt layers are a slot only. Slice 1 PR 1 does not seed them (PR 3).
+ * Prompt layers are seeded for the HVAC USA pilot. Other clients stay an empty slot.
  */
 
 export const FACT_STATES = ["known", "tbd", "inference", "assumption"] as const;
@@ -59,10 +59,11 @@ export interface MeasurementConfig {
 
 export type StoreRole = "web" | "storefront" | "service-area" | "product";
 
-/** Slot only. Slice 1 PR 1 records the canonical path and does not seed the file (PR 3). */
+/** Client or store prompt layer. Slice 1 seeds HVAC USA only. Other clients stay empty. */
 export interface PromptLayerSlot {
-  seeded: false;
-  version: null;
+  seeded: boolean;
+  /** `hvac-usa@v1` when seeded. Null when the layer has not been seeded. */
+  version: string | null;
   /** Canonical box path: `clients/<client>/prompt-layer.md` or `clients/<client>/prompt-layer-<store>.md`. */
   path: string;
 }

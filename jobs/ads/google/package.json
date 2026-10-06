@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@cerevex/contracts": "*",
+    "@cerevex/skills": "*",
     "@tharros/ads-shared": "*",
     "drizzle-orm": "^0.44.7",
     "inngest": "^4.20.0"
