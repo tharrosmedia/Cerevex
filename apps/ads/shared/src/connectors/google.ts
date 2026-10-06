@@ -15,6 +15,7 @@ import {
   type LiveEntityState,
   type MutationOutcome,
 } from "../mutate-types";
+import { GOOGLE_ADS_API_VERSION } from "../google-ads";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
 import { refuseMockPull } from "../live-or-loud";
 import { mockPull, type PullResult, type PulledEntity } from "../platforms";
@@ -29,7 +30,7 @@ import type {
 } from "./types";
 import { readPlatformWriteBody, requirePlatformSignal } from "./write-timeout";
 
-const GOOGLE_ADS = "https://googleads.googleapis.com/v17";
+const GOOGLE_ADS = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 function notConfigured(): ConnectorConnectResult {
   return {
