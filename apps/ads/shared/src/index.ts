@@ -1,5 +1,6 @@
 export * from "./types";
 export { META_GRAPH_VERSION } from "./meta-graph";
+export { GOOGLE_ADS_API_VERSION } from "./google-ads";
 export * from "./modules";
 export * from "./roles";
 export * from "./mutations";

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { META_GRAPH_VERSION } from "@tharros/ads-shared";
+import { GOOGLE_ADS_API_VERSION, META_GRAPH_VERSION } from "@tharros/ads-shared";
 import { googleAdsHeaders, listGoogleAccessibleAccounts, metaAdPlatformConnector } from "@tharros/ads-shared/connectors";
 
 type Call = { url: string; headers: Record<string, string>; body?: string };
@@ -57,6 +57,12 @@ describe("listing accounts a login can reach", () => {
       { externalId: "222", name: "Client A", currency: "CAD", detail: "Managed by Agency MCC", loginCustomerId: "900" },
     ]);
     expect(calls[0].headers["developer-token"]).toBe("dev-token");
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      `/${GOOGLE_ADS_API_VERSION}/customers:listAccessibleCustomers`,
+      `/${GOOGLE_ADS_API_VERSION}/customers/111/googleAds:search`,
+      `/${GOOGLE_ADS_API_VERSION}/customers/900/googleAds:search`,
+      `/${GOOGLE_ADS_API_VERSION}/customers/900/googleAds:search`,
+    ]);
   });
 
   it("sends login-customer-id only when the account is reached through a manager", () => {

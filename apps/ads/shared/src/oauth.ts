@@ -1,4 +1,5 @@
 import { loadEnv } from "./env";
+import { GOOGLE_ADS_API_VERSION } from "./google-ads";
 import { META_GRAPH_VERSION } from "./meta-graph";
 import type { OAuthPlatformConfig, Platform } from "./types";
 
@@ -34,7 +35,7 @@ export function isGoogleConfigured(): boolean {
 
 export function oauthConfig(): {
   meta: OAuthPlatformConfig & { apiVersion: string };
-  google: OAuthPlatformConfig;
+  google: OAuthPlatformConfig & { apiVersion: string };
 } {
   return {
     meta: {
@@ -42,7 +43,11 @@ export function oauthConfig(): {
       redirectUri: metaRedirectUri(),
       apiVersion: META_GRAPH_VERSION,
     },
-    google: { configured: isGoogleConfigured(), redirectUri: googleRedirectUri() },
+    google: {
+      configured: isGoogleConfigured(),
+      redirectUri: googleRedirectUri(),
+      apiVersion: GOOGLE_ADS_API_VERSION,
+    },
   };
 }
 

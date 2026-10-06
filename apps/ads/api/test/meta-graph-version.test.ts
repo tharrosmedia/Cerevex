@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { META_GRAPH_VERSION } from "@tharros/ads-shared";
+import { GOOGLE_ADS_API_VERSION, META_GRAPH_VERSION } from "@tharros/ads-shared";
 import { metaAdPlatformConnector } from "@tharros/ads-shared/connectors";
 import { metaAuthorizeUrl, oauthConfig } from "@tharros/ads-shared/oauth";
 import { workerHealthBody } from "@tharros/ads-shared/worker-health";
@@ -87,7 +87,7 @@ describe("Meta Graph version", () => {
   it("reports the Graph version on ads-api and worker health", async () => {
     const config = oauthConfig();
     expect(config.meta.apiVersion).toBe(META_GRAPH_VERSION);
-    expect(config.google).not.toHaveProperty("apiVersion");
+    expect(config.google.apiVersion).toBe(GOOGLE_ADS_API_VERSION);
 
     const worker = workerHealthBody({ dbOk: true, inngestStatus: "ok", functionIds: ["ads-sync"] });
     expect(worker.oauth.meta.apiVersion).toBe(META_GRAPH_VERSION);
