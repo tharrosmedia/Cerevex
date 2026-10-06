@@ -27,6 +27,8 @@ import {
 } from "./operator-hygiene";
 import { isM52WeeklyNarrativeMutation } from "./owner-weekly-narrative";
 import { isM52SeasonalityMutation } from "./seasonality-calendar";
+import { platformSyncLiveEnabled } from "./flags";
+import { isMockToken, realTokenLiveBlock } from "./live-or-loud";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { LiveEntityState, MutationOutcome } from "./mutate-types";
@@ -422,8 +424,36 @@ export async function executeMutation(input: {
   }
 
   const connector = getAdPlatformConnector(input.platform);
-  if (!connector.isLiveAllowed(tokens, input.capabilities ?? resolveWorkspaceCapabilities({}))) {
+  if (isMockToken(tokens)) {
     return applyMockMutation(input.adAccountId, input.mutation);
+  }
+  const block = realTokenLiveBlock({
+    platform: input.platform,
+    mock: tokens.mock,
+    configured: connector.isConfigured(),
+    syncLive: platformSyncLiveEnabled(flags),
+  });
+  if (block?.kind === "not_configured") {
+    return {
+      action: input.mutation.action,
+      platform: input.platform,
+      target: input.mutation.target,
+      status: "failed",
+      mode: "live",
+      writes: false,
+      reason: block.applyReason,
+    };
+  }
+  if (block) {
+    return {
+      action: input.mutation.action,
+      platform: input.platform,
+      target: input.mutation.target,
+      status: "skipped",
+      mode: "live",
+      writes: false,
+      reason: block.applyReason,
+    };
   }
 
   return applyViaConnector({

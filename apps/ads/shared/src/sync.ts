@@ -3,6 +3,8 @@ import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector } from "./connectors";
 import { loadTokens, storeTokens, tokenNearExpiry } from "./credentials";
 import { getDb } from "./db";
+import { platformSyncLiveEnabled } from "./flags";
+import { realTokenLiveBlock } from "./live-or-loud";
 import { adAccounts, adEntities, adMetrics, clients, workspaces } from "./schema";
 
 export type SyncResult = {
@@ -63,6 +65,31 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
     });
     const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
     const connector = getAdPlatformConnector(account.platform);
+    const block = realTokenLiveBlock({
+      platform: account.platform,
+      mock: tokens.mock,
+      configured: connector.isConfigured(),
+      syncLive: platformSyncLiveEnabled(capabilities),
+    });
+    if (block) {
+      const lastError = block.kind === "not_configured" ? block.code : block.syncReason;
+      const [updated] = await db
+        .update(adAccounts)
+        .set({
+          connectionStatus: block.kind === "not_configured" ? "error" : account.connectionStatus,
+          lastError,
+        })
+        .where(and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected")))
+        .returning({ id: adAccounts.id });
+      if (!updated) return skippedSync(adAccountId);
+      return {
+        adAccountId,
+        mode: "live",
+        entityCount: 0,
+        status: block.kind === "not_configured" ? "error" : "skipped",
+        lastError,
+      };
+    }
     if (tokenNearExpiry(tokens)) {
       const currentTokens = tokens;
       const refreshed = await connector.refreshTokens(currentTokens);

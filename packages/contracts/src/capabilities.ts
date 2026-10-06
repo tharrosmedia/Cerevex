@@ -150,7 +150,7 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
   "sync.live": {
     id: "sync.live",
     label: "Live platform sync",
-    help: "Allow Meta/Google live pull and apply when app keys are set. Off degrades to mock. Legacy env: PLATFORM_SYNC_LIVE=0.",
+    help: "Allow Meta/Google live pull and apply when app keys are set. Off skips a real account and leaves its rows in place. Mock accounts still use test data. Legacy env: PLATFORM_SYNC_LIVE=0.",
     defaultState: "on",
     unfinished: false,
     group: "product",
