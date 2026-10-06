@@ -107,7 +107,12 @@ describe("connector interfaces", () => {
       target: { entityType: "campaign", externalId: "1", name: "HVAC" },
       payload: {},
     };
-    const read = vi.spyOn(connector, "readLiveEntityState").mockResolvedValue(null);
+    const read = vi.spyOn(connector, "readLiveEntityState").mockResolvedValue({
+      externalId: "1",
+      entityType: "campaign",
+      status: "active",
+      accountId: "1",
+    });
     const apply = vi.spyOn(connector, "applyLive").mockResolvedValue({
       action: "pause",
       platform: "meta",
@@ -126,6 +131,18 @@ describe("connector interfaces", () => {
     expect(apply).toHaveBeenCalledOnce();
     expect(outcome.mode).toBe("live");
     expect(outcome.writes).toBe(true);
+
+    read.mockResolvedValueOnce(null);
+    const closed = await applyViaConnector({
+      platform: "meta",
+      tokens: { accessToken: "tok", mock: false },
+      mutation,
+      accountExternalId: "act_1",
+    });
+    expect(apply).toHaveBeenCalledOnce();
+    expect(closed.writes).toBe(false);
+    expect(closed.status).toBe("failed");
+    expect(closed.reason).toBe("Couldn't confirm this on Meta. Nothing was written.");
     read.mockRestore();
     apply.mockRestore();
   });
@@ -149,7 +166,7 @@ describe("connector interfaces", () => {
       target: { entityType: "campaign", externalId: "1", name: "HVAC" },
       payload: {},
     };
-    const live = { externalId: "1", entityType: "campaign", status: "active" };
+    const live = { externalId: "1", entityType: "campaign", status: "active", accountId: "1" };
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock.mockResolvedValueOnce(new Response("down", { status: 500 }));
     await expect(
@@ -215,8 +232,13 @@ describe("connector interfaces", () => {
     };
     const mutation = {
       action: "create_ad" as const,
-      target: { entityType: "adset" as const, externalId: "adset-1", name: "HVAC" },
-      payload: { proposedName: "cq-body-drop" },
+      target: { entityType: "adset" as const, externalId: "9001", name: "HVAC" },
+      payload: {
+        proposedName: "cq-body-drop",
+        body: "Hello",
+        pageId: "1001",
+        link: "https://pilot.example/offer",
+      },
     };
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "creative-1" }), { status: 200 }));
@@ -225,7 +247,7 @@ describe("connector interfaces", () => {
       metaAdPlatformConnector.applyLive({
         tokens: { accessToken: "tok", mock: false },
         mutation: { ...mutation, platform: "meta" },
-        live: null,
+        live: { externalId: "9001", entityType: "adset", status: "active", accountId: "1" },
         accountExternalId: "act_1",
       }),
     ).rejects.toMatchObject({ name: "UnconfirmedPlatformWriteError" });

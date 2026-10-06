@@ -11,7 +11,7 @@ import {
   searchNegativesWriteBlockedReason,
   seasonalityWriteBlockedReason,
 } from "@cerevex/contracts";
-import { evaluateApplyGate } from "./apply-gate";
+import { applyBlockMessage, evaluateApplyGate } from "./apply-gate";
 import { getDefaultSiteConnector } from "./connectors/site";
 import { getAdPlatformConnector } from "./connectors";
 import {
@@ -776,15 +776,20 @@ async function claimApplyJob(
       };
     }
 
+    const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
+    const tokens = account ? await loadTokens(account.id) : null;
     const gate = evaluateApplyGate({
       expectedWorkspaceId: job.workspaceId,
       workspace,
       authorization,
       account,
       recommendationScope: recommendation?.scope,
+      platform: account?.platform,
+      capabilities,
+      mock: isMockToken(tokens),
     });
     if (!gate.allowed) {
-      const response = { ...gate, outcomes: [], writes: false };
+      const response = { ...gate, outcomes: [], writes: false, reason: applyBlockMessage(gate.blocked) };
       return {
         kind: "done" as const,
         result: await saveJob(
@@ -816,7 +821,6 @@ async function claimApplyJob(
       };
     }
 
-    const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
     const request = (job.requestJson as Record<string, unknown> | null) ?? {};
     const jobType = (
       typeof request.jobType === "string" ? request.jobType : inferApplyJobType(request.proposedMutations)

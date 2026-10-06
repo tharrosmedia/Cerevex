@@ -1,8 +1,11 @@
+import type { CapabilityFlags } from "@cerevex/contracts";
+
 /**
  * Authorize-to-apply gate.
  *
  * Apply requires a valid authorization, workspace kill switch OFF,
  * and the target ad account not frozen. Deny/Snooze never reach this gate.
+ * A Meta live write also needs apply.meta on. Mock tokens are not live writes.
  */
 
 export const NOT_AD_ACCOUNT_SCOPED = "not_ad_account_scoped" as const;
@@ -15,6 +18,8 @@ export const APPLY_BLOCK_REASONS = [
   "authorization_required",
   "authorization_revoked",
   "authorization_expired",
+  "apply_meta_hidden",
+  "apply_meta_recommend_only",
 ] as const;
 
 export type ApplyBlockReason = (typeof APPLY_BLOCK_REASONS)[number];
@@ -33,8 +38,26 @@ export type ApplyGateInput = {
   account?: { frozen: boolean } | null;
   /** When set and not ad_account, ads apply is refused before the kill switch. */
   recommendationScope?: string | null;
+  /** Ad account platform. Meta live writes also need apply.meta on. */
+  platform?: string | null;
+  capabilities?: CapabilityFlags | null;
+  /** True only for a mock token. Omitted or false is a live Meta write when platform is meta. */
+  mock?: boolean;
   now?: Date;
 };
+
+/** Hidden and recommend_only record the decision elsewhere and write nothing. */
+export function metaLiveWriteBlock(input: {
+  platform?: string | null;
+  mock?: boolean;
+  capabilities?: CapabilityFlags | null;
+}): "apply_meta_hidden" | "apply_meta_recommend_only" | null {
+  if (input.platform !== "meta" || input.mock === true) return null;
+  const state = input.capabilities?.["apply.meta"];
+  if (state === "on") return null;
+  if (state === "recommend_only") return "apply_meta_recommend_only";
+  return "apply_meta_hidden";
+}
 
 export class NotAdAccountScopedError extends Error {
   readonly reason = NOT_AD_ACCOUNT_SCOPED;
@@ -87,6 +110,12 @@ export function evaluateApplyGate(input: ApplyGateInput): ApplyGateResult {
   if (expires !== null && expires <= now.getTime()) {
     return { allowed: false, blocked: "authorization_expired", writes: false };
   }
+  const metaBlock = metaLiveWriteBlock({
+    platform: input.platform,
+    mock: input.mock,
+    capabilities: input.capabilities,
+  });
+  if (metaBlock) return { allowed: false, blocked: metaBlock, writes: false };
   return { allowed: true, blocked: null, writes: true };
 }
 
@@ -106,7 +135,22 @@ export function applyBlockMessage(reason: ApplyBlockReason | null | undefined): 
       return "This approval expired. Approve again to apply.";
     case "workspace_not_found":
       return "Workspace not found.";
+    case "apply_meta_hidden":
+      return "Meta live writes are off. The decision is saved. Nothing was written.";
+    case "apply_meta_recommend_only":
+      return "Meta live writes are recommend-only. The decision is saved. Nothing was written.";
     default:
       return "Apply is blocked.";
   }
 }
+
+export {
+  META_COULD_NOT_CONFIRM,
+  META_CURRENCY_REASON,
+  META_TARGET_ID_REASON,
+  META_TARGET_NOT_IN_ACCOUNT,
+  META_TARGET_NOT_IN_ACCOUNT_REASON,
+  META_TWO_DECIMAL_CURRENCIES,
+  isMetaTwoDecimalCurrency,
+  metaCurrencyRefusal,
+} from "./meta-write-safety";

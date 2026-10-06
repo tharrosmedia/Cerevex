@@ -220,6 +220,7 @@ for (const id of CAPABILITY_IDS) {
 for (const id of [
   'apply',
   'apply.create_entity',
+  'apply.meta',
   'apply.budget',
   'apply.bid',
   'm52.booked_job_signal',
