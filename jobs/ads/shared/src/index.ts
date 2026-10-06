@@ -1,4 +1,5 @@
 import { ADS_FUNCTION_IDS, LEGACY_ADS_FUNCTION_IDS } from "@cerevex/contracts";
+import { accountReview } from "./functions/account-review";
 import { accountSync } from "./functions/account-sync";
 import { applyRequested } from "./functions/apply-requested";
 import { auditRequested } from "./functions/audit-requested";
@@ -10,6 +11,7 @@ import { stubPing } from "./functions/stub-ping";
 import { stubSync } from "./functions/stub-sync";
 
 export {
+  accountReview,
   accountSync,
   applyRequested,
   applyRequestedLegacy,
@@ -36,6 +38,7 @@ export const functions = [
   auditRequested,
   auditRequestedLegacy,
   accountSync,
+  accountReview,
 ];
 
 export const FUNCTION_IDS = [
@@ -48,4 +51,5 @@ export const FUNCTION_IDS = [
   ADS_FUNCTION_IDS.auditRequested,
   LEGACY_ADS_FUNCTION_IDS.auditRequested,
   ADS_FUNCTION_IDS.accountSync,
+  ADS_FUNCTION_IDS.accountReview,
 ] as const;

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@cerevex/contracts": "*",
+    "@cerevex/skills": "*",
     "@cerevex/jobs-ads-google": "*",
     "@cerevex/jobs-ads-meta": "*",
     "@tharros/ads-shared": "*",
