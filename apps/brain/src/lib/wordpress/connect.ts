@@ -4,7 +4,8 @@ import { createWordPressConnector, normalizeSiteUrl } from '@cerevex/connector-w
 import { createStore, getStore, updateStore } from '../db/stores';
 import { logEvent } from '../brain/events';
 import { wordpressConnectBlockedFromSource, newWordpressStoreConfig } from './connect-config';
-import { wordpressFlagsFromStore, wordpressWorkspaceSettingsFromStore } from './capabilities';
+import { wordpressConnectFlagsForAddSite } from './add-site-gate';
+import { wordpressFlagsFromStore } from './capabilities';
 import {
   encryptWordpressPluginKey,
   isWordpressStore,
@@ -13,7 +14,7 @@ import {
 
 export type WordpressConnectInput = {
   storeId?: string | null;
-  /** Workspace/capability source the Settings UI used (active store). Required for new-site Connect. */
+  /** Selected store's workspace. Used only when ads-api does not answer within 1.5s. */
   workspaceSettings?: Record<string, unknown> | null;
   name?: string;
   siteUrl: string;
@@ -53,7 +54,11 @@ export async function connectWordpressStore(input: WordpressConnectInput): Promi
     }
 
     let store = input.storeId ? await getStore(input.storeId) : null;
-    const workspaceSettings = input.workspaceSettings ?? wordpressWorkspaceSettingsFromStore(store);
+    const fallbackStore = input.workspaceSettings
+      ? { config: { workspace: input.workspaceSettings } }
+      : store;
+    const connectFlags = await wordpressConnectFlagsForAddSite(fallbackStore);
+    const workspaceSettings = { capabilities: connectFlags };
     const blocked = wordpressConnectBlockedFromSource({ workspaceSettings, store });
     if (blocked) {
       return { ok: false, code: 'capability_off', reason: siteCmsPlainError('capability_off') };
