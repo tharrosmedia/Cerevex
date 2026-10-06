@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { NotAdAccountScopedError } from "@tharros/ads-shared/apply-gate";
@@ -424,6 +424,131 @@ describe("store and client recommendation scope", () => {
       await db.update(clients).set({ siteId: before?.siteId ?? null }).where(eq(clients.id, gotId));
     }
   });
+
+  for (const clientSite of ["cq-primary-site", null] as const) {
+    describe(`store rec audit rows when the client site_id is ${clientSite ?? "NULL"}`, () => {
+      const storeId = "cq-second-location";
+      let previousSite: string | null = null;
+
+      beforeAll(async () => {
+        const db = getDb();
+        const before = await db.query.clients.findFirst({ where: eq(clients.id, gotId) });
+        previousSite = before?.siteId ?? null;
+        await db.update(clients).set({ siteId: clientSite }).where(eq(clients.id, gotId));
+      });
+
+      afterAll(async () => {
+        await getDb().update(clients).set({ siteId: previousSite }).where(eq(clients.id, gotId));
+      });
+
+      async function storeRec(title: string) {
+        const rec = await insertScopedRecommendation(scopedInput("store", { storeId, title: `${title} (${clientSite ?? "null"})` }));
+        createdIds.push(rec.id);
+        return rec;
+      }
+
+      function post(path: string, body: unknown) {
+        return app.request(path, {
+          method: "POST",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+
+      async function approve(recId: string) {
+        const res = await post(`/recommendations/${recId}/decide`, { action: "approve" });
+        expect(res.status).toBe(200);
+        return String(((await json(res)).authorization as { id: string }).id);
+      }
+
+      async function expectRecStore(recId: string, action: string, count?: number) {
+        const rows = await getDb()
+          .select({ storeId: clientAuditLog.storeId })
+          .from(clientAuditLog)
+          .where(and(eq(clientAuditLog.entityId, recId), eq(clientAuditLog.action, action)));
+        if (count === undefined) expect(rows.length, action).toBeGreaterThan(0);
+        else expect(rows.length, action).toBe(count);
+        expect(rows.map((row) => row.storeId), action).toEqual(rows.map(() => storeId));
+      }
+
+      it("rec_created", async () => {
+        const rec = await storeRec("Created");
+        await expectRecStore(rec.id, "rec_created", 1);
+      });
+
+      it("approve (decide)", async () => {
+        const rec = await storeRec("Approve");
+        await approve(rec.id);
+        await expectRecStore(rec.id, "approved", 1);
+      });
+
+      it("deny (decide)", async () => {
+        const rec = await storeRec("Deny");
+        expect((await post(`/recommendations/${rec.id}/decide`, { action: "deny" })).status).toBe(200);
+        await expectRecStore(rec.id, "rejected", 1);
+      });
+
+      it("approve refusal", async () => {
+        const applyRefused = await storeRec("Apply refused");
+        expect((await post(`/recommendations/${applyRefused.id}/apply`, {})).status).toBe(409);
+        await expectRecStore(applyRefused.id, "approve_refused", 1);
+
+        const markDoneEarly = await storeRec("Mark done before approve");
+        expect((await post(`/recommendations/${markDoneEarly.id}/decide`, { action: "mark_done" })).status).toBe(409);
+        await expectRecStore(markDoneEarly.id, "approve_refused", 1);
+      });
+
+      it("apply client audit", async () => {
+        const rec = await storeRec("Worker apply");
+        const authorizationId = await approve(rec.id);
+        const [queued] = await getDb()
+          .insert(applyJobs)
+          .values({
+            workspaceId,
+            clientId: gotId,
+            authorizationId,
+            idempotencyKey: `scope-store-site-${rec.id}`,
+            status: "queued",
+            requestJson: { recommendationId: rec.id, proposedMutations: [] },
+          })
+          .returning();
+        const ran = await runApplyJob(queued.id);
+        expect(ran.blocked).toBe("not_ad_account_scoped");
+        await expectRecStore(rec.id, "apply_blocked");
+      });
+
+      it("mark_done (decide)", async () => {
+        const rec = await storeRec("Mark done");
+        await approve(rec.id);
+        expect((await post(`/recommendations/${rec.id}/decide`, { action: "mark_done" })).status).toBe(200);
+        await expectRecStore(rec.id, "mark_done", 1);
+      });
+
+      it("rolled_back (decide)", async () => {
+        const rec = await storeRec("Roll back");
+        await approve(rec.id);
+        expect((await post(`/recommendations/${rec.id}/decide`, { action: "mark_done" })).status).toBe(200);
+        expect((await post(`/recommendations/${rec.id}/decide`, { action: "rollback" })).status).toBe(200);
+        await expectRecStore(rec.id, "rolled_back", 1);
+      });
+
+      it("lifecycle route, with and without a caller storeId", async () => {
+        const rec = await storeRec("Lifecycle");
+        await approve(rec.id);
+        const done = await post("/recommendations/lifecycle", { kind: "mark_done", recommendationId: rec.id, clientId: gotId });
+        expect(done.status).toBe(200);
+        await expectRecStore(rec.id, "mark_done", 1);
+        const rolledBack = await post("/recommendations/lifecycle", {
+          kind: "rolled_back",
+          recommendationId: rec.id,
+          clientId: gotId,
+          storeId: "caller-supplied-store",
+        });
+        expect(rolledBack.status).toBe(200);
+        await expectRecStore(rec.id, "rolled_back", 1);
+      });
+    });
+  }
 
   it("keeps the kill switch on", async () => {
     const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
