@@ -78,7 +78,8 @@ const UK_NATIONAL = new RegExp(String.raw`(?<!\d)0\d{1,4}(?:${PHONE_SEP}\d{3,6})
 const LOCAL_PHONE = new RegExp(String.raw`(?<!\d)\d{3}${PHONE_SEP}\d{4}(?!\d)`, "g");
 const NANP_LEADING_1 = /(?<![\dA-Fa-f])1[2-9]\d{9}(?![\dA-Fa-f])/g;
 const COMPACT_PHONE = /(?<![\dA-Fa-f])[2-9]\d{9}(?![\dA-Fa-f])/g;
-const PHONE_SKIP_KEY = /(^id$|Id$|Ids$|_id$|^externalId$|^customerId$|^campaignId$|Micros$)/;
+/** readAt is a UTC timestamp. A value like 02.977 matches the UK phone pattern. */
+const PHONE_SKIP_KEY = /(^id$|Id$|Ids$|_id$|^externalId$|^customerId$|^campaignId$|Micros$|^readAt$)/;
 const RESOURCE_ID_PREFIX = /(?:customers|campaigns|adgroups|ads)\/$/i;
 
 export class LifecycleRepeatError extends Error {
