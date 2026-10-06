@@ -376,7 +376,7 @@ describe("Meta live-or-loud", () => {
           target: { entityType: "campaign", externalId: entity.externalId, name: entity.name },
           payload: {},
         },
-        capabilities: { ...defaultCapabilityFlags(), "sync.live": "hidden" },
+        capabilities: { ...defaultCapabilityFlags(), "sync.live": "hidden", "apply.meta": "on" },
       });
       expect(outcome.status).toBe("skipped");
       expect(outcome.writes).toBe(false);

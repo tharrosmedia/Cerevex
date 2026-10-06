@@ -777,7 +777,7 @@ async function claimApplyJob(
     }
 
     const capabilities = resolveWorkspaceCapabilities(workspace?.settingsJson);
-    const tokens = account ? await loadTokens(account.id) : null;
+    const tokens = account ? await loadTokens(account.id, handle) : null;
     const gate = evaluateApplyGate({
       expectedWorkspaceId: job.workspaceId,
       workspace,

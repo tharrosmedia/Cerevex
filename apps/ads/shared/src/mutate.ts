@@ -444,6 +444,22 @@ export async function executeMutation(input: {
   if (isMockToken(tokens)) {
     return applyMockMutation(input.adAccountId, input.mutation);
   }
+  const metaBlock = metaLiveWriteBlock({
+    platform: input.platform,
+    mock: false,
+    capabilities: flags,
+  });
+  if (metaBlock) {
+    return {
+      action: input.mutation.action,
+      platform: input.platform,
+      target: input.mutation.target,
+      status: "failed",
+      mode: "live",
+      writes: false,
+      reason: applyBlockMessage(metaBlock),
+    };
+  }
   const block = realTokenLiveBlock({
     platform: input.platform,
     mock: tokens.mock,
@@ -470,23 +486,6 @@ export async function executeMutation(input: {
       mode: "live",
       writes: false,
       reason: block.applyReason,
-    };
-  }
-
-  const metaBlock = metaLiveWriteBlock({
-    platform: input.platform,
-    mock: false,
-    capabilities: flags,
-  });
-  if (metaBlock) {
-    return {
-      action: input.mutation.action,
-      platform: input.platform,
-      target: input.mutation.target,
-      status: "failed",
-      mode: "live",
-      writes: false,
-      reason: applyBlockMessage(metaBlock),
     };
   }
 
