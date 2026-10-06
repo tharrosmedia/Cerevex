@@ -1924,17 +1924,32 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
 
   it("bounds platform calls inside the apply lease", async () => {
     let started = 0;
+    // AbortSignal.timeout can fire about 1ms before Date.now() has spent the
+    // budget, so an ~80ms wall-clock margin let the next call start in CI.
+    // The clock stays at open until that abort, then sits on the margin.
+    // The signal still cuts the hung call off; the next call sees no budget.
+    const openedAt = 1_700_000_000_000;
+    const budgetMs = 80;
+    let now = openedAt;
+    const deadlineAt = openedAt + APPLY_CALL_MARGIN_MS + budgetMs;
+    const wallStart = Date.now();
     const result = await runBudgetedPlatformCalls({
-      deadlineAt: Date.now() + APPLY_CALL_MARGIN_MS + 80,
+      deadlineAt,
+      now: () => now,
       calls: [
         (signal) =>
           new Promise<void>((resolve) => {
             started += 1;
             const timer = setTimeout(resolve, 5_000);
-            signal.addEventListener("abort", () => {
-              clearTimeout(timer);
-              resolve();
-            });
+            signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                now = deadlineAt - APPLY_CALL_MARGIN_MS;
+                resolve();
+              },
+              { once: true },
+            );
           }),
         () => {
           started += 1;
@@ -1945,7 +1960,8 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     expect(started).toBe(1);
     expect(result.ran).toBe(1);
     expect(result.skipped).toBe(1);
-    expect(result.elapsedMs).toBeLessThan(2_000);
+    expect(Date.now() - wallStart).toBeLessThan(2_000);
+    expect(result.elapsedMs).toBe(budgetMs);
     expect(result.elapsedMs).toBeLessThan(APPLYING_LEASE_MS);
   });
 
