@@ -12,6 +12,7 @@ import { insertScopedRecommendation, ScopedRecommendationError } from "@tharros/
 import {
   applyJobs,
   authorizations,
+  clientAuditLog,
   clients,
   locations,
   recommendations,
@@ -357,6 +358,71 @@ describe("store and client recommendation scope", () => {
     expect(stillAuthorized?.status).toBe("authorized");
     expect(await getDb().select({ id: authorizations.id }).from(authorizations).where(eq(authorizations.id, authorizationId))).toHaveLength(1);
     expect(ownerId).toBeTruthy();
+  });
+
+  it("writes store-scoped decision rows on the recommendation store, not the client site", async () => {
+    const primary = "cq-primary-site";
+    const storeId = "cq-second-location";
+    const db = getDb();
+    const before = await db.query.clients.findFirst({ where: eq(clients.id, gotId) });
+    await db.update(clients).set({ siteId: primary }).where(eq(clients.id, gotId));
+    try {
+      const approvedRec = await insertScopedRecommendation(
+        scopedInput("store", { storeId, title: "Second location approve" }),
+      );
+      const deniedRec = await insertScopedRecommendation(
+        scopedInput("store", { storeId, title: "Second location deny" }),
+      );
+      createdIds.push(approvedRec.id, deniedRec.id);
+
+      const refused = await app.request(`/recommendations/${approvedRec.id}/apply`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(refused.status).toBe(409);
+
+      const approved = await app.request(`/recommendations/${approvedRec.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      });
+      expect(approved.status).toBe(200);
+      const authorizationId = String(((await json(approved)).authorization as { id: string }).id);
+      const [queued] = await db
+        .insert(applyJobs)
+        .values({
+          workspaceId,
+          clientId: gotId,
+          authorizationId,
+          idempotencyKey: `scope-store-${approvedRec.id}`,
+          status: "queued",
+          requestJson: { recommendationId: approvedRec.id, proposedMutations: [] },
+        })
+        .returning();
+      const ran = await runApplyJob(queued.id);
+      expect(ran.blocked).toBe("not_ad_account_scoped");
+
+      const denied = await app.request(`/recommendations/${deniedRec.id}/decide`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "deny" }),
+      });
+      expect(denied.status).toBe(200);
+
+      const rows = await db
+        .select({ action: clientAuditLog.action, storeId: clientAuditLog.storeId, entityId: clientAuditLog.entityId })
+        .from(clientAuditLog)
+        .where(inArray(clientAuditLog.entityId, [approvedRec.id, deniedRec.id]));
+      for (const action of ["approved", "rejected", "approve_refused", "apply_blocked"] as const) {
+        const matches = rows.filter((row) => row.action === action);
+        expect(matches.length).toBeGreaterThan(0);
+        expect(matches.every((row) => row.storeId === storeId)).toBe(true);
+        expect(matches.some((row) => row.storeId === primary)).toBe(false);
+      }
+    } finally {
+      await db.update(clients).set({ siteId: before?.siteId ?? null }).where(eq(clients.id, gotId));
+    }
   });
 
   it("keeps the kill switch on", async () => {

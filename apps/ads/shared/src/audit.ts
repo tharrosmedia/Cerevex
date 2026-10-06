@@ -646,6 +646,7 @@ export async function decideRecommendation(input: {
           actorId: actor.actorId,
           entityType: "recommendation",
           entityId: row.id,
+          storeId: row.storeId,
         },
         tx as unknown as Database,
       );

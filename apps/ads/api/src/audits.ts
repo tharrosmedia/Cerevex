@@ -100,7 +100,7 @@ function normalizeDecisionAction(action: "authorize" | "approve" | "deny" | "sno
 }
 
 async function recordApproveRefusal(
-  row: { id: string; workspaceId: string; clientId: string },
+  row: { id: string; workspaceId: string; clientId: string; storeId: string | null },
   actor: { actorType: "user" | "service"; actorId: string | null },
   reason: string,
 ): Promise<void> {
@@ -109,6 +109,7 @@ async function recordApproveRefusal(
     recommendationId: row.id,
     workspaceId: row.workspaceId,
     clientId: row.clientId,
+    storeId: row.storeId,
     module: "ads",
     actorType: actor.actorType,
     actorId: actor.actorId,

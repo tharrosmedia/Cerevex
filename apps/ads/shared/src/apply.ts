@@ -349,6 +349,7 @@ async function writeApplyClientAudit(
       actorId: null,
       entityType: "recommendation",
       entityId: input.recommendation.id,
+      storeId: input.recommendation.storeId,
       applyResult,
       before: input.recommendation.proposedMutationsJson,
       after: {
