@@ -5,16 +5,17 @@ import { redirect } from 'next/navigation';
 import { listStores, getActiveStoreId } from '@/src/lib/db/stores';
 import AutoRefresh from '@/components/auto-refresh';
 import { countOpenFindings } from '@/src/lib/db/findings';
+import {
+  CLIENT_BUSINESS_TYPES,
+  CLIENT_BUSINESS_TYPE_LABELS,
+  isClientBusinessType,
+} from '@/src/lib/db/client-workspace';
 import { getWorkspaceModuleSettings, saveBusinessType } from '@/src/lib/db/workspace-modules';
 import { jobInputDetails, jobInputLabel, jobStatusLabel, jobTypeLabel } from '@/lib/job-labels';
 import {
   ADS_MODULE_IDS,
   BUSINESS_TYPE_HELP,
-  BUSINESS_TYPE_LABELS,
-  BUSINESS_TYPES,
   MODULE_COPY,
-  isBusinessType,
-  type BusinessType,
 } from '@cerevex/contracts';
 import { isProductionRuntime } from '@/lib/runtime-env';
 
@@ -23,10 +24,10 @@ export const dynamic = 'force-dynamic';
 async function chooseBusinessType(formData: FormData) {
   'use server';
   const value = formData.get('businessType');
-  if (!isBusinessType(value)) {
+  if (!isClientBusinessType(value)) {
     redirect('/?error=1');
   }
-  await saveBusinessType(value as BusinessType);
+  await saveBusinessType(value);
   redirect('/');
 }
 
@@ -98,12 +99,12 @@ export default async function CommandCenter({
           <h2>Choose your business type</h2>
           <p className="cx-help">This sets which Ads modules you see. You can change them later in Settings.</p>
           <div className="cx-card-grid home-types">
-            {BUSINESS_TYPES.map((type) => (
+            {CLIENT_BUSINESS_TYPES.map((type) => (
               <form key={type} action={chooseBusinessType} className="cx-card">
                 <input type="hidden" name="businessType" value={type} />
-                <h3 className="cx-card-title">{BUSINESS_TYPE_LABELS[type]}</h3>
+                <h3 className="cx-card-title">{CLIENT_BUSINESS_TYPE_LABELS[type]}</h3>
                 <p className="cx-help">{BUSINESS_TYPE_HELP[type]}</p>
-                <button type="submit" className="btn-cta">Use {BUSINESS_TYPE_LABELS[type]}</button>
+                <button type="submit" className="btn-cta">Use {CLIENT_BUSINESS_TYPE_LABELS[type]}</button>
               </form>
             ))}
           </div>

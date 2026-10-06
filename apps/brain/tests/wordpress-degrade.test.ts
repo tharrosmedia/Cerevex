@@ -140,14 +140,9 @@ assert.equal(
 
 const seeded = newWordpressStoreConfig({
   wordpress: { siteUrl: 'https://hvac-pilot.example', pluginKeyEnc: 'enc' },
-  workspaceSettings: sourceWorkspace,
 });
 assert.equal(seeded.wordpress.applyKillSwitch, true);
-assert.deepEqual(seeded.workspace, sourceWorkspace);
-assert.equal(
-  wordpressConnectBlockedFromSource({ workspaceSettings: seeded.workspace }),
-  null,
-);
+assert.equal(Object.prototype.hasOwnProperty.call(seeded, 'workspace'), false);
 
 const unsigned = validateApprovedApplyPayload({
   approved: false,

@@ -94,7 +94,7 @@ export async function connectWordpressStore(input: WordpressConnectInput): Promi
       shopify_access_token: pluginKey,
       platform: 'wordpress',
       connector_type: 'wordpress',
-      config: newWordpressStoreConfig({ wordpress, workspaceSettings }),
+      config: newWordpressStoreConfig({ wordpress }),
     });
     const jar = await cookies();
     jar.set('activeStoreId', created.id, {

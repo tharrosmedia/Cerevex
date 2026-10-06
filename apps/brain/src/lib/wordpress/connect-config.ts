@@ -3,26 +3,21 @@ import type { WordpressStoreConfig } from './store';
 
 export type WordpressConnectConfigInput = {
   wordpress: WordpressStoreConfig;
-  workspaceSettings?: Record<string, unknown> | null;
 };
 
 /**
- * New WP store config: kill switch defaults ON; inherit workspace flags
- * from the Settings source store so Connect → sync/apply keep working.
+ * New WordPress site config. The kill switch defaults ON for this site.
+ * The selected store's workspace is not copied. A new site does not inherit
+ * another client's business type, modules, or flags.
  */
 export function newWordpressStoreConfig(input: WordpressConnectConfigInput): {
   wordpress: WordpressStoreConfig;
-  workspace?: Record<string, unknown>;
 } {
-  const workspace = input.workspaceSettings && typeof input.workspaceSettings === 'object' && !Array.isArray(input.workspaceSettings)
-    ? { ...input.workspaceSettings }
-    : undefined;
   return {
     wordpress: {
       ...input.wordpress,
       applyKillSwitch: input.wordpress.applyKillSwitch ?? true,
     },
-    ...(workspace ? { workspace } : {}),
   };
 }
 
