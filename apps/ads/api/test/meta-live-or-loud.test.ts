@@ -266,10 +266,17 @@ describe("Meta live-or-loud", () => {
     clearMetaEnv();
     const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
     const kill = workspace?.applyKillSwitch;
+    const settingsSnapshot = (workspace?.settingsJson ?? {}) as Record<string, unknown>;
     const { account, entity } = await seedAccount({ mock: false, externalId: `act_m1_apply_${Date.now()}` });
     const fetchMock = guardFetch();
     try {
-      await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+      await getDb()
+        .update(workspaces)
+        .set({
+          applyKillSwitch: false,
+          settingsJson: settingsJsonWithCapabilityOverrides(settingsSnapshot, { "apply.meta": "on" }),
+        })
+        .where(eq(workspaces.id, workspaceId));
       const [rec] = await getDb()
         .insert(recommendations)
         .values({
@@ -345,7 +352,10 @@ describe("Meta live-or-loud", () => {
       fetchMock.mockRestore();
       await getDb()
         .update(workspaces)
-        .set({ applyKillSwitch: kill ?? true })
+        .set({
+          applyKillSwitch: kill ?? true,
+          ...(settingsSnapshot !== undefined ? { settingsJson: settingsSnapshot } : {}),
+        })
         .where(eq(workspaces.id, workspaceId));
       await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
     }
@@ -366,7 +376,7 @@ describe("Meta live-or-loud", () => {
           target: { entityType: "campaign", externalId: entity.externalId, name: entity.name },
           payload: {},
         },
-        capabilities: { ...defaultCapabilityFlags(), "sync.live": "hidden" },
+        capabilities: { ...defaultCapabilityFlags(), "sync.live": "hidden", "apply.meta": "on" },
       });
       expect(outcome.status).toBe("skipped");
       expect(outcome.writes).toBe(false);

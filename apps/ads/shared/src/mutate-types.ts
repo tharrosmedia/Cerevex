@@ -16,6 +16,8 @@ export type LiveEntityState = {
   status: string;
   dailyBudget?: number | null;
   bidAmount?: number | null;
+  /** Meta ad account id from the live re-check, without the act_ prefix. */
+  accountId?: string | null;
 };
 
 export function percentOf(current: number | null | undefined, payload: Record<string, unknown>): number | null {

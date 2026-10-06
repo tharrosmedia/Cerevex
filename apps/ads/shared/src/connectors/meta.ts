@@ -32,7 +32,17 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
-import { UnconfirmedPlatformWriteError, requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
+import { ApplyCallBudgetError, UnconfirmedPlatformWriteError, requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
+import {
+  META_COULD_NOT_CONFIRM,
+  metaCreateCopy,
+  metaCurrencyRefusal,
+  metaLiveConfirmRefusal,
+  metaTextField,
+  metaWriteFailure,
+  metaWriteInputRefusal,
+  normalizeMetaAccountId,
+} from "../meta-write-safety";
 
 const GRAPH = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 const VERSION_WARNING_HEADER = "X-Ad-Api-Version-Warning";
@@ -283,6 +293,35 @@ async function pullMetaLive(tokens: StoredOAuthTokens, externalId: string) {
   return { mode: "live" as const, externalAccountId: act, entities, metrics };
 }
 
+/** Campaigns and ad sets both expose daily_budget. Budget changes read it before the write. */
+function metaLiveReadFields(mutation: ApplyMutation): string {
+  const fields = ["id", "name", "status", "account_id"];
+  if (mutation.action === "update_bid") fields.push("bid_amount");
+  else if (mutation.action === "update_budget") fields.push("daily_budget");
+  else if (mutation.target.entityType === "campaign") fields.push("daily_budget");
+  else fields.push("bid_amount");
+  return fields.join(",");
+}
+
+async function metaCurrencyWriteRefusal(input: ConnectorApplyInput): Promise<MutationOutcome | null> {
+  const { mutation, tokens } = input;
+  const signal = input.signal ?? requirePlatformSignal(input.deadlineAt);
+  const accountId = normalizeMetaAccountId(input.accountExternalId);
+  if (!accountId) return metaWriteFailure(mutation, META_COULD_NOT_CONFIRM);
+  let currency: string | null = null;
+  try {
+    const json = (await graphGet(`act_${accountId}?fields=currency`, tokens.accessToken, signal)) as {
+      currency?: unknown;
+    };
+    currency = typeof json.currency === "string" ? json.currency : null;
+  } catch (error) {
+    if (error instanceof MetaGraphError || error instanceof ApplyCallBudgetError) throw error;
+    return metaWriteFailure(mutation, META_COULD_NOT_CONFIRM);
+  }
+  const refusal = metaCurrencyRefusal(currency);
+  return refusal ? metaWriteFailure(mutation, refusal) : null;
+}
+
 export class MetaAdPlatformConnector implements AdPlatformConnector {
   readonly kind = "ad_platform" as const;
   readonly id = "meta" as const;
@@ -450,8 +489,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
   }): Promise<LiveEntityState | null> {
     if (input.tokens.mock) return null;
     const { mutation, tokens } = input;
-    const fields =
-      mutation.target.entityType === "campaign" ? "id,name,status,daily_budget" : "id,name,status,bid_amount";
+    const fields = metaLiveReadFields(mutation);
     const json = (await graphGet(
       `${mutation.target.externalId}?fields=${fields}`,
       tokens.accessToken,
@@ -461,6 +499,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       status?: string;
       daily_budget?: string;
       bid_amount?: string;
+      account_id?: string | number;
     };
     return {
       externalId: json.id ?? mutation.target.externalId,
@@ -468,12 +507,21 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       status: (json.status ?? "unknown").toLowerCase(),
       dailyBudget: json.daily_budget ? Number(json.daily_budget) / 100 : null,
       bidAmount: json.bid_amount ? Number(json.bid_amount) / 100 : null,
+      accountId: normalizeMetaAccountId(json.account_id),
     };
   }
 
   async applyLive(input: ConnectorApplyInput): Promise<MutationOutcome> {
     const { tokens, mutation, live } = input;
-    const id = mutation.target.externalId;
+    const inputRefusal = metaWriteInputRefusal(mutation);
+    if (inputRefusal) return inputRefusal;
+    const confirmed = metaLiveConfirmRefusal({
+      mutation,
+      live,
+      accountExternalId: input.accountExternalId,
+    });
+    if (confirmed) return confirmed;
+    const id = mutation.target.externalId.trim();
     if (mutation.action === "pause") {
       if (live?.status === "paused") {
         return {
@@ -488,6 +536,10 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       }
       await graphPost(id, tokens.accessToken, { status: "PAUSED" }, requirePlatformSignal(input.deadlineAt));
       return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
+    }
+    if (mutation.action === "update_budget" || mutation.action === "update_bid") {
+      const currencyRefusal = await metaCurrencyWriteRefusal(input);
+      if (currencyRefusal) return currencyRefusal;
     }
     if (mutation.action === "update_budget") {
       const next = percentOf(live?.dailyBudget ?? null, mutation.payload);
@@ -506,28 +558,36 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
     }
     if (mutation.action === "create_ad") {
-      const name =
-        typeof mutation.payload.proposedName === "string"
-          ? mutation.payload.proposedName
-          : `${mutation.target.name ?? "Ad"} — variant`;
-      const message = typeof mutation.payload.body === "string" ? mutation.payload.body : name;
+      const copy = metaCreateCopy(mutation.payload);
+      if (!copy) {
+        return {
+          action: mutation.action,
+          platform: "meta",
+          target: mutation.target,
+          status: "failed",
+          mode: "live",
+          writes: false,
+          reason: META_COULD_NOT_CONFIRM,
+        };
+      }
+      const { name, message, pageId, link, headline } = copy;
       const imageUrl = typeof mutation.payload.imageUrl === "string" ? mutation.payload.imageUrl : null;
       const accountId = input.accountExternalId.replace(/^act_/, "");
       const creative = (await graphPost(`act_${accountId}/adcreatives`, tokens.accessToken, {
         name: `${name} creative`,
         object_story_spec: JSON.stringify({
-          page_id: "page",
+          page_id: pageId,
           link_data: {
             message,
-            name: typeof mutation.payload.headline === "string" ? mutation.payload.headline : name,
-            link: "https://example.com",
+            name: headline,
+            link,
             ...(imageUrl ? { picture: imageUrl } : {}),
           },
         }),
       }, requirePlatformSignal(input.deadlineAt))) as { id?: string };
       const created = (await graphPost(`act_${accountId}/ads`, tokens.accessToken, {
         name,
-        adset_id: mutation.target.externalId,
+        adset_id: id,
         creative: JSON.stringify({ creative_id: creative.id }),
         status: "PAUSED",
       }, requirePlatformSignal(input.deadlineAt))) as { id?: string };
@@ -553,7 +613,18 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       };
     }
     if (mutation.action === "exclude_placement") {
-      const placement = typeof mutation.payload.placement === "string" ? mutation.payload.placement : "audience_network";
+      const placement = metaTextField(mutation.payload, ["placement"]);
+      if (!placement) {
+        return {
+          action: mutation.action,
+          platform: "meta",
+          target: mutation.target,
+          status: "failed",
+          mode: "live",
+          writes: false,
+          reason: META_COULD_NOT_CONFIRM,
+        };
+      }
       await graphPost(id, tokens.accessToken, {
         targeting: JSON.stringify({ publisher_platforms: ["facebook", "instagram"].filter((p) => p !== placement) }),
       }, requirePlatformSignal(input.deadlineAt));

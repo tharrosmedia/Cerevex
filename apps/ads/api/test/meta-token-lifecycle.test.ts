@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { connectionStatusLabel } from "@tharros/ads-shared";
+import { connectionStatusLabel, defaultCapabilityFlags, settingsJsonWithCapabilityOverrides } from "@tharros/ads-shared";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { requeueFailedApplyJob, runApplyJob } from "@tharros/ads-shared/apply";
@@ -136,7 +136,7 @@ describe("Meta token lifecycle", () => {
     process.env.META_APP_SECRET = APP_SECRET;
   }
 
-  async function seedAccount(input: { expiresAt?: string; externalId: string }) {
+  async function seedAccount(input: { expiresAt?: string; externalId: string; entityExternalId?: string }) {
     const [account] = await getDb()
       .insert(adAccounts)
       .values({
@@ -164,7 +164,7 @@ describe("Meta token lifecycle", () => {
         adAccountId: account.id,
         platform: "meta",
         entityType: "campaign",
-        externalId: `kept-${account.id}`,
+        externalId: input.entityExternalId ?? `kept-${account.id}`,
         name: "Kept campaign",
         status: "active",
         rawJson: { source: "live" },
@@ -401,7 +401,8 @@ describe("Meta token lifecycle", () => {
     configureMetaEnv();
     const logs = spyConsole();
     const near = await seedAccount({
-      externalId: `act_m3_refresh_${Date.now()}`,
+      externalId: "act_5500199",
+      entityExternalId: "5500200",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
     const fresh = "m3-refreshed-token-value";
@@ -413,7 +414,13 @@ describe("Meta token lifecycle", () => {
       if (body.includes("grant_type=fb_exchange_token")) {
         return jsonResponse({ access_token: fresh, expires_in: 5_184_000 });
       }
-      return jsonResponse({ id: near.entity.externalId, name: "Kept campaign", status: "ACTIVE", daily_budget: "1000" });
+      return jsonResponse({
+        id: near.entity.externalId,
+        name: "Kept campaign",
+        status: "ACTIVE",
+        daily_budget: "1000",
+        account_id: "5500199",
+      });
     });
     try {
       const outcome = await executeMutation({
@@ -426,6 +433,7 @@ describe("Meta token lifecycle", () => {
           target: { entityType: "campaign", externalId: near.entity.externalId, name: near.entity.name },
           payload: {},
         },
+        capabilities: { ...defaultCapabilityFlags(), "apply.meta": "on" },
       });
       expect(outcome.status).toBe("applied");
       expect(outcome.writes).toBe(true);
@@ -452,8 +460,10 @@ describe("Meta token lifecycle", () => {
     const logs = spyConsole();
     const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
     const kill = workspace?.applyKillSwitch;
+    const settingsSnapshot = (workspace?.settingsJson ?? {}) as Record<string, unknown>;
     const { account, entity } = await seedAccount({
       externalId: `act_m3_apply190_${Date.now()}`,
+      entityExternalId: "66001",
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     });
     const calls: string[] = [];
@@ -463,7 +473,13 @@ describe("Meta token lifecycle", () => {
       return graphError(190, 458, STORED);
     });
     try {
-      await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
+      await getDb()
+        .update(workspaces)
+        .set({
+          applyKillSwitch: false,
+          settingsJson: settingsJsonWithCapabilityOverrides(settingsSnapshot, { "apply.meta": "on" }),
+        })
+        .where(eq(workspaces.id, workspaceId));
       const [rec] = await getDb()
         .insert(recommendations)
         .values({
@@ -542,7 +558,10 @@ describe("Meta token lifecycle", () => {
       assertNoSecrets(logs.text());
     } finally {
       logs.restore();
-      await getDb().update(workspaces).set({ applyKillSwitch: kill ?? true }).where(eq(workspaces.id, workspaceId));
+      await getDb()
+        .update(workspaces)
+        .set({ applyKillSwitch: kill ?? true, ...(settingsSnapshot !== undefined ? { settingsJson: settingsSnapshot } : {}) })
+        .where(eq(workspaces.id, workspaceId));
       await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
     }
   });
@@ -566,6 +585,7 @@ describe("Meta token lifecycle", () => {
           target: { entityType: "campaign", externalId: entity.externalId, name: entity.name },
           payload: {},
         },
+        capabilities: { ...defaultCapabilityFlags(), "apply.meta": "on" },
       });
       expect(outcome.status).toBe("failed");
       expect(outcome.writes).toBe(false);

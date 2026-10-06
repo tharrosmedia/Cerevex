@@ -56,8 +56,11 @@ export async function storeTokens(input: {
   });
 }
 
-export async function loadTokens(adAccountId: string): Promise<StoredOAuthTokens | null> {
-  const row = await getDb().query.oauthCredentials.findFirst({
+export async function loadTokens(
+  adAccountId: string,
+  db: Pick<ReturnType<typeof getDb>, "query"> = getDb(),
+): Promise<StoredOAuthTokens | null> {
+  const row = await db.query.oauthCredentials.findFirst({
     where: eq(oauthCredentials.adAccountId, adAccountId),
   });
   if (!row?.encryptedPayload) return null;

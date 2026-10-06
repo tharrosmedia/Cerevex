@@ -201,10 +201,10 @@ describe("Meta Graph version", () => {
     vi.stubGlobal("fetch", async (url: string) => {
       calls.push(String(url));
       const fields = new URL(String(url)).searchParams.get("fields");
-      if (fields === "id,name,status,daily_budget") {
-        return jsonResponse({ id: "238", name: "HVAC", status: "ACTIVE", daily_budget: "5000" });
+      if (fields === "id,name,status,account_id,daily_budget") {
+        return jsonResponse({ id: "238", name: "HVAC", status: "ACTIVE", daily_budget: "5000", account_id: "55" });
       }
-      return jsonResponse({ id: "220", name: "Ad set", status: "ACTIVE", bid_amount: "250" });
+      return jsonResponse({ id: "220", name: "Ad set", status: "ACTIVE", bid_amount: "250", account_id: "55" });
     });
 
     const campaign = await metaAdPlatformConnector.readLiveEntityState({
@@ -221,9 +221,9 @@ describe("Meta Graph version", () => {
     expect(calls).toHaveLength(2);
     for (const url of calls) usesGraphVersion(url);
     expect(new URL(calls[0]).pathname).toBe(`/${META_GRAPH_VERSION}/238`);
-    expect(new URL(calls[0]).searchParams.get("fields")).toBe("id,name,status,daily_budget");
+    expect(new URL(calls[0]).searchParams.get("fields")).toBe("id,name,status,account_id,daily_budget");
     expect(new URL(calls[1]).pathname).toBe(`/${META_GRAPH_VERSION}/220`);
-    expect(new URL(calls[1]).searchParams.get("fields")).toBe("id,name,status,bid_amount");
+    expect(new URL(calls[1]).searchParams.get("fields")).toBe("id,name,status,account_id,bid_amount");
   });
 
   it("writes pause, budget, bid, create, and placement on the shared Graph version", async () => {
@@ -232,13 +232,23 @@ describe("Meta Graph version", () => {
       const headers = (init.headers ?? {}) as Record<string, string>;
       calls.push({ url: String(url), body: String(init.body ?? ""), authorization: headers.authorization ?? "" });
       const path = new URL(String(url)).pathname;
+      if (new URL(String(url)).searchParams.get("fields") === "currency") {
+        return jsonResponse({ currency: "USD", account_id: "55" });
+      }
       if (path.endsWith("/adcreatives")) return jsonResponse({ id: "cr1" });
       if (path.endsWith("/ads")) return jsonResponse({ id: "ad1" });
       return jsonResponse({ success: true });
     });
 
     const tokens = { accessToken: TOKEN, mock: false };
-    const live = { externalId: "238", entityType: "campaign", status: "active", dailyBudget: 50, bidAmount: 2 };
+    const live = {
+      externalId: "238",
+      entityType: "campaign",
+      status: "active",
+      dailyBudget: 50,
+      bidAmount: 2,
+      accountId: "55",
+    };
 
     const paused = await metaAdPlatformConnector.applyLive({
       tokens,
@@ -260,8 +270,19 @@ describe("Meta Graph version", () => {
     });
     const created = await metaAdPlatformConnector.applyLive({
       tokens,
-      mutation: mutation("create_ad", { proposedName: "Variant", body: "Hello", headline: "Heat" }, "adset", "adset-1"),
-      live: null,
+      mutation: mutation(
+        "create_ad",
+        {
+          proposedName: "Variant",
+          body: "Hello",
+          headline: "Heat",
+          pageId: "1001",
+          link: "https://pilot.example/heat",
+        },
+        "adset",
+        "221",
+      ),
+      live: { externalId: "221", entityType: "adset", status: "active", accountId: "55" },
       accountExternalId: "act_55",
     });
     const placement = await metaAdPlatformConnector.applyLive({
@@ -279,16 +300,19 @@ describe("Meta Graph version", () => {
 
     expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
       `/${META_GRAPH_VERSION}/238`,
+      `/${META_GRAPH_VERSION}/act_55`,
       `/${META_GRAPH_VERSION}/238`,
+      `/${META_GRAPH_VERSION}/act_55`,
       `/${META_GRAPH_VERSION}/238`,
       `/${META_GRAPH_VERSION}/act_55/adcreatives`,
       `/${META_GRAPH_VERSION}/act_55/ads`,
       `/${META_GRAPH_VERSION}/220`,
     ]);
     expect(new URLSearchParams(calls[0].body).get("status")).toBe("PAUSED");
-    expect(new URLSearchParams(calls[1].body).get("daily_budget")).toBe("4000");
-    expect(new URLSearchParams(calls[2].body).get("bid_amount")).toBe("150");
-    expect(new URLSearchParams(calls[5].body).get("targeting")).toBe(
+    expect(new URL(calls[1].url).searchParams.get("fields")).toBe("currency");
+    expect(new URLSearchParams(calls[2].body).get("daily_budget")).toBe("4000");
+    expect(new URLSearchParams(calls[4].body).get("bid_amount")).toBe("150");
+    expect(new URLSearchParams(calls[7].body).get("targeting")).toBe(
       JSON.stringify({ publisher_platforms: ["facebook", "instagram"] }),
     );
     for (const call of calls) {

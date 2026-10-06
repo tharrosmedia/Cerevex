@@ -60,6 +60,7 @@ describe("capability registry", () => {
     expect(flags["connect.google"]).toBe("on");
     expect(flags.audits).toBe("on");
     expect(flags["apply.create_entity"]).toBe("hidden");
+    expect(flags["apply.meta"]).toBe("hidden");
     expect(flags["sync.live"]).toBe("on");
     expect(flags["shell.legacy_ads_web"]).toBe("hidden");
     expect(flags["m51.budget_shift"]).toBe("hidden");

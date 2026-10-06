@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
+import { defaultCapabilityFlags } from "@tharros/ads-shared";
+import { applyBlockMessage, evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 
 const workspaceId = "11111111-1111-1111-1111-111111111111";
 
@@ -92,6 +93,98 @@ describe("authorize-to-apply gate", () => {
       recommendationScope: "ad_account",
     });
     expect(gate.blocked).toBe("apply_kill_switch");
+  });
+
+  it("blocks a Meta live write when apply.meta is hidden or recommend-only", () => {
+    const authorization = {
+      workspaceId,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const hidden = evaluateApplyGate({
+      expectedWorkspaceId: workspaceId,
+      workspace: { applyKillSwitch: false },
+      authorization,
+      account: { frozen: false },
+      platform: "meta",
+      capabilities: defaultCapabilityFlags(),
+      mock: false,
+    });
+    expect(hidden).toEqual({ allowed: false, blocked: "apply_meta_hidden", writes: false });
+    expect(applyBlockMessage(hidden.blocked)).toBe(
+      "Meta live writes are off. The decision is saved. Nothing was written.",
+    );
+
+    const recommend = evaluateApplyGate({
+      expectedWorkspaceId: workspaceId,
+      workspace: { applyKillSwitch: false },
+      authorization,
+      account: { frozen: false },
+      platform: "meta",
+      capabilities: { ...defaultCapabilityFlags(), "apply.meta": "recommend_only" },
+      mock: false,
+    });
+    expect(recommend).toEqual({ allowed: false, blocked: "apply_meta_recommend_only", writes: false });
+    expect(applyBlockMessage(recommend.blocked)).toBe(
+      "Meta live writes are recommend-only. The decision is saved. Nothing was written.",
+    );
+  });
+
+  it("allows a Meta live write only when apply.meta is on, and still blocks the kill switch", () => {
+    const authorization = {
+      workspaceId,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const on = evaluateApplyGate({
+      expectedWorkspaceId: workspaceId,
+      workspace: { applyKillSwitch: false },
+      authorization,
+      account: { frozen: false },
+      platform: "meta",
+      capabilities: { ...defaultCapabilityFlags(), "apply.meta": "on" },
+      mock: false,
+    });
+    expect(on).toEqual({ allowed: true, blocked: null, writes: true });
+
+    const killed = evaluateApplyGate({
+      expectedWorkspaceId: workspaceId,
+      workspace: { applyKillSwitch: true },
+      authorization,
+      account: { frozen: false },
+      platform: "meta",
+      capabilities: { ...defaultCapabilityFlags(), "apply.meta": "on" },
+      mock: false,
+    });
+    expect(killed).toEqual({ allowed: false, blocked: "apply_kill_switch", writes: false });
+  });
+
+  it("does not apply the Meta flag to mock tokens or Google", () => {
+    const authorization = {
+      workspaceId,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    expect(
+      evaluateApplyGate({
+        expectedWorkspaceId: workspaceId,
+        workspace: { applyKillSwitch: false },
+        authorization,
+        platform: "meta",
+        capabilities: defaultCapabilityFlags(),
+        mock: true,
+      }),
+    ).toEqual({ allowed: true, blocked: null, writes: true });
+    expect(
+      evaluateApplyGate({
+        expectedWorkspaceId: workspaceId,
+        workspace: { applyKillSwitch: false },
+        authorization,
+        platform: "google",
+        capabilities: defaultCapabilityFlags(),
+        mock: false,
+      }),
+    ).toEqual({ allowed: true, blocked: null, writes: true });
   });
 
   it("allows apply when every gate passes", () => {

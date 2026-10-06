@@ -1700,8 +1700,18 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     const metaError = await metaAdPlatformConnector
       .applyLive({
         tokens: { accessToken: "tok", mock: false },
-        mutation: { ...mutation, platform: "meta" },
-        live: null,
+        mutation: {
+          ...mutation,
+          platform: "meta",
+          target: { entityType: "adset", externalId: "9001", name: "test" },
+          payload: {
+            proposedName: "cq-body-drop",
+            body: "Hello",
+            pageId: "1001",
+            link: "https://pilot.example/offer",
+          },
+        },
+        live: { externalId: "9001", entityType: "adset", status: "active", accountId: "1" },
         accountExternalId: "act_1",
       })
       .catch((error: unknown) => error);

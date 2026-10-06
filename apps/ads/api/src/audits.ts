@@ -30,7 +30,12 @@ import {
   shouldRecordApplyAudit,
   toApplyJobPublic,
 } from "@tharros/ads-shared/apply";
-import { adsPlatformMutationRefusal, evaluateApplyGate, NotAdAccountScopedError } from "@tharros/ads-shared/apply-gate";
+import {
+  adsPlatformMutationRefusal,
+  evaluateApplyGate,
+  metaLiveWriteBlock,
+  NotAdAccountScopedError,
+} from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
   RecommendationGateError,
@@ -52,6 +57,7 @@ import {
   toRecommendationPublic,
   writeAuditEvent,
 } from "@tharros/ads-shared/audit";
+import { loadTokens } from "@tharros/ads-shared/credentials";
 import { getDb } from "@tharros/ads-shared/db";
 import { LifecycleRepeatError, readApproval, recordRecLifecycle } from "@tharros/ads-shared/rec-lifecycle";
 import { sendApplyRequested, sendAuditRequested } from "@tharros/ads-shared/inngest";
@@ -121,6 +127,29 @@ async function recordApproveRefusal(
 }
 
 const SERVICE_FORBIDDEN = "Service credentials cannot approve or apply.";
+
+/** Hidden or recommend-only apply.meta records the approval and queues no live write. */
+async function metaDecisionOnlyBlock(input: {
+  workspaceId: string;
+  adAccountId: string | null;
+  scope: string | null | undefined;
+}): Promise<{ reason: "apply_meta_hidden" | "apply_meta_recommend_only"; note: string } | null> {
+  const db = getDb();
+  const workspace = await db.query.workspaces.findFirst({
+    where: eq(workspaces.id, input.workspaceId),
+  });
+  const account = input.adAccountId
+    ? await db.query.adAccounts.findFirst({ where: eq(adAccounts.id, input.adAccountId) })
+    : null;
+  const tokens = account ? await loadTokens(account.id) : null;
+  const blocked = metaLiveWriteBlock({
+    platform: account?.platform,
+    mock: Boolean(tokens?.mock),
+    capabilities: resolveWorkspaceCapabilities(workspace?.settingsJson),
+  });
+  if (!blocked) return null;
+  return { reason: blocked, note: applyBlockMessage(blocked) };
+}
 const RECOMMENDATION_NOT_FOUND = "Recommendation not found";
 
 async function recommendationForMutation(auth: AuthContext, id: string) {
@@ -333,12 +362,16 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
           where: eq(adAccounts.id, row.adAccountId),
         })
       : null;
+    const previewTokens = account ? await loadTokens(account.id) : null;
     const gate = evaluateApplyGate({
       expectedWorkspaceId: client.workspaceId,
       workspace,
       authorization,
       account,
       recommendationScope: row.scope,
+      platform: account?.platform,
+      capabilities: resolveWorkspaceCapabilities(workspace?.settingsJson),
+      mock: Boolean(previewTokens?.mock),
     });
     const auth = c.get("auth");
     return c.json({
@@ -518,6 +551,31 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       });
     }
 
+    const metaDecision = await metaDecisionOnlyBlock({
+      workspaceId: client.workspaceId,
+      adAccountId: row.adAccountId,
+      scope: row.scope,
+    });
+    if (metaDecision) {
+      childLogger(c.get("requestId")).info({
+        msg: "recommendations.decided",
+        recommendationId: row.id,
+        action,
+        applied: false,
+        writes: false,
+        clientId: client.id,
+        reason: metaDecision.reason,
+      });
+      return c.json({
+        ...result,
+        applyJob: null,
+        applied: false,
+        writes: false,
+        reason: metaDecision.reason,
+        note: metaDecision.note,
+      });
+    }
+
     let applyJob;
     try {
       applyJob = await createApplyJobForAuthorization({
@@ -659,12 +717,16 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         })
       : null;
     const authorization = await latestAuthorization(row.id);
+    const applyTokens = account ? await loadTokens(account.id) : null;
     const gate = evaluateApplyGate({
       expectedWorkspaceId: client.workspaceId,
       workspace,
       authorization,
       account,
       recommendationScope: row.scope,
+      platform: account?.platform,
+      capabilities: resolveWorkspaceCapabilities(workspace?.settingsJson),
+      mock: Boolean(applyTokens?.mock),
     });
 
     if (!gate.allowed) {
@@ -1028,6 +1090,19 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
           payload: { capability: id, from: saved.previous[id], to: "on", allowed: true },
         });
       }
+    }
+
+    const metaFrom = resolveWorkspaceCapabilities(saved.workspace.settingsJson)["apply.meta"];
+    const metaTo = resolveWorkspaceCapabilities(saved.updated.settingsJson)["apply.meta"];
+    if (metaFrom !== metaTo && (metaTo === "on" || metaFrom === "on")) {
+      await writeAuditEvent({
+        workspaceId,
+        ...auditActor(auth),
+        action: metaTo === "on" ? "apply.meta_enabled" : "apply.meta_disabled",
+        entityType: "workspace",
+        entityId: workspaceId,
+        payload: { capability: "apply.meta", from: metaFrom, to: metaTo },
+      });
     }
 
     childLogger(c.get("requestId")).info({

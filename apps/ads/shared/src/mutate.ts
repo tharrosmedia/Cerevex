@@ -30,7 +30,9 @@ import {
 import { isM52WeeklyNarrativeMutation } from "./owner-weekly-narrative";
 import { isM52SeasonalityMutation } from "./seasonality-calendar";
 import { platformSyncLiveEnabled } from "./flags";
+import { metaLiveWriteBlock, applyBlockMessage } from "./apply-gate";
 import { isMockToken, realTokenLiveBlock } from "./live-or-loud";
+import { metaLiveConfirmRefusal, metaWriteInputRefusal } from "./meta-write-safety";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
 import type { LiveEntityState, MutationOutcome } from "./mutate-types";
@@ -241,6 +243,10 @@ export async function applyViaConnector(input: {
   deadlineAt?: number;
 }): Promise<MutationOutcome> {
   const connector = getAdPlatformConnector(input.platform);
+  if (input.platform === "meta") {
+    const inputRefusal = metaWriteInputRefusal(input.mutation);
+    if (inputRefusal) return inputRefusal;
+  }
   const live = await connector
     .readLiveEntityState({ tokens: input.tokens, mutation: input.mutation, deadlineAt: input.deadlineAt })
     .catch((error: unknown) => {
@@ -250,6 +256,14 @@ export async function applyViaConnector(input: {
       return null;
     });
   if (input.deadlineAt != null && platformCallBudgetMs(input.deadlineAt) <= 0) throw new ApplyCallBudgetError();
+  if (input.platform === "meta") {
+    const confirmed = metaLiveConfirmRefusal({
+      mutation: input.mutation,
+      live,
+      accountExternalId: input.accountExternalId,
+    });
+    if (confirmed) return confirmed;
+  }
   return connector.applyLive({
     tokens: input.tokens,
     mutation: input.mutation,
@@ -429,6 +443,22 @@ export async function executeMutation(input: {
   const connector = getAdPlatformConnector(input.platform);
   if (isMockToken(tokens)) {
     return applyMockMutation(input.adAccountId, input.mutation);
+  }
+  const metaBlock = metaLiveWriteBlock({
+    platform: input.platform,
+    mock: false,
+    capabilities: flags,
+  });
+  if (metaBlock) {
+    return {
+      action: input.mutation.action,
+      platform: input.platform,
+      target: input.mutation.target,
+      status: "failed",
+      mode: "live",
+      writes: false,
+      reason: applyBlockMessage(metaBlock),
+    };
   }
   const block = realTokenLiveBlock({
     platform: input.platform,
