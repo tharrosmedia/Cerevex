@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { AdsPauseToggle } from '@/components/ads/pause-toggle';
 import { RecommendationActions } from '@/components/ads/recommendation-actions';
 import { RecommendationCard } from '@/components/ads/recommendation-card';
 import { canApproveWithApply, defaultCapabilityFlags, isApplyEnabled } from '@cerevex/contracts';
@@ -11,13 +12,16 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdsSuggestionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ pause?: string; message?: string }>;
 }) {
   const settings = await getWorkspaceModuleSettings();
   if (!settings.onboardingComplete) redirect('/onboarding');
 
   const { id } = await params;
+  const query: { pause?: string; message?: string } = await (searchParams ?? Promise.resolve({}));
   const result = await adsApi<{
     recommendation: AdsSuggestion;
     applyJob?: { status: string; error?: string | null; response?: Record<string, unknown> | null } | null;
@@ -46,7 +50,7 @@ export default async function AdsSuggestionDetailPage({
     workspace: { applyKillSwitch: boolean; capabilities?: import('@cerevex/contracts').CapabilityFlags } | null;
     canApprove?: boolean;
   }>('/workspace');
-  const killSwitchOn = Boolean(workspace.ok && workspace.data.workspace?.applyKillSwitch);
+  const killSwitchOn = !workspace.ok || workspace.data.workspace?.applyKillSwitch !== false;
   const flags = workspace.ok
     ? workspace.data.workspace?.capabilities ?? defaultCapabilityFlags()
     : defaultCapabilityFlags();
@@ -69,9 +73,16 @@ export default async function AdsSuggestionDetailPage({
       {suggestion.type === 'create_alternative' ? (
         <p className="cx-banner">Grok already generated this idea. Approve creates the ad. Generate did not write live.</p>
       ) : null}
-      {killSwitchOn ? (
-        <p className="cx-banner cx-banner-warn">Ads are paused. Approve cannot apply until the pause is off.</p>
+      {query.pause === 'error' ? (
+        <p className="cx-banner cx-banner-warn" role="status">{query.message ? decodeURIComponent(query.message) : 'Could not update ads pause.'}</p>
       ) : null}
+      {query.pause === 'saved' && query.message ? (
+        <p className="cx-banner" role="status">{decodeURIComponent(query.message)}</p>
+      ) : null}
+      <AdsPauseToggle
+        killSwitchOn={workspace.ok ? workspace.data.workspace?.applyKillSwitch !== false : null}
+        returnTo={`/ads/suggestions/${id}`}
+      />
       {!applyOn ? (
         <p className="cx-banner">Apply is off for this workspace. Deny and Snooze still work. Nothing will write platforms.</p>
       ) : null}

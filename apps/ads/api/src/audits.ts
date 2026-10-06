@@ -842,10 +842,12 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
 
     const safetyOns = applySafetyOnIds(parsed.data.capabilities);
-    const needsOwner =
-      parsed.data.applyKillSwitch === false ||
-      safetyOns.length > 0 ||
-      (isServicePrincipal(auth) && parsed.data.applyKillSwitch !== undefined);
+    const killRequested = parsed.data.applyKillSwitch;
+    const killChanging = killRequested !== undefined && killRequested !== workspace.applyKillSwitch;
+    // Pause (kill switch on) stays open to anyone who can already change this workspace, including the service key.
+    // Turning pause off is a real change and stays with a human owner. Repeating the current value writes nothing.
+    const turningPauseOff = killChanging && killRequested === false;
+    const needsOwner = turningPauseOff || safetyOns.length > 0;
     if (needsOwner && (isServicePrincipal(auth) || workspaceRole(auth, workspaceId) !== "owner")) {
       const flags = resolveWorkspaceCapabilities(workspace.settingsJson);
       for (const id of safetyOns) {
@@ -885,9 +887,20 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       next = applyCapabilityOverrideSettings(next, overrides);
     }
 
+    if (!killChanging && next === workspace.settingsJson) {
+      const summary = toWorkspaceSummary(workspace);
+      return c.json({
+        workspace: summary,
+        ownerUserId: auth.user?.id ?? null,
+        canMutate: true,
+        canApprove: canApproveApply(auth.user?.email) && !isServicePrincipal(auth),
+        ...capabilityPublicMeta(summary.capabilities),
+      });
+    }
+
     const patch: { settingsJson: unknown; applyKillSwitch?: boolean } = { settingsJson: next };
-    if (parsed.data.applyKillSwitch !== undefined) {
-      patch.applyKillSwitch = parsed.data.applyKillSwitch;
+    if (killChanging) {
+      patch.applyKillSwitch = killRequested;
     }
 
     const [updated] = await getDb()
@@ -896,14 +909,20 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       .where(eq(workspaces.id, workspaceId))
       .returning();
 
-    if (parsed.data.applyKillSwitch !== undefined) {
+    if (killChanging) {
+      const actor = auditActor(auth);
       await writeAuditEvent({
         workspaceId,
-        ...auditActor(auth),
+        ...actor,
         action: "kill_flip",
         entityType: "workspace",
         entityId: workspaceId,
-        payload: { applyKillSwitch: parsed.data.applyKillSwitch },
+        payload: {
+          applyKillSwitch: killRequested,
+          old: workspace.applyKillSwitch,
+          new: killRequested,
+          actor: actor.actorType === "service" ? "service" : actor.actorId,
+        },
       });
     }
     if (safetyOns.length > 0) {

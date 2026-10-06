@@ -18,12 +18,6 @@ export function adsModuleOrigin(flags?: CapabilityFlags | null): string {
   return (process.env.NEXT_PUBLIC_ADS_ORIGIN ?? '').replace(/\/$/, '');
 }
 
-/** ads-web Settings, where the owner turns apply safety on in their own session. */
-export function adsSafetySettingsHref(): string {
-  const origin = (process.env.NEXT_PUBLIC_ADS_ORIGIN ?? '').replace(/\/$/, '');
-  return origin ? `${origin}/app/settings` : '';
-}
-
 export function adsModuleHref(path: string, flags?: CapabilityFlags | null): string {
   const origin = adsModuleOrigin(flags);
   if (!origin) return '/ads';

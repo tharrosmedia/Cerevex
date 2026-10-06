@@ -48,7 +48,11 @@ assert.ok(findingsSrc.includes('SubmitButton'));
 assert.ok(settingsSrc.includes('SubmitButton'));
 assert.ok(capsSrc.includes('SubmitButton'));
 assert.ok(capsSrc.includes('Saving…'));
-assert.ok(capsSrc.includes('Turn on in Ads'));
+assert.ok(capsSrc.includes('Manage ads pause'));
+assert.ok(capsSrc.includes('/settings#ads-pause'));
+assert.ok(!capsSrc.includes('Turn on in Ads'));
+assert.ok(!capsSrc.includes('adsSafetySettingsHref'));
+assert.ok(!capsSrc.includes('NEXT_PUBLIC_ADS_ORIGIN'));
 assert.ok(!capsSrc.includes('ADS_OWNER_EMAIL'));
 
 const connectSrc = readFileSync(join(here, '../components/ads/connect-buttons.tsx'), 'utf8');

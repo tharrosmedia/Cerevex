@@ -5,7 +5,6 @@ import {
   isCapabilityId,
   isCapabilityState,
 } from '@cerevex/contracts';
-import { adsSafetySettingsHref } from '@/lib/module-origins';
 import { getWorkspaceProductSettings, saveCapabilityOverrides } from '@/src/lib/db/workspace-modules';
 import { SubmitButton } from '@/components/submit-button';
 
@@ -63,7 +62,7 @@ export async function WorkspaceCapabilitiesSettings() {
             <span className="flex items-center gap-2">
               <input type="hidden" name="id" value={entry.id} />
               {safety ? (
-                <a className="btn-secondary text-sm" href={adsSafetySettingsHref() || '/app/settings'}>Turn on in Ads</a>
+                <a className="btn-secondary text-sm" href="/settings#ads-pause">Manage ads pause</a>
               ) : null}
               {safety && current === 'on' ? (
                 <input type="hidden" name="state" value="hidden" />
