@@ -5,6 +5,7 @@ import {
   normalizeRecommendation,
   pendingApprovalRecord,
   sealSkillJobApproval,
+  recommendationScope,
   validateRecommendation,
 } from "../src/recommendation";
 
@@ -25,6 +26,7 @@ const recordV1 = {
 
 const normalized = normalizeRecommendation(recordV1);
 assert.equal(normalized.format, "1.0");
+assert.equal(normalized.scope, "client");
 assert.equal(normalized.store, "all");
 assert.equal(normalized.source, "agent:unknown");
 assert.equal(normalized.versions.skill, "unknown");
@@ -54,6 +56,23 @@ const validated = validateRecommendation(recordV11);
 assert.equal(validated.format, "1.1");
 assert.equal(validated.approval.executed_by, "cerevex_apply");
 assert.equal(normalizeRecommendation(recordV11).source, "native:paid-media");
+assert.equal(normalizeRecommendation(recordV11).scope, "store");
+assert.equal(recommendationScope({ store: "hvac-usa/web" }), "store");
+assert.equal(recommendationScope({ scope: "client", store: "all" }), "client");
+assert.equal(validateRecommendation({ ...recordV11, scope: "store" }).scope, "store");
+assert.throws(
+  () => validateRecommendation({ ...recordV11, scope: "client" }),
+  RecommendationValidationError,
+);
+assert.throws(
+  () => validateRecommendation({ ...recordV11, scope: "ad_account" }),
+  RecommendationValidationError,
+);
+assert.throws(
+  () => validateRecommendation({ ...recordV1, scope: "store" }),
+  RecommendationValidationError,
+);
+assert.equal(validateRecommendation({ ...recordV1, scope: "client" }).scope, "client");
 
 assert.throws(
   () => validateRecommendation({ ...recordV11, executed_by: "cerevex_apply" }),

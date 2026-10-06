@@ -179,7 +179,7 @@ export function registerClientAuditRoutes(app: Hono<AppEnv>, requireAuth: Middle
         recommendationId: rec.id,
         workspaceId: rec.workspaceId,
         clientId: rec.clientId,
-        storeId: parsed.data.storeId,
+        storeId: rec.storeId ?? parsed.data.storeId,
         module: parsed.data.module ?? "ads",
         actorType: "user",
         actorId: auth.user.id,

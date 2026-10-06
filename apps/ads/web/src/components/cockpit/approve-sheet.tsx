@@ -13,6 +13,7 @@ export function ApproveSheet({
   risk,
   killSwitchOn,
   frozen,
+  decisionOnly,
   submitting,
   onCancel,
   onConfirm,
@@ -25,12 +26,13 @@ export function ApproveSheet({
   risk: string;
   killSwitchOn: boolean;
   frozen: boolean;
+  decisionOnly?: boolean;
   submitting: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   if (!open) return null;
-  const blocked = killSwitchOn || frozen;
+  const blocked = !decisionOnly && (killSwitchOn || frozen);
   const lines = mutations.map((row) =>
     summarizeMutation(
       row && typeof row === "object"
@@ -56,7 +58,9 @@ export function ApproveSheet({
           <h2 id="approve-title" className="font-heading text-xl font-medium">
             Approve this change?
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">This will change live ads.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {decisionOnly ? "This records the decision. Nothing is sent to Meta or Google." : "This will change live ads."}
+          </p>
         </div>
         <div className="flex flex-col gap-3 px-4 py-4 text-sm">
           <p>

@@ -752,8 +752,9 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         <CardHeader>
           <CardTitle>Recommendations</CardTitle>
           <CardDescription>
-            Approve, Deny, or Snooze. Only Approve writes platforms
-            {killSwitch ? " — and only after ads are unpaused." : "."}
+            Approve, Deny, or Snooze. Only an ad-account Approve writes platforms
+            {killSwitch ? " — and only after ads are unpaused." : "."} Store and client recommendations record the
+            decision only.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm">
@@ -781,19 +782,22 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             </p>
           ) : (
             <ul className="space-y-3">
-              {visibleRecs.map((rec) => (
+              {visibleRecs.map((rec) => {
+                const adsScoped = (rec.scope ?? "ad_account") === "ad_account";
+                return (
                 <RecommendationCard
                   key={rec.id}
                   recommendation={rec}
                   canManage={canManage && canMutate}
                   canApprove={canApprove}
-                  killSwitchOn={killSwitch}
-                  frozen={accounts.find((row) => row.id === rec.adAccountId)?.frozen}
+                  killSwitchOn={adsScoped && killSwitch}
+                  frozen={adsScoped ? accounts.find((row) => row.id === rec.adAccountId)?.frozen : false}
                   busy={busy}
                   onDecide={decide}
                   onApprove={(id) => setApproveId(id)}
                 />
-              ))}
+                );
+              })}
             </ul>
           )}
         </CardContent>
@@ -818,9 +822,13 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         }
         mutations={approveId ? (recommendations.find((rec) => rec.id === approveId)?.proposedMutations ?? []) : []}
         risk={approveId ? recommendations.find((rec) => rec.id === approveId)?.risk ?? "medium" : "medium"}
-        killSwitchOn={killSwitch}
+        killSwitchOn={
+          (recommendations.find((rec) => rec.id === approveId)?.scope ?? "ad_account") === "ad_account" && killSwitch
+        }
+        decisionOnly={(recommendations.find((rec) => rec.id === approveId)?.scope ?? "ad_account") !== "ad_account"}
         frozen={Boolean(
           approveId &&
+            (recommendations.find((rec) => rec.id === approveId)?.scope ?? "ad_account") === "ad_account" &&
             accounts.find((row) => row.id === recommendations.find((rec) => rec.id === approveId)?.adAccountId)?.frozen,
         )}
         submitting={busy === approveId}

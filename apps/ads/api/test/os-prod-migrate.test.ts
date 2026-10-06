@@ -152,7 +152,7 @@ function pendingTableName(): string {
   const sql = artifactSql(pending.tag);
   const table = sql.match(/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+"os"\."([A-Za-z0-9_]+)"/i);
   if (table?.[1]) return table[1];
-  const index = sql.match(/CREATE UNIQUE INDEX(?:\s+IF NOT EXISTS)?\s+"([A-Za-z0-9_]+)"\s+ON\s+"os"\./i);
+  const index = sql.match(/CREATE (?:UNIQUE )?INDEX(?:\s+IF NOT EXISTS)?\s+"([A-Za-z0-9_]+)"\s+ON\s+"os"\./i);
   if (index?.[1]) return index[1];
   throw new Error(`pending tag ${pending.tag} creates no os table or unique index`);
 }
@@ -196,7 +196,7 @@ async function cloneBase(suffix: string): Promise<string> {
 const serviceTag = "0007_service_actor_constraints";
 const serviceIndex = journal.migrations.findIndex((migration) => migration.tag === serviceTag);
 const beforeServiceTags = journal.migrations.slice(0, serviceIndex).map((migration) => migration.tag);
-const serviceThenAudit = [serviceTag, "0008_client_audit_log", "0009_monthly_usage"];
+const serviceThenAudit = [serviceTag, "0008_client_audit_log", "0009_monthly_usage", "0010_recommendation_scope"];
 const beforeServiceName = `cerevex_prod_mig_${process.pid}_pre7`;
 let beforeServiceReady: Promise<string> | undefined;
 
@@ -505,7 +505,7 @@ describe("os production migrate", () => {
   });
 
   it("applies 0008 and 0009 after 0000–0007 and keeps scholarship limits", async () => {
-    expect(pending.tag).toBe("0009_monthly_usage");
+    expect(pending.tag).toBe("0010_recommendation_scope");
     expect(appliedTags).toContain("0006_plan_entitlements");
     expect(appliedTags).toContain(serviceTag);
     expect(appliedTags).toContain("0008_client_audit_log");
@@ -525,12 +525,16 @@ describe("os production migrate", () => {
       await clientSetup.end();
     }
     const dry = await request(databaseUrl, "dry-run");
-    expect(dry.pending).toEqual(["0008_client_audit_log", "0009_monthly_usage"]);
+    expect(dry.pending).toEqual(["0008_client_audit_log", "0009_monthly_usage", "0010_recommendation_scope"]);
     expect(dry.migrationsApplied).toEqual([]);
     expect(await pendingTable(databaseUrl)).toBeNull();
 
     const applied = await request(databaseUrl, "apply");
-    expect(applied.migrationsApplied).toEqual(["0008_client_audit_log", "0009_monthly_usage"]);
+    expect(applied.migrationsApplied).toEqual([
+      "0008_client_audit_log",
+      "0009_monthly_usage",
+      "0010_recommendation_scope",
+    ]);
 
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();

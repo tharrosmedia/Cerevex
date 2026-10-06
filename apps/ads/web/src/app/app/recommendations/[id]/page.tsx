@@ -99,7 +99,9 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
   }
 
   const applyJob: ApplyJobPublic | null = data?.applyJob ?? null;
-  const frozen = Boolean(data?.adAccount?.frozen);
+  const adsScoped = (rec.scope ?? "ad_account") === "ad_account";
+  const frozen = adsScoped && Boolean(data?.adAccount?.frozen);
+  const adsPaused = adsScoped && killSwitch;
   const open = rec.status === "proposed";
 
   return (
@@ -126,7 +128,14 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
         <CardHeader>
           <CardTitle>What this changes</CardTitle>
           <CardDescription>
-            {data?.client?.name ?? "Client"} · {data?.adAccount ? platformLabel(data.adAccount.platform) : "Platform"}
+            {data?.client?.name ?? "Client"} ·{" "}
+            {data?.adAccount
+              ? platformLabel(data.adAccount.platform)
+              : rec.scope === "store"
+                ? "Store"
+                : rec.scope === "client"
+                  ? "Client"
+                  : "Platform"}
             {formatMoney(rec.estimatedImpactUsd) ? ` · est. ${formatMoney(rec.estimatedImpactUsd)}` : ""}
           </CardDescription>
         </CardHeader>
@@ -157,7 +166,7 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
             onClick={() => setConfirmOpen(true)}
-            disabled={!canApprove || killSwitch || frozen || busy !== null}
+            disabled={!canApprove || adsPaused || frozen || busy !== null}
             className="w-full sm:w-auto"
           >
             Approve
@@ -181,11 +190,16 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
           Approve is limited to Adam during soft-launch. Deny and Snooze still write nothing to the platforms.
         </p>
       ) : null}
-      {canApprove && open && (killSwitch || frozen) ? (
+      {canApprove && open && (adsPaused || frozen) ? (
         <p className="text-sm text-muted-foreground">
-          {killSwitch
+          {adsPaused
             ? "Turn off the workspace pause before Approve can apply."
             : "Unfreeze this ad account before Approve can apply."}
+        </p>
+      ) : null}
+      {open && !adsScoped ? (
+        <p className="text-sm text-muted-foreground">
+          Approve records the decision only. Nothing is queued for Meta or Google.
         </p>
       ) : null}
 
@@ -196,7 +210,8 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
         entities={entities}
         mutations={rec.proposedMutations}
         risk={rec.risk}
-        killSwitchOn={killSwitch}
+        killSwitchOn={adsPaused}
+        decisionOnly={!adsScoped}
         frozen={frozen}
         submitting={busy === "approve"}
         onCancel={() => setConfirmOpen(false)}

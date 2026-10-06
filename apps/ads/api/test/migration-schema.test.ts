@@ -150,6 +150,7 @@ describe("migration journal schema", () => {
       "0007_service_actor_constraints",
       "0008_client_audit_log",
       "0009_monthly_usage",
+      "0010_recommendation_scope",
     ];
     expect(entries.map((entry) => entry.tag)).toEqual(prefix);
     const applied = entries.slice(0, 6);
@@ -430,10 +431,171 @@ describe("migration journal schema", () => {
       expect((await client.query(`select to_regclass('os.skill_client_configs') as name`)).rows[0]?.name).toBe(
         "skill_client_configs",
       );
+      const scopeColumn = await client.query<{ column_name: string; is_nullable: string; column_default: string | null }>(
+        `select column_name, is_nullable, column_default
+         from information_schema.columns
+         where table_schema = 'os' and table_name = 'recommendations'
+           and column_name in ('scope', 'store_id', 'ad_account_id', 'client_id')`,
+      );
+      const byColumn = new Map(scopeColumn.rows.map((row) => [row.column_name, row]));
+      expect(byColumn.get("client_id")?.is_nullable).toBe("NO");
+      expect(byColumn.get("scope")?.is_nullable).toBe("NO");
+      expect(byColumn.get("scope")?.column_default ?? "").toContain("ad_account");
+      expect(byColumn.get("store_id")?.is_nullable).toBe("YES");
+      expect(byColumn.get("ad_account_id")?.is_nullable).toBe("YES");
       const second = await runMigrate(databaseUrl);
       expect(second.code, second.stderr).toBe(0);
       const again = await client.query(`select count(*)::int as n from ${migrationsRelation()}`);
       expect(again.rows[0]?.n).toBe(entries.length);
+    } finally {
+      await client.end();
+    }
+  }, 60_000);
+
+  it("applies 0010 on existing ad-account recommendations and checks each scope", async () => {
+    const entries = journal();
+    const applied = entries.slice(0, 10);
+    const pending = entries[10];
+    expect(applied.at(-1)?.tag).toBe("0009_monthly_usage");
+    expect(pending?.tag).toBe("0010_recommendation_scope");
+
+    const databaseUrl = await createDatabase(`cerevex_schema_test_${process.pid}_scope`);
+    const setup = new pg.Client({ connectionString: databaseUrl });
+    await setup.connect();
+    let seeded: { workspace_id: string; client_id: string; account_id: string; rec_id: string };
+    try {
+      await applySqlFiles(
+        setup,
+        applied.map((entry) => entry.tag),
+      );
+      await setup.query(
+        `CREATE TABLE ${migrationsRelation()} (
+          id serial PRIMARY KEY,
+          hash text NOT NULL,
+          created_at bigint
+        )`,
+      );
+      for (let index = 0; index < applied.length; index += 1) {
+        const entry = applied[index]!;
+        await setup.query(`INSERT INTO ${migrationsRelation()} (id, hash, created_at) VALUES ($1, $2, $3)`, [
+          index + 1,
+          fileHash(entry.tag),
+          entry.when,
+        ]);
+      }
+      await setup.query(`SELECT setval(pg_get_serial_sequence('${MIGRATIONS_SCHEMA}.${MIGRATIONS_TABLE}', 'id'), $1)`, [
+        applied.length,
+      ]);
+      const row = await setup.query<{
+        workspace_id: string;
+        client_id: string;
+        account_id: string;
+        rec_id: string;
+      }>(
+        `with ws as (
+           insert into os.workspaces (name) values ($1) returning id
+         ),
+         cl as (
+           insert into os.clients (workspace_id, name)
+           select id, $1 from ws returning id, workspace_id
+         ),
+         acct as (
+           insert into os.ad_accounts (workspace_id, client_id, platform, external_id)
+           select workspace_id, id, 'meta', $2 from cl returning id, workspace_id, client_id
+         ),
+         rec as (
+           insert into os.recommendations (workspace_id, client_id, ad_account_id, type, title, rationale, status)
+           select workspace_id, client_id, id, 'pause_waste', $3, 'existing ads rec', 'proposed' from acct
+           returning id, workspace_id, client_id, ad_account_id
+         )
+         select workspace_id, client_id, ad_account_id as account_id, id as rec_id from rec`,
+        [`scope-before-${process.pid}`, `acct-${process.pid}`, `existing-${process.pid}`],
+      );
+      seeded = row.rows[0]!;
+      expect(seeded.client_id).toBeTruthy();
+      expect(seeded.account_id).toBeTruthy();
+    } finally {
+      await setup.end();
+    }
+
+    const migrated = await runMigrate(databaseUrl);
+    expect(migrated.code, migrated.stderr).toBe(0);
+
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const kept = await client.query<{
+        client_id: string;
+        ad_account_id: string;
+        store_id: string | null;
+        scope: string;
+      }>(`select client_id, ad_account_id, store_id, scope from os.recommendations where id = $1`, [seeded.rec_id]);
+      expect(kept.rows[0]).toEqual({
+        client_id: seeded.client_id,
+        ad_account_id: seeded.account_id,
+        store_id: null,
+        scope: "ad_account",
+      });
+
+      const other = await client.query<{ id: string }>(
+        `insert into os.clients (workspace_id, name) values ($1, $2) returning id`,
+        [seeded.workspace_id, `other-${process.pid}`],
+      );
+      const otherClientId = other.rows[0]!.id;
+
+      async function expectCheck(sqlText: string, params: unknown[]) {
+        await expect(client.query(sqlText, params)).rejects.toMatchObject({ code: "23514" });
+      }
+
+      const base = `insert into os.recommendations
+        (workspace_id, client_id, scope, ad_account_id, store_id, type, title, rationale)
+        values ($1, $2, $3, $4, $5, 'seo_audit', $6, 'check')`;
+
+      await expectCheck(base, [seeded.workspace_id, seeded.client_id, "ad_account", null, null, "bad-ad-missing"]);
+      await expectCheck(base, [
+        seeded.workspace_id,
+        seeded.client_id,
+        "ad_account",
+        seeded.account_id,
+        "brain-store",
+        "bad-ad-store",
+      ]);
+      await expectCheck(base, [seeded.workspace_id, seeded.client_id, "store", null, null, "bad-store-missing"]);
+      await expectCheck(base, [seeded.workspace_id, seeded.client_id, "store", null, "   ", "bad-store-blank"]);
+      await expectCheck(base, [
+        seeded.workspace_id,
+        seeded.client_id,
+        "store",
+        seeded.account_id,
+        "brain-store",
+        "bad-store-account",
+      ]);
+      await expectCheck(base, [seeded.workspace_id, seeded.client_id, "client", null, "brain-store", "bad-client-store"]);
+      await expectCheck(base, [
+        seeded.workspace_id,
+        seeded.client_id,
+        "client",
+        seeded.account_id,
+        null,
+        "bad-client-account",
+      ]);
+      await expectCheck(base, [seeded.workspace_id, otherClientId, "nope", null, null, "bad-scope"]);
+
+      const store = await client.query<{ scope: string; store_id: string; ad_account_id: string | null }>(
+        `${base} returning scope, store_id, ad_account_id`,
+        [seeded.workspace_id, seeded.client_id, "store", null, "brain-store-1", "ok-store"],
+      );
+      expect(store.rows[0]).toEqual({ scope: "store", store_id: "brain-store-1", ad_account_id: null });
+      const clientScope = await client.query<{ scope: string; store_id: string | null; ad_account_id: string | null }>(
+        `${base} returning scope, store_id, ad_account_id`,
+        [seeded.workspace_id, otherClientId, "client", null, null, "ok-client"],
+      );
+      expect(clientScope.rows[0]).toEqual({ scope: "client", store_id: null, ad_account_id: null });
+      const ads = await client.query<{ scope: string }>(
+        `${base} returning scope`,
+        [seeded.workspace_id, seeded.client_id, "ad_account", seeded.account_id, null, "ok-ads"],
+      );
+      expect(ads.rows[0]?.scope).toBe("ad_account");
     } finally {
       await client.end();
     }

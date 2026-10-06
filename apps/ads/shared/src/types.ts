@@ -226,6 +226,13 @@ export const CREATE_NEW_MUTATION_ACTIONS = ["create_ad", "add_keyword"] as const
 
 export const RECOMMENDATION_SCHEMA_VERSION = "1" as const;
 
+export const RECOMMENDATION_SCOPES = ["ad_account", "store", "client"] as const;
+export type RecommendationScope = (typeof RECOMMENDATION_SCOPES)[number];
+
+export function isAdAccountRecommendationScope(scope: string | null | undefined): scope is "ad_account" {
+  return scope === "ad_account";
+}
+
 export const OFFLINE_RECOMMENDATION_TYPES = ["call_attribution", "crm_booked_job"] as const;
 export type OfflineRecommendationType = (typeof OFFLINE_RECOMMENDATION_TYPES)[number];
 
@@ -335,7 +342,9 @@ export type RecommendationPublic = {
   id: string;
   workspaceId: string;
   clientId: string;
-  adAccountId: string;
+  scope: RecommendationScope;
+  storeId: string | null;
+  adAccountId: string | null;
   type: string;
   title: string;
   rationale: string;

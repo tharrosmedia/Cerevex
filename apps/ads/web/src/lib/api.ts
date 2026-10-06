@@ -239,6 +239,7 @@ export async function decideRecommendation(
   applyJob: ApplyJobPublic | null;
   applied: boolean;
   writes: boolean;
+  reason?: string | null;
   note?: string;
 }> {
   return api(`/recommendations/${recommendationId}/decide`, {

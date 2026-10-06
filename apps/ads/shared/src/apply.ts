@@ -349,6 +349,7 @@ async function writeApplyClientAudit(
       actorId: null,
       entityType: "recommendation",
       entityId: input.recommendation.id,
+      storeId: input.recommendation.storeId,
       applyResult,
       before: input.recommendation.proposedMutationsJson,
       after: {
@@ -629,7 +630,9 @@ async function reconciledRequeueDecision(
           where: eq(recommendations.id, authorization.recommendationId),
         })
       : null;
-    if (!recommendation) return "unreconciled_write";
+    if (!recommendation || !recommendation.adAccountId || recommendation.scope !== "ad_account") {
+      return "not_repeatable";
+    }
     const mutations = parseApplyMutations(recommendation.proposedMutationsJson);
     if (mutations.length === 0 || mutations.some((mutation) => mutation.action !== "pause")) {
       return "not_repeatable";
@@ -742,7 +745,7 @@ async function claimApplyJob(
           where: eq(recommendations.id, authorization.recommendationId),
         })
       : null;
-    const account = recommendation
+    const account = recommendation?.adAccountId
       ? await handle.query.adAccounts.findFirst({ where: eq(adAccounts.id, recommendation.adAccountId) })
       : null;
     const workspace = await handle.query.workspaces.findFirst({
@@ -771,6 +774,7 @@ async function claimApplyJob(
       workspace,
       authorization,
       account,
+      recommendationScope: recommendation?.scope,
     });
     if (!gate.allowed) {
       const response = { ...gate, outcomes: [], writes: false };

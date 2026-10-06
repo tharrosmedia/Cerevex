@@ -64,6 +64,36 @@ describe("authorize-to-apply gate", () => {
     expect(gate).toEqual({ allowed: false, blocked: "account_frozen", writes: false });
   });
 
+  it("refuses ads apply for store and client scopes before the kill switch", () => {
+    for (const recommendationScope of ["store", "client"]) {
+      const gate = evaluateApplyGate({
+        expectedWorkspaceId: workspaceId,
+        workspace: { applyKillSwitch: true },
+        authorization: {
+          workspaceId,
+          revokedAt: null,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        recommendationScope,
+      });
+      expect(gate).toEqual({ allowed: false, blocked: "not_ad_account_scoped", writes: false });
+    }
+  });
+
+  it("still blocks an ad-account recommendation when the kill switch is on", () => {
+    const gate = evaluateApplyGate({
+      expectedWorkspaceId: workspaceId,
+      workspace: { applyKillSwitch: true },
+      authorization: {
+        workspaceId,
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      recommendationScope: "ad_account",
+    });
+    expect(gate.blocked).toBe("apply_kill_switch");
+  });
+
   it("allows apply when every gate passes", () => {
     const gate = evaluateApplyGate({
       expectedWorkspaceId: workspaceId,
