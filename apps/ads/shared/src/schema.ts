@@ -1,6 +1,8 @@
 import { ADS_DB_SCHEMA } from "@cerevex/contracts";
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -170,9 +172,11 @@ export const recommendations = osSchema.table(
     clientId: uuid("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
-    adAccountId: uuid("ad_account_id")
-      .notNull()
-      .references(() => adAccounts.id, { onDelete: "cascade" }),
+    /** ad_account | store | client. Existing rows stay ad_account. */
+    scope: text("scope").notNull().default("ad_account"),
+    /** Brain store id. Text, no cross-schema FK. Required only when scope is store. */
+    storeId: text("store_id"),
+    adAccountId: uuid("ad_account_id").references(() => adAccounts.id, { onDelete: "cascade" }),
     type: text("type").notNull(),
     title: text("title").notNull(),
     rationale: text("rationale").notNull(),
@@ -205,6 +209,19 @@ export const recommendations = osSchema.table(
     index("recommendations_client_idx").on(table.clientId),
     index("recommendations_workspace_idx").on(table.workspaceId),
     index("recommendations_ad_account_idx").on(table.adAccountId),
+    index("recommendations_store_idx").on(table.storeId),
+    index("recommendations_scope_client_idx").on(table.workspaceId, table.clientId, table.scope),
+    check("recommendations_scope_check", sql`${table.scope} IN ('ad_account', 'store', 'client')`),
+    check(
+      "recommendations_scope_ids_check",
+      sql`(
+        ${table.scope} = 'ad_account' AND ${table.adAccountId} IS NOT NULL AND ${table.storeId} IS NULL
+      ) OR (
+        ${table.scope} = 'store' AND ${table.adAccountId} IS NULL AND ${table.storeId} IS NOT NULL AND length(btrim(${table.storeId})) > 0
+      ) OR (
+        ${table.scope} = 'client' AND ${table.adAccountId} IS NULL AND ${table.storeId} IS NULL
+      )`,
+    ),
   ],
 );
 

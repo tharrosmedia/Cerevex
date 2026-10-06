@@ -27,6 +27,7 @@
     "./apply-gate": "./src/apply-gate.ts",
     "./apply": "./src/apply.ts",
     "./rec-lifecycle": "./src/rec-lifecycle.ts",
+    "./scoped-recommendations": "./src/scoped-recommendations.ts",
     "./mutate": "./src/mutate.ts",
     "./flags": "./src/flags.ts",
     "./approve": "./src/approve.ts",

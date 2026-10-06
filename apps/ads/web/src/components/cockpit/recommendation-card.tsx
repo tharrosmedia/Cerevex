@@ -38,6 +38,7 @@ export function RecommendationCard({
           <p className="font-medium">{recommendation.title}</p>
           <p className="mt-1 text-muted-foreground">{recommendation.rationale}</p>
           <p className="mt-1 text-xs text-muted-foreground">
+            {recommendation.scope && recommendation.scope !== "ad_account" ? `${titleCase(recommendation.scope)} · ` : ""}
             {titleCase(recommendation.type)}
             {impact ? ` · est. ${impact}` : ""}
             {recommendation.confidence ? ` · confidence ${recommendation.confidence}` : ""}

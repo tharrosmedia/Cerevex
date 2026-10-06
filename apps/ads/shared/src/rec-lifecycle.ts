@@ -424,7 +424,7 @@ export async function insertJobRecommendation(
     const approval = sealSkillJobApproval(meta.approval);
     const [inserted] = await database
       .insert(recommendations)
-      .values({ ...draft, approvalJson: approval })
+      .values({ ...draft, scope: "ad_account", storeId: null, approvalJson: approval })
       .returning();
     await recordRecLifecycle(
       {

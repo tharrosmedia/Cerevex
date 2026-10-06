@@ -30,7 +30,7 @@ import {
   shouldRecordApplyAudit,
   toApplyJobPublic,
 } from "@tharros/ads-shared/apply";
-import { evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
+import { adsPlatformMutationRefusal, evaluateApplyGate, NotAdAccountScopedError } from "@tharros/ads-shared/apply-gate";
 import {
   createApplyJobForAuthorization,
   RecommendationGateError,
@@ -267,7 +267,12 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (clientId && scoped.length === 0) {
       throw new HTTPException(404, { message: "Client not found" });
     }
-    let recommendations = await listRecommendationsForClients(scoped.map((row) => row.id));
+    const workspaceIds = [...new Set(scoped.map((row) => row.workspaceId))];
+    let recommendations = await listRecommendationsForClients(
+      scoped.map((row) => row.id),
+      100,
+      workspaceIds,
+    );
     if (status) {
       recommendations = recommendations.filter((row) => row.status === status);
     }
@@ -286,7 +291,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     }
     const { flags } = await loadWorkspaceCapabilities(client.workspaceId);
     return c.json({
-      recommendations: filterOfflineRecommendations(await listRecommendations(client.id), flags),
+      recommendations: filterOfflineRecommendations(await listRecommendations(client.id, client.workspaceId), flags),
       writes: false,
     });
   });
@@ -321,14 +326,17 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     const workspace = await db.query.workspaces.findFirst({
       where: eq(workspaces.id, client.workspaceId),
     });
-    const account = await db.query.adAccounts.findFirst({
-      where: eq(adAccounts.id, row.adAccountId),
-    });
+    const account = row.adAccountId
+      ? await db.query.adAccounts.findFirst({
+          where: eq(adAccounts.id, row.adAccountId),
+        })
+      : null;
     const gate = evaluateApplyGate({
       expectedWorkspaceId: client.workspaceId,
       workspace,
       authorization,
       account,
+      recommendationScope: row.scope,
     });
     const auth = c.get("auth");
     return c.json({
@@ -426,6 +434,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
 
     const action = normalizeDecisionAction(parsed.data.action);
 
+    const decisionOnly = Boolean(adsPlatformMutationRefusal(row.scope));
     if (action === "authorize") {
       if (!canApproveApply(auth.user?.email)) {
         await recordApproveRefusal(row, actor, "allowlist");
@@ -437,19 +446,23 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         await recordApproveRefusal(row, actor, "not_open");
         throw new HTTPException(409, { message: "This recommendation is no longer open." });
       }
-      const workspace = await db.query.workspaces.findFirst({
-        where: eq(workspaces.id, client.workspaceId),
-      });
-      const account = await db.query.adAccounts.findFirst({
-        where: eq(adAccounts.id, row.adAccountId),
-      });
-      if (workspace?.applyKillSwitch) {
-        await recordApproveRefusal(row, actor, "apply_kill_switch");
-        throw new HTTPException(409, { message: applyBlockMessage("apply_kill_switch") });
-      }
-      if (account?.frozen) {
-        await recordApproveRefusal(row, actor, "account_frozen");
-        throw new HTTPException(409, { message: applyBlockMessage("account_frozen") });
+      if (!decisionOnly) {
+        const workspace = await db.query.workspaces.findFirst({
+          where: eq(workspaces.id, client.workspaceId),
+        });
+        const account = row.adAccountId
+          ? await db.query.adAccounts.findFirst({
+              where: eq(adAccounts.id, row.adAccountId),
+            })
+          : null;
+        if (workspace?.applyKillSwitch) {
+          await recordApproveRefusal(row, actor, "apply_kill_switch");
+          throw new HTTPException(409, { message: applyBlockMessage("apply_kill_switch") });
+        }
+        if (account?.frozen) {
+          await recordApproveRefusal(row, actor, "account_frozen");
+          throw new HTTPException(409, { message: applyBlockMessage("account_frozen") });
+        }
       }
     }
 
@@ -473,7 +486,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       throw error;
     }
 
-    if (action !== "authorize") {
+    if (action !== "authorize" || decisionOnly) {
       childLogger(c.get("requestId")).info({
         msg: "recommendations.decided",
         recommendationId: row.id,
@@ -481,23 +494,45 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         applied: false,
         writes: false,
         clientId: client.id,
+        reason: decisionOnly && action === "authorize" ? "not_ad_account_scoped" : null,
       });
       return c.json({
         ...result,
         applyJob: null,
         applied: false,
         writes: false,
-        note: action === "deny" ? "Denied. Nothing was written to Meta or Google." : "Snoozed. Nothing was written to Meta or Google.",
+        reason: decisionOnly && action === "authorize" ? "not_ad_account_scoped" : null,
+        note:
+          decisionOnly && action === "authorize"
+            ? "Approved as a decision. Nothing was queued for Meta or Google."
+            : action === "deny"
+              ? "Denied. Nothing was written to Meta or Google."
+              : "Snoozed. Nothing was written to Meta or Google.",
       });
     }
 
-    const applyJob = await createApplyJobForAuthorization({
-      workspaceId: client.workspaceId,
-      clientId: client.id,
-      authorizationId: result.authorization!.id,
-      recommendationId: row.id,
-      proposedMutations: row.proposedMutationsJson,
-    });
+    let applyJob;
+    try {
+      applyJob = await createApplyJobForAuthorization({
+        workspaceId: client.workspaceId,
+        clientId: client.id,
+        authorizationId: result.authorization!.id,
+        recommendationId: row.id,
+        proposedMutations: row.proposedMutationsJson,
+      });
+    } catch (error) {
+      if (error instanceof NotAdAccountScopedError) {
+        return c.json({
+          ...result,
+          applyJob: null,
+          applied: false,
+          writes: false,
+          reason: error.reason,
+          note: "Approved as a decision. Nothing was queued for Meta or Google.",
+        });
+      }
+      throw error;
+    }
 
     await writeAuditEvent({
       workspaceId: client.workspaceId,
@@ -611,19 +646,34 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     const workspace = await db.query.workspaces.findFirst({
       where: eq(workspaces.id, client.workspaceId),
     });
-    const account = await db.query.adAccounts.findFirst({
-      where: eq(adAccounts.id, row.adAccountId),
-    });
+    const account = row.adAccountId
+      ? await db.query.adAccounts.findFirst({
+          where: eq(adAccounts.id, row.adAccountId),
+        })
+      : null;
     const authorization = await latestAuthorization(row.id);
     const gate = evaluateApplyGate({
       expectedWorkspaceId: client.workspaceId,
       workspace,
       authorization,
       account,
+      recommendationScope: row.scope,
     });
 
     if (!gate.allowed) {
       await recordApproveRefusal(row, actor, gate.blocked ?? "apply_blocked");
+      if (gate.blocked === "not_ad_account_scoped") {
+        return c.json(
+          {
+            error: applyBlockMessage(gate.blocked),
+            reason: gate.blocked,
+            applyJob: null,
+            writes: false,
+            applied: false,
+          },
+          409,
+        );
+      }
       throw new HTTPException(409, {
         message: applyBlockMessage(gate.blocked),
       });

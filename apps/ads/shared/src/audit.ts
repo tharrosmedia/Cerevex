@@ -12,6 +12,7 @@ import { seasonalityFromSettings } from "./seasonality-calendar";
 import { getDb, type Database } from "./db";
 import { readApproval, recordRecLifecycle } from "./rec-lifecycle";
 import { applyJobIdempotencyKey, toApplyJobPublic } from "./apply";
+import { NotAdAccountScopedError, adsPlatformMutationRefusal } from "./apply-gate";
 import { inferApplyJobType } from "./mutation-families";
 import {
   adAccounts,
@@ -74,6 +75,8 @@ export function toRecommendationPublic(row: typeof recommendations.$inferSelect)
     id: row.id,
     workspaceId: row.workspaceId,
     clientId: row.clientId,
+    scope: row.scope === "store" || row.scope === "client" ? row.scope : "ad_account",
+    storeId: row.storeId,
     adAccountId: row.adAccountId,
     type: row.type,
     title: row.title,
@@ -446,11 +449,13 @@ export async function getAuditBundle(auditRunId: string): Promise<AuditBundle> {
   };
 }
 
-export async function listRecommendations(clientId: string): Promise<RecommendationPublic[]> {
+export async function listRecommendations(clientId: string, workspaceId?: string): Promise<RecommendationPublic[]> {
+  const filters = [eq(recommendations.clientId, clientId)];
+  if (workspaceId) filters.push(eq(recommendations.workspaceId, workspaceId));
   const rows = await getDb()
     .select()
     .from(recommendations)
-    .where(eq(recommendations.clientId, clientId))
+    .where(and(...filters))
     .orderBy(desc(recommendations.createdAt))
     .limit(50);
   return rows.map(toRecommendationPublic);
@@ -459,12 +464,15 @@ export async function listRecommendations(clientId: string): Promise<Recommendat
 export async function listRecommendationsForClients(
   clientIds: string[],
   limit = 100,
+  workspaceIds?: string[],
 ): Promise<RecommendationPublic[]> {
   if (clientIds.length === 0) return [];
+  const filters = [inArray(recommendations.clientId, clientIds)];
+  if (workspaceIds && workspaceIds.length > 0) filters.push(inArray(recommendations.workspaceId, workspaceIds));
   const rows = await getDb()
     .select()
     .from(recommendations)
-    .where(inArray(recommendations.clientId, clientIds))
+    .where(and(...filters))
     .orderBy(desc(recommendations.createdAt))
     .limit(limit);
   return rows.map(toRecommendationPublic);
@@ -530,13 +538,15 @@ export async function decideRecommendation(input: {
     if (!canDecide) {
       throw new RecommendationNotOpenError();
     }
-    if (input.action === "authorize") {
+    if (input.action === "authorize" && !adsPlatformMutationRefusal(row.scope)) {
       const workspace = await tx.query.workspaces.findFirst({
         where: eq(workspaces.id, row.workspaceId),
       });
-      const account = await tx.query.adAccounts.findFirst({
-        where: eq(adAccounts.id, row.adAccountId),
-      });
+      const account = row.adAccountId
+        ? await tx.query.adAccounts.findFirst({
+            where: eq(adAccounts.id, row.adAccountId),
+          })
+        : null;
       if (workspace?.applyKillSwitch) throw new RecommendationGateError("apply_kill_switch");
       if (account?.frozen) throw new RecommendationGateError("account_frozen");
     }
@@ -578,12 +588,20 @@ export async function decideRecommendation(input: {
           clientId: row.clientId,
           recommendationId: row.id,
           decisionId,
-          scopeJson: {
-            kind: "os.authorize-to-apply",
-            recommendationId: row.id,
-            proposedOnly: false,
-            writes: true,
-          },
+          scopeJson: adsPlatformMutationRefusal(row.scope)
+            ? {
+                kind: "os.decision-only",
+                recommendationId: row.id,
+                scope: row.scope,
+                proposedOnly: false,
+                writes: false,
+              }
+            : {
+                kind: "os.authorize-to-apply",
+                recommendationId: row.id,
+                proposedOnly: false,
+                writes: true,
+              },
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         })
         .returning();
@@ -671,6 +689,12 @@ export async function createApplyJobForAuthorization(input: {
   jobType?: "mutate_existing" | "create_entity";
 }): Promise<ApplyJobPublic> {
   const db = getDb();
+  const rec = await db.query.recommendations.findFirst({
+    where: eq(recommendations.id, input.recommendationId),
+  });
+  if (rec && adsPlatformMutationRefusal(rec.scope)) {
+    throw new NotAdAccountScopedError();
+  }
   const key = applyJobIdempotencyKey(input.recommendationId);
   const jobType = input.jobType ?? inferApplyJobType(input.proposedMutations);
   const inserted = await db

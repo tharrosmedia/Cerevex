@@ -71,6 +71,13 @@
       "when": 1791300000000,
       "tag": "0009_monthly_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791400000000,
+      "tag": "0010_recommendation_scope",
+      "breakpoints": true
     }
   ]
 }

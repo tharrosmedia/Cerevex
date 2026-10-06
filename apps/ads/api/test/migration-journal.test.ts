@@ -164,6 +164,7 @@ describe("migration journal", () => {
       "0007_service_actor_constraints",
       "0008_client_audit_log",
       "0009_monthly_usage",
+      "0010_recommendation_scope",
     ];
     expect(tags).toEqual(prefix);
     expect(tags).toContain("0006_plan_entitlements");

@@ -5,7 +5,10 @@
  * and the target ad account not frozen. Deny/Snooze never reach this gate.
  */
 
+export const NOT_AD_ACCOUNT_SCOPED = "not_ad_account_scoped" as const;
+
 export const APPLY_BLOCK_REASONS = [
+  "not_ad_account_scoped",
   "workspace_not_found",
   "apply_kill_switch",
   "account_frozen",
@@ -28,8 +31,27 @@ export type ApplyGateInput = {
     | null
     | undefined;
   account?: { frozen: boolean } | null;
+  /** When set and not ad_account, ads apply is refused before the kill switch. */
+  recommendationScope?: string | null;
   now?: Date;
 };
+
+export class NotAdAccountScopedError extends Error {
+  readonly reason = NOT_AD_ACCOUNT_SCOPED;
+
+  constructor() {
+    super(NOT_AD_ACCOUNT_SCOPED);
+    this.name = "NotAdAccountScopedError";
+  }
+}
+
+/** Ads platform mutations are only queued for ad_account recommendations. */
+export function adsPlatformMutationRefusal(
+  scope: string | null | undefined,
+): typeof NOT_AD_ACCOUNT_SCOPED | null {
+  if (scope == null || scope === "ad_account") return null;
+  return NOT_AD_ACCOUNT_SCOPED;
+}
 
 export type ApplyGateResult =
   | { allowed: true; blocked: null; writes: true }
@@ -43,6 +65,9 @@ function asTime(value: Date | string | null | undefined): number | null {
 
 export function evaluateApplyGate(input: ApplyGateInput): ApplyGateResult {
   const now = input.now ?? new Date();
+  if (adsPlatformMutationRefusal(input.recommendationScope)) {
+    return { allowed: false, blocked: NOT_AD_ACCOUNT_SCOPED, writes: false };
+  }
   if (!input.workspace) {
     return { allowed: false, blocked: "workspace_not_found", writes: false };
   }
@@ -67,6 +92,8 @@ export function evaluateApplyGate(input: ApplyGateInput): ApplyGateResult {
 
 export function applyBlockMessage(reason: ApplyBlockReason | null | undefined): string {
   switch (reason) {
+    case "not_ad_account_scoped":
+      return "This recommendation is not an ad-account change. The decision is saved. Nothing was queued for Meta or Google.";
     case "apply_kill_switch":
       return "Approve is blocked while ads are paused on this workspace.";
     case "account_frozen":

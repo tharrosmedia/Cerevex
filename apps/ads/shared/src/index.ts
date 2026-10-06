@@ -153,7 +153,13 @@ export type {
   LeadLifecycleRecDraft,
   BookedJobSignalRecDraft,
 } from "./lead-lifecycle";
-export { evaluateApplyGate, applyBlockMessage, APPLY_BLOCK_REASONS } from "./apply-gate";
+export {
+  evaluateApplyGate,
+  applyBlockMessage,
+  adsPlatformMutationRefusal,
+  APPLY_BLOCK_REASONS,
+  NOT_AD_ACCOUNT_SCOPED,
+} from "./apply-gate";
 // Skill-config import and the database guard use pg-connection-string (Node `fs`).
 // They live on `@tharros/ads-shared/server`, not this client-reachable barrel.
 export { SKILL_CLIENT_ALIASES } from "./skill-client-aliases";
