@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { META_GRAPH_VERSION } from "@tharros/ads-shared";
 import { googleAdsHeaders, listGoogleAccessibleAccounts, metaAdPlatformConnector } from "@tharros/ads-shared/connectors";
 
 type Call = { url: string; headers: Record<string, string>; body?: string };
@@ -65,16 +66,20 @@ describe("listing accounts a login can reach", () => {
   });
 
   it("follows Meta paging and keeps the business name", async () => {
-    stubFetch(({ url }) => {
+    const calls = stubFetch(({ url }) => {
       if (url.includes("after=2")) {
         return { data: [{ id: "act_2", name: "Second", currency: "USD" }] };
       }
       return {
         data: [{ id: "act_1", name: "First", currency: "USD", business: { name: "Biz" } }],
-        paging: { next: "https://graph.facebook.com/v21.0/me/adaccounts?after=2" },
+        paging: { next: `https://graph.facebook.com/${META_GRAPH_VERSION}/me/adaccounts?after=2` },
       };
     });
     const accounts = await metaAdPlatformConnector.listAccessibleAccounts({ accessToken: "t" });
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      `/${META_GRAPH_VERSION}/me/adaccounts`,
+      `/${META_GRAPH_VERSION}/me/adaccounts`,
+    ]);
     expect(accounts).toEqual([
       { externalId: "act_1", name: "First", currency: "USD", detail: "Biz" },
       { externalId: "act_2", name: "Second", currency: "USD", detail: null },

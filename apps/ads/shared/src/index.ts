@@ -1,4 +1,5 @@
 export * from "./types";
+export { META_GRAPH_VERSION } from "./meta-graph";
 export * from "./modules";
 export * from "./roles";
 export * from "./mutations";
