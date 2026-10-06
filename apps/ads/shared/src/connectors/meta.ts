@@ -2,6 +2,7 @@ import type { CapabilityFlags } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
+import { refuseMockPull } from "../live-or-loud";
 import { isMetaConfigured, metaAuthorizeUrl, metaRedirectUri } from "../oauth";
 import { mockPull } from "../platforms";
 import type { AccessibleAdAccount, StoredOAuthTokens } from "../types";
@@ -202,7 +203,8 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
   }
 
   async pull(input: ConnectorPullInput) {
-    if (input.tokens.mock || !input.allowLive) {
+    refuseMockPull(input.tokens, input.allowLive);
+    if (input.tokens.mock) {
       return mockPull("meta", input.clientName);
     }
     return pullMetaLive(input.tokens, input.externalId);

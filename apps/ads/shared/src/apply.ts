@@ -24,6 +24,7 @@ import {
   runBudgetedPlatformCalls,
 } from "./connectors/write-timeout";
 import { loadTokens } from "./credentials";
+import { isMockToken } from "./live-or-loud";
 import { crmWriteBlockedReason } from "./lead-lifecycle";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { parseApplyMutations } from "./audit-schemas";
@@ -663,7 +664,8 @@ async function priorClaimQuiet(responseJson: unknown): Promise<boolean> {
 
 /**
  * True when this pause target is not paused on the platform.
- * Mock accounts use the local row for that external id. Live accounts call the connector.
+ * Mock accounts use the local row for that external id. A real token never does,
+ * including when this process is not configured or sync.live is off.
  * A missing read stays unknown. Other ads on the account are not consulted.
  */
 async function pauseNotLanded(
@@ -676,16 +678,17 @@ async function pauseNotLanded(
   const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
   const flags = resolveWorkspaceCapabilities(workspace?.settingsJson ?? {});
   const connector = getAdPlatformConnector(mutation.platform);
-  if (!connector.isLiveAllowed(tokens, flags)) {
-    const entity = await getDb().query.adEntities.findFirst({
-      where: and(eq(adEntities.adAccountId, adAccountId), eq(adEntities.externalId, mutation.target.externalId)),
-    });
-    if (!entity) return null;
-    return entity.status.toLowerCase() !== "paused";
+  if (!isMockToken(tokens)) {
+    if (!connector.isLiveAllowed(tokens, flags)) return null;
+    const live = await connector.readLiveEntityState({ tokens, mutation }).catch(() => null);
+    if (!live?.status) return null;
+    return live.status.toLowerCase() !== "paused";
   }
-  const live = await connector.readLiveEntityState({ tokens, mutation }).catch(() => null);
-  if (!live?.status) return null;
-  return live.status.toLowerCase() !== "paused";
+  const entity = await getDb().query.adEntities.findFirst({
+    where: and(eq(adEntities.adAccountId, adAccountId), eq(adEntities.externalId, mutation.target.externalId)),
+  });
+  if (!entity) return null;
+  return entity.status.toLowerCase() !== "paused";
 }
 
 /**

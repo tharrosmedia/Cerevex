@@ -3,6 +3,7 @@ import type { ApplyMutation } from "../audit-schemas";
 import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
+import { refuseMockPull } from "../live-or-loud";
 import { mockPull, type PullResult, type PulledEntity } from "../platforms";
 import type { AccessibleAdAccount, StoredOAuthTokens } from "../types";
 import type {
@@ -336,7 +337,8 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
   }
 
   async pull(input: ConnectorPullInput) {
-    if (input.tokens.mock || !input.allowLive) {
+    refuseMockPull(input.tokens, input.allowLive);
+    if (input.tokens.mock) {
       return mockPull("google", input.clientName);
     }
     return pullGoogleLive(input.tokens, input.externalId);

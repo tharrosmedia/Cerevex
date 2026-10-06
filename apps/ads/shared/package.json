@@ -20,6 +20,8 @@
     "./oauth": "./src/oauth.ts",
     "./credentials": "./src/credentials.ts",
     "./sync": "./src/sync.ts",
+    "./live-or-loud": "./src/live-or-loud.ts",
+    "./worker-health": "./src/worker-health.ts",
     "./worker-audit": "./src/worker-audit.ts",
     "./audit": "./src/audit.ts",
     "./audit-engine": "./src/audit-engine.ts",

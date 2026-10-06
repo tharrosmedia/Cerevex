@@ -7,6 +7,7 @@ import { loadEnv } from "@tharros/ads-shared/env";
 import { assertAdsWorkerProductionSecrets } from "@tharros/ads-shared/production-secrets";
 import { checkDatabase } from "@tharros/ads-shared/db";
 import { checkInngest, inngest } from "@tharros/ads-shared/inngest";
+import { warnIfMetaNotConfigured, workerHealthBody } from "@tharros/ads-shared/worker-health";
 import { FUNCTION_IDS, functions } from "./register";
 
 loadEnv();
@@ -35,21 +36,12 @@ app.get("/health", async (c) => {
     checkDatabase().catch(() => false),
     checkInngest(),
   ]);
-  const ok = Boolean(dbOk);
-  return c.json(
-    {
-      ok,
-      service: "tharros-worker",
-      version: "0.1.0",
-      time: new Date().toISOString(),
-      checks: {
-        db: dbOk ? "ok" : "down",
-        inngest: inngestStatus,
-        functions: FUNCTION_IDS,
-      },
-    },
-    ok ? 200 : 503,
-  );
+  const body = workerHealthBody({
+    dbOk: Boolean(dbOk),
+    inngestStatus,
+    functionIds: FUNCTION_IDS,
+  });
+  return c.json(body, body.ok ? 200 : 503);
 });
 
 const inngestHandler = inngestNodeServe({
@@ -58,6 +50,10 @@ const inngestHandler = inngestNodeServe({
 });
 
 const honoListener = getRequestListener(app.fetch);
+warnIfMetaNotConfigured((message) => {
+  logger.warn({ msg: message });
+});
+
 const host = process.env.API_HOST ?? "127.0.0.1";
 const port = Number(process.env.WORKER_PORT ?? 43182);
 
