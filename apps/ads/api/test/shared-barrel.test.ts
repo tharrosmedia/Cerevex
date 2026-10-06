@@ -11,6 +11,8 @@ describe("@tharros/ads-shared root barrel", () => {
     expect(shared).not.toHaveProperty("callRailConnector");
     expect(shared).not.toHaveProperty("assertLocalDatabase");
     expect(shared).not.toHaveProperty("importSkillConfigBundle");
+    expect(shared).not.toHaveProperty("linkSkillProfile");
+    expect(shared).not.toHaveProperty("upsertSkillClientConfig");
     expect(shared).not.toHaveProperty("assessTestDatabase");
     expect(shared).not.toHaveProperty("SkillConfigImportError");
     expect(shared).not.toHaveProperty("getEntitlements");
