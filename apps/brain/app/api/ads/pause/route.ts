@@ -15,8 +15,7 @@ export type PauseRead = (workspaceId: string) => Promise<
 
 export type PauseWrite = (input: {
   workspaceId: string;
-  applyKillSwitch: boolean;
-  asOwner: boolean;
+  applyKillSwitch: true;
 }) => Promise<
   | { ok: true; applyKillSwitch: boolean }
   | { ok: false; status: number; message: string }
@@ -41,24 +40,19 @@ async function defaultRead(workspaceId: string): ReturnType<PauseRead> {
 
 async function defaultWrite(input: {
   workspaceId: string;
-  applyKillSwitch: boolean;
-  asOwner: boolean;
+  applyKillSwitch: true;
 }): ReturnType<PauseWrite> {
-  const result = await adsApi<{ workspace: { applyKillSwitch?: boolean } | null }>(
-    '/workspace',
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ workspaceId: input.workspaceId, applyKillSwitch: input.applyKillSwitch }),
-    },
-    { owner: input.asOwner },
-  );
+  const result = await adsApi<{ workspace: { applyKillSwitch?: boolean } | null }>('/workspace', {
+    method: 'PATCH',
+    body: JSON.stringify({ workspaceId: input.workspaceId, applyKillSwitch: true }),
+  });
   if (!result.ok) return { ok: false, status: result.status, message: result.message };
   const value = result.data.workspace?.applyKillSwitch;
   return { ok: true, applyKillSwitch: typeof value === 'boolean' ? value : input.applyKillSwitch };
 }
 
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
+function jsonError(error: string, status: number, code?: string) {
+  return Response.json(code ? { error, code } : { error }, { status });
 }
 
 export async function postPause(request: Request, deps: PauseDeps = {}): Promise<Response> {
@@ -69,34 +63,26 @@ export async function postPause(request: Request, deps: PauseDeps = {}): Promise
   const decision = decideAdsPause({
     caller,
     applyKillSwitch: record.applyKillSwitch,
-    confirm: record.confirm,
     requestedWorkspaceId: record.workspaceId,
     boundWorkspaceId: boundWorkspaceId(),
   });
-  if (!decision.ok) return jsonError(decision.error, decision.status);
-
-  const unpause = decision.applyKillSwitch === false;
-  if (unpause && !process.env.ADS_API_TOKEN?.trim()) {
-    return jsonError('The workspace owner session is not configured.', 403);
-  }
+  if (!decision.ok) return jsonError(decision.error, decision.status, decision.code);
 
   const read = deps.read ?? defaultRead;
   const write = deps.write ?? defaultWrite;
   const current = await read(decision.workspaceId);
   if (!current.ok) return jsonError(current.message, current.status);
-  if (current.applyKillSwitch === decision.applyKillSwitch) {
+  if (current.applyKillSwitch === true) {
     return Response.json({
-      applyKillSwitch: current.applyKillSwitch,
+      applyKillSwitch: true,
       unchanged: true,
       workspaceId: decision.workspaceId,
     });
   }
 
-  const asOwner = unpause || (caller !== 'service' && Boolean(process.env.ADS_API_TOKEN?.trim()));
   const written = await write({
     workspaceId: decision.workspaceId,
-    applyKillSwitch: decision.applyKillSwitch,
-    asOwner,
+    applyKillSwitch: true,
   });
   if (!written.ok) return jsonError(written.message, written.status);
   return Response.json({

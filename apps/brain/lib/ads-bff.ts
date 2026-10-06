@@ -94,8 +94,6 @@ export function adsApiConfigured(): boolean {
 
 export type AdsCallOptions = {
   anonymous?: boolean;
-  /** Human owner bearer only. Omits the service key so ads-api can audit the owner. */
-  owner?: boolean;
 };
 
 const ADS_API_TIMEOUT_MS = 8_000;
@@ -129,7 +127,7 @@ export async function adsApi<T>(
   headers.delete("authorization");
   if (!options.anonymous) {
     const caller = adsCallerHeaders({
-      safetyOn: Boolean(options.owner),
+      safetyOn: false,
       internalKey: process.env.ADS_INTERNAL_KEY,
       ownerToken: process.env.ADS_API_TOKEN,
     });

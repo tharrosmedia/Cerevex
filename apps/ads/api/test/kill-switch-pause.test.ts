@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
-import { closeDb, getDb } from "@tharros/ads-shared/db";
+import { closeDb, getDb, getPool } from "@tharros/ads-shared/db";
 import { auditLog, memberships, users, workspaces } from "@tharros/ads-shared/schema";
 import { app, json, login } from "./helpers";
 
@@ -190,5 +190,92 @@ describe("workspace apply kill switch from Brain's pause path", () => {
     expect((await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.applyKillSwitch).toBe(
       before,
     );
+  });
+
+  it("writes one kill_flip for parallel unpauses and one for parallel pauses", async () => {
+    const primed = await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ applyKillSwitch: true }),
+    });
+    expect(primed.status).toBe(200);
+    const beforeOff = new Set((await killRows()).map((row) => row.id));
+    const offs = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        app.request("/workspace", {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ applyKillSwitch: false }),
+        }),
+      ),
+    );
+    expect(offs.every((res) => res.status === 200)).toBe(true);
+    const offRows = (await killRows()).filter((row) => !beforeOff.has(row.id));
+    expect(offRows).toHaveLength(1);
+    expect(offRows[0]?.payloadJson).toMatchObject({ old: true, new: false });
+    expect((await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.applyKillSwitch).toBe(
+      false,
+    );
+
+    const beforeOn = new Set((await killRows()).map((row) => row.id));
+    const ons = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        app.request("/workspace", {
+          method: "PATCH",
+          headers: internalHeaders(),
+          body: JSON.stringify({ applyKillSwitch: true }),
+        }),
+      ),
+    );
+    expect(ons.every((res) => res.status === 200)).toBe(true);
+    const onRows = (await killRows()).filter((row) => !beforeOn.has(row.id));
+    expect(onRows).toHaveLength(1);
+    expect(onRows[0]?.payloadJson).toMatchObject({ old: false, new: true, actor: "service" });
+    expect((await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.applyKillSwitch).toBe(
+      true,
+    );
+  });
+
+  it("rolls the switch back when the kill_flip insert fails", async () => {
+    const primed = await app.request("/workspace", {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ applyKillSwitch: true }),
+    });
+    expect(primed.status).toBe(200);
+    const before = await killRows();
+    const pool = getPool();
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION os.fail_kill_flip_test() RETURNS trigger
+      LANGUAGE plpgsql AS $fn$
+      BEGIN
+        IF NEW.action = 'kill_flip' THEN
+          RAISE EXCEPTION 'forced kill_flip failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $fn$
+    `);
+    await pool.query("DROP TRIGGER IF EXISTS fail_kill_flip_test ON os.audit_log");
+    await pool.query(`
+      CREATE TRIGGER fail_kill_flip_test
+      BEFORE INSERT ON os.audit_log
+      FOR EACH ROW EXECUTE FUNCTION os.fail_kill_flip_test()
+    `);
+    try {
+      const off = await app.request("/workspace", {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ applyKillSwitch: false }),
+      });
+      expect(off.status).toBe(500);
+      expect((await killRows()).length).toBe(before.length);
+      expect((await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }))?.applyKillSwitch).toBe(
+        true,
+      );
+    } finally {
+      await pool.query("DROP TRIGGER IF EXISTS fail_kill_flip_test ON os.audit_log");
+      await pool.query("DROP FUNCTION IF EXISTS os.fail_kill_flip_test()");
+    }
   });
 });

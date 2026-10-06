@@ -641,17 +641,20 @@ export async function decideRecommendation(input: {
   });
 }
 
-export async function writeAuditEvent(input: {
-  workspaceId: string;
-  actorType: string;
-  actorId?: string | null;
-  action: string;
-  entityType: string;
-  entityId?: string | null;
-  payload?: Record<string, unknown>;
-}): Promise<void> {
+export async function writeAuditEvent(
+  input: {
+    workspaceId: string;
+    actorType: string;
+    actorId?: string | null;
+    action: string;
+    entityType: string;
+    entityId?: string | null;
+    payload?: Record<string, unknown>;
+  },
+  db: Pick<Database, "insert"> = getDb(),
+): Promise<void> {
   const actor = resolveAuditActor(input.actorType, input.actorId);
-  await getDb().insert(auditLog).values({
+  await db.insert(auditLog).values({
     workspaceId: input.workspaceId,
     actorType: actor.actorType,
     actorId: actor.actorId,

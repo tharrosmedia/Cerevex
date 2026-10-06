@@ -1,15 +1,7 @@
-import { canApproveApply } from '@cerevex/contracts';
 import { adsApi } from '@/lib/ads-bff';
 import { submitAdsPause } from '@/lib/ads-pause-action';
-import {
-  ADS_PAUSE_ACTION,
-  ADS_PAUSE_CONFIRM_CHECK,
-  ADS_PAUSE_CONFIRM_COPY,
-  ADS_PAUSE_OWNER_ONLY,
-  ADS_UNPAUSE_ACTION,
-  pauseToggleView,
-} from '@/lib/ads-pause';
-import { consoleOperatorEmail } from '@/lib/sensitive-auth';
+import { ADS_PAUSE_ACTION, ADS_TURN_ON_IN_ADS, pauseToggleView } from '@/lib/ads-pause';
+import { ADS_OWNER_UNPAUSE_PATH, adsSafetySettingsHref } from '@/lib/module-origins';
 import { SubmitButton } from '@/components/submit-button';
 
 async function displayedKillSwitch(): Promise<boolean | null> {
@@ -34,16 +26,14 @@ export async function AdsPauseToggle({
   returnTo?: string;
 }) {
   const resolved = killSwitchOn === undefined ? await displayedKillSwitch() : killSwitchOn;
-  const view = pauseToggleView({
-    killSwitchOn: resolved,
-    owner: canApproveApply(consoleOperatorEmail()),
-  });
+  const view = pauseToggleView({ killSwitchOn: resolved });
+  const adsOwnerHref = adsSafetySettingsHref() || ADS_OWNER_UNPAUSE_PATH;
 
   return (
     <div id="ads-pause" className="cx-panel" data-pause={view.known ? (view.paused ? 'on' : 'off') : 'unknown'}>
       <h2>Ads pause</h2>
       <p className="cx-help">
-        Workspace kill switch. When pause is on, Approve cannot change live ads. The default is on.
+        Workspace kill switch. When pause is on, Approve cannot change live ads. The default is on. Brain only pauses.
       </p>
       <p role="status" data-pause-state={view.known ? (view.paused ? 'on' : 'off') : 'unknown'}>
         <strong>{view.stateLabel}</strong>. {view.status}
@@ -57,22 +47,11 @@ export async function AdsPauseToggle({
           </SubmitButton>
         </form>
       ) : null}
-      {view.showUnpause ? (
-        <form action={submitAdsPause} className="cx-form">
-          <p className="cx-help">{ADS_PAUSE_CONFIRM_COPY}</p>
-          <label className="cx-field">
-            <span>
-              <input type="checkbox" name="confirm" value="true" required /> {ADS_PAUSE_CONFIRM_CHECK}
-            </span>
-          </label>
-          <input type="hidden" name="applyKillSwitch" value="false" />
-          <input type="hidden" name="returnTo" value={returnTo} />
-          <SubmitButton className="btn-cta" pendingLabel="Turning pause off…">
-            {ADS_UNPAUSE_ACTION}
-          </SubmitButton>
-        </form>
+      {view.showAdsTurnOn ? (
+        <a className="btn-secondary text-sm" href={adsOwnerHref}>
+          {ADS_TURN_ON_IN_ADS}
+        </a>
       ) : null}
-      {view.showOwnerNote ? <p className="cx-help">{ADS_PAUSE_OWNER_ONLY}</p> : null}
     </div>
   );
 }
