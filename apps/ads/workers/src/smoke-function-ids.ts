@@ -15,6 +15,7 @@ const EXPECTED = [
   ADS_FUNCTION_IDS.auditRequested,
   LEGACY_ADS_FUNCTION_IDS.auditRequested,
   ADS_FUNCTION_IDS.accountSync,
+  ADS_FUNCTION_IDS.accountReview,
   LEGACY_ADS_FUNCTION_IDS.metaAdsAccountSync,
   ADS_FUNCTION_IDS.paidMediaMeta,
   LEGACY_ADS_FUNCTION_IDS.googleAdsAccountSync,
@@ -31,6 +32,7 @@ const EXPECTED_EVENTS = [
   ADS_EVENTS.auditRequested,
   LEGACY_ADS_EVENTS.auditRequested,
   ADS_EVENTS.accountSync,
+  ADS_EVENTS.accountReviewRequested,
   LEGACY_ADS_EVENTS.metaAdsAccountSync,
   ADS_EVENTS.paidMediaMeta,
   LEGACY_ADS_EVENTS.googleAdsAccountSync,
@@ -63,9 +65,18 @@ const registered = functions.map(readFunctionId);
 assertSame(registered, [...EXPECTED], "Inngest function objects drifted from FUNCTION_IDS");
 
 const events = functions.map((fn) => {
-  const triggers = (fn as { opts?: { triggers?: { event?: string }[] } }).opts?.triggers ?? [];
+  const id = readFunctionId(fn);
+  const triggers = (fn as { opts?: { triggers?: { event?: string; cron?: string }[] } }).opts?.triggers ?? [];
+  if (id === ADS_FUNCTION_IDS.accountReview) {
+    const event = triggers.find((trigger) => trigger.event)?.event;
+    const cron = triggers.find((trigger) => trigger.cron)?.cron;
+    if (triggers.length !== 2 || event !== ADS_EVENTS.accountReviewRequested || cron !== "0 14 * * 1") {
+      throw new Error(`${id} must listen to ${ADS_EVENTS.accountReviewRequested} and cron 0 14 * * 1`);
+    }
+    return event;
+  }
   const event = triggers[0]?.event;
-  if (!event || triggers.length !== 1) throw new Error(`${readFunctionId(fn)} must listen to exactly one event`);
+  if (!event || triggers.length !== 1) throw new Error(`${id} must listen to exactly one event`);
   return event;
 });
 assertSame(events, [...EXPECTED_EVENTS], "Inngest event names drifted");

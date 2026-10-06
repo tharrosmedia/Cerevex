@@ -100,6 +100,7 @@ export const ADS_EVENTS = {
   accountSync: "ads/account.sync",
   paidMediaMeta: "ads/paid-media.meta.requested",
   paidMediaGoogle: "ads/paid-media.google.requested",
+  accountReviewRequested: "ads/account-review.requested",
 } as const;
 
 /**
@@ -129,6 +130,7 @@ export const ADS_FUNCTION_IDS = {
   accountSync: "ads-account-sync",
   paidMediaMeta: "ads-paid-media-meta",
   paidMediaGoogle: "ads-paid-media-google",
+  accountReview: "ads-account-review",
 } as const;
 
 /** Old event names still accepted by dual listeners. Do not emit after this release. */

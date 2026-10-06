@@ -47,6 +47,7 @@ import {
   startOAuth,
   syncAdAccount,
 } from "@/lib/api";
+import { AccountReviewCard } from "@/components/cockpit/account-review-card";
 import { ApproveSheet } from "@/components/cockpit/approve-sheet";
 import { connectionStatusLabel } from "@tharros/ads-shared";
 import { formatWhen } from "@/lib/format";
@@ -747,6 +748,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           ) : null}
         </CardContent>
       </Card>
+
+      <AccountReviewCard clientId={id} />
 
       <Card>
         <CardHeader>

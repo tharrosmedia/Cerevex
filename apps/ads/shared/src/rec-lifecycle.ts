@@ -35,6 +35,7 @@ export const CLIENT_AUDIT_ACTIONS = [
   "prompt_layer_rolled_back",
   "role_changed",
   "ai_spend",
+  "account_review",
 ] as const;
 
 /** Person decisions. The internal service key cannot write these. */
@@ -162,7 +163,8 @@ export type RecLifecycleInput =
       fromRole: string | null;
       toRole: string;
     })
-  | (LifecycleBase & { kind: "ai_spend"; runId: string; modelId: string; usd: number });
+  | (LifecycleBase & { kind: "ai_spend"; runId: string; modelId: string; usd: number })
+  | (LifecycleBase & { kind: "account_review"; runId: string });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -394,6 +396,9 @@ function lifecyclePayload(input: RecLifecycleInput, at: string, approver: string
       at,
       ...extra,
     };
+  }
+  if (input.kind === "account_review") {
+    return { runId: input.runId, cadence: "weekly", at, ...extra };
   }
   if (input.kind === "role_changed") {
     return {

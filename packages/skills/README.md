@@ -36,6 +36,8 @@ Prompt-layer precedence, highest first: compliance, profile facts, client layer 
 
 ## Recommendation ingestion
 
+`runAccountReview` builds the weekly packet for HVAC USA. It runs paid review (Meta and Google) plus SEO audit and SEO research, then lists every other loop as not checked. "Checked, nothing to act on" is a valid packet. The packet does not export a prompt layer and does not start the learning loop.
+
 `ingestRecommendationYaml` parses a `cerevex-recommendation-format` document. Each record is validated, tagged, and run through the same claims-check, no-slop-copy, gate, and Approve rules as a native rec. An invalid record is returned in `rejected` with a reason and is not half-parsed. HVAC USA is the only slice 1 pilot. A native rec and an ingested rec with the same store, target, and change inside 7 days merge. Native platform numbers win.
 
 The layer paths are canonical:
