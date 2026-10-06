@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cerevex/contracts": "*",
+    "@cerevex/skills": "*",
+    "@tharros/ads-shared": "*",
     "inngest": "^4.18.1"
   },
   "devDependencies": {

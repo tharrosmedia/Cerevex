@@ -31,6 +31,7 @@
     "./rec-lifecycle": "./src/rec-lifecycle.ts",
     "./scoped-recommendations": "./src/scoped-recommendations.ts",
     "./skill-ingest": "./src/skill-ingest.ts",
+    "./skill-jobs": "./src/skill-jobs.ts",
     "./mutate": "./src/mutate.ts",
     "./flags": "./src/flags.ts",
     "./approve": "./src/approve.ts",

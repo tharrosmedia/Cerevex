@@ -16,7 +16,9 @@ const EXPECTED = [
   LEGACY_ADS_FUNCTION_IDS.auditRequested,
   ADS_FUNCTION_IDS.accountSync,
   LEGACY_ADS_FUNCTION_IDS.metaAdsAccountSync,
+  ADS_FUNCTION_IDS.paidMediaMeta,
   LEGACY_ADS_FUNCTION_IDS.googleAdsAccountSync,
+  ADS_FUNCTION_IDS.paidMediaGoogle,
 ] as const;
 
 const EXPECTED_EVENTS = [
@@ -30,7 +32,9 @@ const EXPECTED_EVENTS = [
   LEGACY_ADS_EVENTS.auditRequested,
   ADS_EVENTS.accountSync,
   LEGACY_ADS_EVENTS.metaAdsAccountSync,
+  ADS_EVENTS.paidMediaMeta,
   LEGACY_ADS_EVENTS.googleAdsAccountSync,
+  ADS_EVENTS.paidMediaGoogle,
 ] as const;
 
 function readFunctionId(fn: unknown): string {

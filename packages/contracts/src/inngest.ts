@@ -62,6 +62,8 @@ export const SEO_EVENTS = {
   auditRequested: "seo/audit.requested",
   wordpressSync: "seo/wordpress.sync",
   wordpressApply: "seo/wordpress.apply",
+  skillAuditRequested: "seo/skill.audit.requested",
+  skillResearchRequested: "seo/skill.research.requested",
 } as const;
 
 export const SEO_FUNCTION_IDS = {
@@ -85,6 +87,8 @@ export const SEO_FUNCTION_IDS = {
   audit: "seo-audit",
   wordpressSync: "seo-wordpress-sync",
   wordpressApply: "seo-wordpress-apply",
+  skillAudit: "seo-skill-audit",
+  skillResearch: "seo-skill-research",
 } as const;
 
 /** Canonical Cerevex ads events. Platform is payload data, not the name. */
@@ -94,6 +98,8 @@ export const ADS_EVENTS = {
   applyRequested: "ads/apply.requested",
   auditRequested: "ads/audit.requested",
   accountSync: "ads/account.sync",
+  paidMediaMeta: "ads/paid-media.meta.requested",
+  paidMediaGoogle: "ads/paid-media.google.requested",
 } as const;
 
 /**
@@ -121,6 +127,8 @@ export const ADS_FUNCTION_IDS = {
   applyRequested: "ads-apply-requested",
   auditRequested: "ads-audit-requested",
   accountSync: "ads-account-sync",
+  paidMediaMeta: "ads-paid-media-meta",
+  paidMediaGoogle: "ads-paid-media-google",
 } as const;
 
 /** Old event names still accepted by dual listeners. Do not emit after this release. */

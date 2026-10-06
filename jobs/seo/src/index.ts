@@ -20,6 +20,8 @@ import { gscApplyFn } from './functions/gsc-apply';
 import { auditFn } from './functions/audit';
 import { wordpressSyncFn } from './functions/wordpress-sync';
 import { wordpressApplyFn } from './functions/wordpress-apply';
+import { skillAuditFn } from './functions/skill-audit';
+import { skillResearchFn } from './functions/skill-research';
 
 export { inngest } from './client';
 
@@ -52,4 +54,6 @@ export const functions = [
   auditFn,
   wordpressSyncFn,
   wordpressApplyFn,
+  skillAuditFn,
+  skillResearchFn,
 ];

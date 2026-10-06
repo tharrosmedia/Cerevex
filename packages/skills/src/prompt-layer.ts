@@ -1,7 +1,7 @@
 /**
  * Precedence from references/prompt-layer.md (version 1.0.1, 2026-10-03).
- * Seeding a layer is PR 3. This module exposes the procedure the loader pins
- * and the canonical layer paths.
+ * `seedPromptLayer` seeds the HVAC USA layer. This module is the procedure
+ * the loader pins, plus the canonical layer paths.
  *
  * Client file: `clients/<client>/prompt-layer.md`
  * Store file: `clients/<client>/prompt-layer-<store>.md`
