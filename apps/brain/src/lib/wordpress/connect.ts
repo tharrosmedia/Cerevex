@@ -4,7 +4,8 @@ import { createWordPressConnector, normalizeSiteUrl } from '@cerevex/connector-w
 import { createStore, getStore, updateStore } from '../db/stores';
 import { logEvent } from '../brain/events';
 import { wordpressConnectBlockedFromSource, newWordpressStoreConfig } from './connect-config';
-import { wordpressConnectFlagsForAddSite, wordpressFlagsFromStore } from './capabilities';
+import { wordpressConnectFlagsForAddSite } from './add-site-gate';
+import { wordpressFlagsFromStore } from './capabilities';
 import {
   encryptWordpressPluginKey,
   isWordpressStore,

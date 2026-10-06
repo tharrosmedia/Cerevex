@@ -23,8 +23,8 @@ import {
 import {
   WORDPRESS_CONNECT_SETTINGS_TIMEOUT_MS,
   wordpressConnectFlagsForAddSite,
-  wordpressFlagsFromStore,
-} from '../src/lib/wordpress/capabilities';
+} from '../src/lib/wordpress/add-site-gate';
+import { wordpressFlagsFromStore } from '../src/lib/wordpress/capabilities';
 import { newWordpressStoreConfig } from '../src/lib/wordpress/connect-config';
 import { pluginDownloadError } from '../src/lib/wordpress/plugin-download';
 
@@ -134,8 +134,11 @@ assert.equal(settingsSrc.includes('isWordpressApplyWritable(connectFlags)'), fal
 assert.equal(WORDPRESS_CONNECT_SETTINGS_TIMEOUT_MS, 1500);
 const modulesSrc = readFileSync(join(root, '../src/lib/db/workspace-modules.ts'), 'utf8');
 assert.match(modulesSrc, /setTimeout\(\(\) => resolve\(null\), 1500\)/);
+const gateSrc = readFileSync(join(root, '../src/lib/wordpress/add-site-gate.ts'), 'utf8');
+assert.match(gateSrc, /getWorkspaceProductSettings\(\)/);
 const capabilitiesSrc = readFileSync(join(root, '../src/lib/wordpress/capabilities.ts'), 'utf8');
-assert.match(capabilitiesSrc, /getWorkspaceProductSettings\(\)/);
+assert.equal(capabilitiesSrc.includes('workspace-modules'), false);
+assert.equal(capabilitiesSrc.includes('getWorkspaceProductSettings'), false);
 
 const started = Date.now();
 const timedOutOn = await wordpressConnectFlagsForAddSite(storeCopyOn, {
@@ -193,6 +196,8 @@ assert.equal(syncSrc.includes('getWorkspaceProductSettings'), false);
 assert.match(applySrc, /wordpressApplyGateReason/);
 assert.equal(applySrc.includes('wordpressConnectFlagsForAddSite'), false);
 assert.equal(applySrc.includes('getWorkspaceProductSettings'), false);
+assert.equal(syncSrc.includes('add-site-gate'), false);
+assert.equal(applySrc.includes('add-site-gate'), false);
 
 const connectSrc = readFileSync(join(root, '../src/lib/wordpress/connect.ts'), 'utf8');
 const connectFn = connectSrc.slice(
