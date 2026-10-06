@@ -11,7 +11,7 @@ import type {
   Platform,
   RecommendationPublic,
 } from "@tharros/ads-shared";
-import { MODULE_COPY, isCapabilityVisible } from "@tharros/ads-shared";
+import { MODULE_COPY, SKILL_GROUP_LABEL, isCapabilityVisible, readSkillRec } from "@tharros/ads-shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -781,24 +781,16 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 : `No ${recFilter} recommendations.`}
             </p>
           ) : (
-            <ul className="space-y-3">
-              {visibleRecs.map((rec) => {
-                const adsScoped = (rec.scope ?? "ad_account") === "ad_account";
-                return (
-                <RecommendationCard
-                  key={rec.id}
-                  recommendation={rec}
-                  canManage={canManage && canMutate}
-                  canApprove={canApprove}
-                  killSwitchOn={adsScoped && killSwitch}
-                  frozen={adsScoped ? accounts.find((row) => row.id === rec.adAccountId)?.frozen : false}
-                  busy={busy}
-                  onDecide={decide}
-                  onApprove={(id) => setApproveId(id)}
-                />
-                );
-              })}
-            </ul>
+            <SkillRecGroups
+              recommendations={visibleRecs}
+              canManage={canManage && canMutate}
+              canApprove={canApprove}
+              killSwitch={killSwitch}
+              accounts={accounts}
+              busy={busy}
+              onDecide={decide}
+              onApprove={(id) => setApproveId(id)}
+            />
           )}
         </CardContent>
       </Card>
@@ -836,5 +828,141 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         onConfirm={() => (approveId ? approve(approveId) : undefined)}
       />
     </div>
+  );
+}
+
+function SkillRecGroups({
+  recommendations,
+  canManage,
+  canApprove,
+  killSwitch,
+  accounts,
+  busy,
+  onDecide,
+  onApprove,
+}: {
+  recommendations: RecommendationPublic[];
+  canManage: boolean;
+  canApprove: boolean;
+  killSwitch: boolean;
+  accounts: AdAccountPublic[];
+  busy: string | null;
+  onDecide: (id: string, action: "deny" | "snooze") => void;
+  onApprove: (id: string) => void;
+}) {
+  const account: RecommendationPublic[] = [];
+  const grouped: Record<"do_now" | "test" | "needs_data", RecommendationPublic[]> = {
+    do_now: [],
+    test: [],
+    needs_data: [],
+  };
+  for (const rec of recommendations) {
+    const skill = readSkillRec(rec.evidence);
+    if (!skill) account.push(rec);
+    else grouped[skill.group].push(rec);
+  }
+  const hasSkill = grouped.do_now.length + grouped.test.length + grouped.needs_data.length > 0;
+  if (!hasSkill) {
+    return (
+      <ul className="space-y-3">
+        {recommendations.map((rec) => (
+          <RecRow
+            key={rec.id}
+            rec={rec}
+            canManage={canManage}
+            canApprove={canApprove}
+            killSwitch={killSwitch}
+            accounts={accounts}
+            busy={busy}
+            onDecide={onDecide}
+            onApprove={onApprove}
+          />
+        ))}
+      </ul>
+    );
+  }
+  const sections = (["do_now", "test", "needs_data"] as const)
+    .map((group) => ({
+      group,
+      rows: [...grouped[group]].sort((a, b) => Number(b.estimatedImpactUsd ?? 0) - Number(a.estimatedImpactUsd ?? 0)),
+    }))
+    .filter((section) => section.rows.length > 0);
+  return (
+    <div className="flex flex-col gap-4">
+      {sections.map((section) => (
+        <section key={section.group}>
+          <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">{SKILL_GROUP_LABEL[section.group]}</p>
+          <ul className="space-y-3">
+            {section.rows.map((rec) => (
+              <RecRow
+                key={rec.id}
+                rec={rec}
+                canManage={canManage}
+                canApprove={canApprove}
+                killSwitch={killSwitch}
+                accounts={accounts}
+                busy={busy}
+                onDecide={onDecide}
+                onApprove={onApprove}
+              />
+            ))}
+          </ul>
+        </section>
+      ))}
+      {account.length > 0 ? (
+        <section>
+          <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">Account</p>
+          <ul className="space-y-3">
+            {account.map((rec) => (
+              <RecRow
+                key={rec.id}
+                rec={rec}
+                canManage={canManage}
+                canApprove={canApprove}
+                killSwitch={killSwitch}
+                accounts={accounts}
+                busy={busy}
+                onDecide={onDecide}
+                onApprove={onApprove}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function RecRow({
+  rec,
+  canManage,
+  canApprove,
+  killSwitch,
+  accounts,
+  busy,
+  onDecide,
+  onApprove,
+}: {
+  rec: RecommendationPublic;
+  canManage: boolean;
+  canApprove: boolean;
+  killSwitch: boolean;
+  accounts: AdAccountPublic[];
+  busy: string | null;
+  onDecide: (id: string, action: "deny" | "snooze") => void;
+  onApprove: (id: string) => void;
+}) {
+  const adsScoped = (rec.scope ?? "ad_account") === "ad_account";
+  return (
+    <RecommendationCard
+      recommendation={rec}
+      canManage={canManage}
+      canApprove={canApprove}
+      killSwitchOn={adsScoped && killSwitch}
+      frozen={adsScoped ? accounts.find((row) => row.id === rec.adAccountId)?.frozen : false}
+      busy={busy}
+      onDecide={onDecide}
+      onApprove={onApprove}
+    />
   );
 }

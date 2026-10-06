@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
-import { applyStatusLabel, summarizeMutation } from "@tharros/ads-shared";
+import { SKILL_GROUP_LABEL, applyStatusLabel, readSkillRec, summarizeMutation } from "@tharros/ads-shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,6 +103,8 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
   const frozen = adsScoped && Boolean(data?.adAccount?.frozen);
   const adsPaused = adsScoped && killSwitch;
   const open = rec.status === "proposed";
+  const skill = readSkillRec(rec.evidence);
+  const approveHidden = skill?.approveHidden === true;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -119,6 +121,14 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
           <RiskBadge risk={rec.risk} />
         </div>
         <p className="mt-2 text-sm text-muted-foreground">{rec.rationale}</p>
+        {skill ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {SKILL_GROUP_LABEL[skill.group]} · {skill.sources.join(", ")}
+            {skill.versions.skill !== "unknown" ? ` · ${skill.versions.skill}` : ""}
+            {skill.versions.pack !== "unknown" ? ` · ${skill.versions.pack}` : ""}
+            {skill.versions.layer !== "unknown" && skill.versions.layer !== "none" ? ` · ${skill.versions.layer}` : ""}
+          </p>
+        ) : null}
       </div>
 
       {notice ? <NoticeBanner>{notice}</NoticeBanner> : null}
@@ -164,13 +174,15 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
 
       {open ? (
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button
-            onClick={() => setConfirmOpen(true)}
-            disabled={!canApprove || adsPaused || frozen || busy !== null}
-            className="w-full sm:w-auto"
-          >
-            Approve
-          </Button>
+          {approveHidden ? null : (
+            <Button
+              onClick={() => setConfirmOpen(true)}
+              disabled={!canApprove || adsPaused || frozen || busy !== null}
+              className="w-full sm:w-auto"
+            >
+              Approve
+            </Button>
+          )}
           <Button variant="outline" onClick={() => denyOrSnooze("deny")} disabled={busy !== null} className="w-full sm:w-auto">
             {busy === "deny" ? "Saving…" : "Deny"}
           </Button>
@@ -197,7 +209,12 @@ export default function RecommendationDetailPage({ params }: { params: Promise<{
             : "Unfreeze this ad account before Approve can apply."}
         </p>
       ) : null}
-      {open && !adsScoped ? (
+      {open && approveHidden ? (
+        <p className="text-sm text-muted-foreground">
+          {skill?.approveHiddenReason ?? "Approve stays hidden until the missing gate is filled."}
+        </p>
+      ) : null}
+      {open && !adsScoped && !approveHidden ? (
         <p className="text-sm text-muted-foreground">
           Approve records the decision only. Nothing is queued for Meta or Google.
         </p>

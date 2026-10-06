@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { RecommendationPublic } from "@tharros/ads-shared";
-import { summarizeMutation } from "@tharros/ads-shared";
+import { SKILL_GROUP_LABEL, readSkillRec, summarizeMutation } from "@tharros/ads-shared";
 import { Button } from "@/components/ui/button";
 import { asProposedMutations, formatMoney, titleCase } from "@/lib/format";
 import { RecStatusBadge, RiskBadge } from "./status-badge";
@@ -30,6 +30,7 @@ export function RecommendationCard({
   const impact = formatMoney(recommendation.estimatedImpactUsd);
   const deciding = busy === recommendation.id;
   const open = recommendation.status === "proposed";
+  const skill = readSkillRec(recommendation.evidence);
 
   return (
     <li className="rounded-md border border-border px-3 py-3">
@@ -43,6 +44,14 @@ export function RecommendationCard({
             {impact ? ` · est. ${impact}` : ""}
             {recommendation.confidence ? ` · confidence ${recommendation.confidence}` : ""}
           </p>
+          {skill ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {SKILL_GROUP_LABEL[skill.group]} · {skill.sources.join(", ")}
+              {skill.versions.skill !== "unknown" ? ` · ${skill.versions.skill}` : ""}
+              {skill.versions.pack !== "unknown" ? ` · ${skill.versions.pack}` : ""}
+            </p>
+          ) : null}
+          {skill?.approveHiddenReason ? <p className="mt-1 text-xs text-muted-foreground">{skill.approveHiddenReason}</p> : null}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <RecStatusBadge status={recommendation.status} />
@@ -74,13 +83,15 @@ export function RecommendationCard({
         </Link>
         {canManage && open ? (
           <>
-            <Button
-              size="sm"
-              onClick={() => (onApprove ? onApprove(recommendation.id) : undefined)}
-              disabled={!canApprove || killSwitchOn || frozen || deciding}
-            >
-              Approve
-            </Button>
+            {skill?.approveHidden ? null : (
+              <Button
+                size="sm"
+                onClick={() => (onApprove ? onApprove(recommendation.id) : undefined)}
+                disabled={!canApprove || killSwitchOn || frozen || deciding}
+              >
+                Approve
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => onDecide(recommendation.id, "deny")} disabled={deciding}>
               Deny
             </Button>

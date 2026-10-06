@@ -34,6 +34,10 @@ A requested version that is not the vendored pin throws. The loader checks the c
 
 Prompt-layer precedence, highest first: compliance, profile facts, client layer (a store layer refines the client layer), template defaults. If no layer exists, fall back to the profile. Seeding a layer is a later PR.
 
+## Recommendation ingestion
+
+`ingestRecommendationYaml` parses a `cerevex-recommendation-format` document. Each record is validated, tagged, and run through the same claims-check, no-slop-copy, gate, and Approve rules as a native rec. An invalid record is returned in `rejected` with a reason and is not half-parsed. HVAC USA is the only slice 1 pilot. A native rec and an ingested rec with the same store, target, and change inside 7 days merge. Native platform numbers win.
+
 The layer paths are canonical:
 
 - Client: `clients/<client>/prompt-layer.md` (`clientPromptLayerPath`)

@@ -35,6 +35,7 @@ import {
   createApplyJobForAuthorization,
   RecommendationGateError,
   RecommendationNotOpenError,
+  SkillApproveHiddenError,
   createAuditRun,
   decideRecommendation,
   getAuditBundle,
@@ -484,6 +485,10 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       if (error instanceof RecommendationGateError) {
         await recordApproveRefusal(row, actor, error.reason);
         throw new HTTPException(409, { message: applyBlockMessage(error.reason) });
+      }
+      if (error instanceof SkillApproveHiddenError) {
+        await recordApproveRefusal(row, actor, "skill_approve_hidden");
+        throw new HTTPException(409, { message: error.message });
       }
       throw error;
     }

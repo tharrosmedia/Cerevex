@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/fact.test.ts && tsx tests/gates.test.ts && tsx tests/profiles.test.ts && tsx tests/manifest.test.ts && tsx tests/recommendation.test.ts && tsx tests/staleness.test.ts && tsx tests/snapshot-time.test.ts && tsx tests/shared-reference-pins.test.ts",
+    "test": "tsx tests/fact.test.ts && tsx tests/gates.test.ts && tsx tests/profiles.test.ts && tsx tests/manifest.test.ts && tsx tests/recommendation.test.ts && tsx tests/staleness.test.ts && tsx tests/snapshot-time.test.ts && tsx tests/shared-reference-pins.test.ts && tsx tests/ingest.test.ts",
     "manifest": "tsx scripts/build-manifest.ts",
     "import": "tsx scripts/import-profiles.ts",
     "resync": "tsx scripts/resync.ts"
