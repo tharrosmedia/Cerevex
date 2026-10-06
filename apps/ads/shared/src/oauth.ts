@@ -1,4 +1,5 @@
 import { loadEnv } from "./env";
+import { META_GRAPH_VERSION } from "./meta-graph";
 import type { OAuthPlatformConfig, Platform } from "./types";
 
 loadEnv();
@@ -31,9 +32,16 @@ export function isGoogleConfigured(): boolean {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
-export function oauthConfig(): { meta: OAuthPlatformConfig; google: OAuthPlatformConfig } {
+export function oauthConfig(): {
+  meta: OAuthPlatformConfig & { apiVersion: string };
+  google: OAuthPlatformConfig;
+} {
   return {
-    meta: { configured: isMetaConfigured(), redirectUri: metaRedirectUri() },
+    meta: {
+      configured: isMetaConfigured(),
+      redirectUri: metaRedirectUri(),
+      apiVersion: META_GRAPH_VERSION,
+    },
     google: { configured: isGoogleConfigured(), redirectUri: googleRedirectUri() },
   };
 }
@@ -46,7 +54,7 @@ export function metaAuthorizeUrl(state: string): string {
     response_type: "code",
     state,
   });
-  return `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
+  return `https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth?${params.toString()}`;
 }
 
 export function googleAuthorizeUrl(state: string): string {

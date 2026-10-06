@@ -3,6 +3,7 @@ import type { ApplyMutation } from "../audit-schemas";
 import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
 import { refuseMockPull } from "../live-or-loud";
+import { META_GRAPH_VERSION } from "../meta-graph";
 import { isMetaConfigured, metaAuthorizeUrl, metaRedirectUri } from "../oauth";
 import { mockPull } from "../platforms";
 import type { AccessibleAdAccount, StoredOAuthTokens } from "../types";
@@ -16,7 +17,33 @@ import type {
 } from "./types";
 import { readPlatformWriteBody, requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
+const GRAPH = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+const VERSION_WARNING_HEADER = "X-Ad-Api-Version-Warning";
+
+/** Header text only. The request URL and token stay out of the log line. */
+function versionWarningMessage(raw: string): string {
+  const detail = raw
+    .replace(/(access_token|client_secret|fb_exchange_token|refresh_token|code)=([^&\s]+)/gi, "$1=[redacted]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+  return detail
+    ? `Meta Graph ${VERSION_WARNING_HEADER}: ${detail}`
+    : `Meta Graph ${VERSION_WARNING_HEADER}`;
+}
+
+function warnIfVersionHeader(res: Response): void {
+  const raw = res.headers.get(VERSION_WARNING_HEADER);
+  if (!raw?.trim()) return;
+  console.warn(versionWarningMessage(raw));
+}
+
+async function graphFetch(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, init);
+  warnIfVersionHeader(res);
+  return res;
+}
 
 function notConfigured(): ConnectorConnectResult {
   return {
@@ -34,7 +61,7 @@ async function graphPost(
   signal?: AbortSignal | null,
 ): Promise<unknown> {
   const params = new URLSearchParams({ ...body, access_token: accessToken });
-  const res = await fetch(`${GRAPH}/${path}`, {
+  const res = await graphFetch(`${GRAPH}/${path}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: params,
@@ -46,7 +73,7 @@ async function graphPost(
 async function graphGet(path: string, accessToken: string, signal?: AbortSignal | null): Promise<unknown> {
   const url = path.startsWith("http") ? path : `${GRAPH}/${path}`;
   const separator = url.includes("?") ? "&" : "?";
-  const res = await fetch(`${url}${separator}access_token=${encodeURIComponent(accessToken)}`, {
+  const res = await graphFetch(`${url}${separator}access_token=${encodeURIComponent(accessToken)}`, {
     signal: signal ?? signalForPlatformCall() ?? undefined,
   });
   if (!res.ok) {
@@ -219,7 +246,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       client_secret: process.env.META_APP_SECRET,
       fb_exchange_token: tokens.accessToken,
     });
-    const res = await fetch(`${GRAPH}/oauth/access_token?${params.toString()}`);
+    const res = await graphFetch(`${GRAPH}/oauth/access_token?${params.toString()}`);
     if (!res.ok) return tokens;
     const json = (await res.json()) as { access_token?: string; expires_in?: number };
     if (!json.access_token) return tokens;
@@ -239,7 +266,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       redirect_uri: metaRedirectUri(),
       code,
     });
-    const res = await fetch(`${GRAPH}/oauth/access_token?${params.toString()}`);
+    const res = await graphFetch(`${GRAPH}/oauth/access_token?${params.toString()}`);
     if (!res.ok) {
       throw new Error("Meta token exchange failed");
     }
@@ -249,9 +276,10 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
     }
     let externalId = "pending";
     try {
-      const me = (await fetch(
+      const meRes = await graphFetch(
         `${GRAPH}/me/adaccounts?fields=id,account_id&access_token=${encodeURIComponent(json.access_token)}`,
-      ).then((r) => r.json())) as { data?: { id?: string; account_id?: string }[] };
+      );
+      const me = (await meRes.json()) as { data?: { id?: string; account_id?: string }[] };
       externalId = me.data?.[0]?.id ?? me.data?.[0]?.account_id ?? "pending";
     } catch {
       externalId = "pending";
