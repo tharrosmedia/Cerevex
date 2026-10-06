@@ -135,6 +135,16 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
   },
   {
     surface: 'brain',
+    path: '/api/ads/pause',
+    methods: ['POST'],
+    auth: 'session',
+    currentAuth: 'none',
+    intendedAuth:
+      'Middleware allows a console session or the internal key. The handler does not call consoleAuthorized(). Pause (kill switch on) is allowed for that session or the internal key. applyKillSwitch false is refused for every caller with code brain_pause_only and writes nothing. The write is PATCH /workspace on ads-api for ADS_INTERNAL_WORKSPACE_ID only, using the service key.',
+    notes: 'Does not store a second kill switch. Brain does not turn pause off. That stays in the owner Ads session.',
+  },
+  {
+    surface: 'brain',
     path: '/api/ads/sync',
     methods: ['POST'],
     auth: 'session',

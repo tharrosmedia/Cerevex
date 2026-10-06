@@ -19,6 +19,7 @@ import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { GscPropertyField } from '@/components/gsc-property-field';
 import { WordpressConnectSettings } from '@/components/wordpress-connect-settings';
+import { AdsPauseToggle } from '@/components/ads/pause-toggle';
 import { SubmitButton } from '@/components/submit-button';
 import { GSC_RECS_TURN_ON_CTA, GSC_SYNC_QUEUED_COPY, GSC_SYNC_RECS_OFF_COPY } from '@/src/lib/seo/gsc-copy';
 
@@ -490,8 +491,8 @@ async function signOutAction() {
 
 export const dynamic = 'force-dynamic';
 
-export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string }> }) {
-  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string };
+export default async function Settings({ searchParams }: { searchParams?: Promise<{ resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string; pause?: string }> }) {
+  const params = await (searchParams || Promise.resolve({})) as { resync?: string; brand?: string; autonomy?: string; knowledge?: string; url?: string; status?: string; message?: string; placement?: string; placementReason?: string; metafields?: string; products?: string; count?: string; seoRules?: string; catalog?: string; gsc?: string; modules?: string; capabilities?: string; callrail?: string; bundled?: string; clarity?: string; seasonality?: string; wordpress?: string; adslink?: string; pause?: string };
   let store = null;
   try {
     store = await getActiveStore();
@@ -549,6 +550,8 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
           {params.message && <> Details: {params.message}</>}
         </Flash>
       )}
+      {params.pause === 'saved' && <Flash>{params.message ? decodeURIComponent(params.message) : 'Ads pause updated.'}</Flash>}
+      {params.pause === 'error' && <Flash tone="warn">{params.message ? decodeURIComponent(params.message) : 'Could not update ads pause.'}</Flash>}
       {params.autonomy === 'saved' && <Flash>Autonomy saved.</Flash>}
       {params.autonomy === 'error' && <Flash tone="warn">Could not save autonomy.</Flash>}
       {params.placement && params.placement !== 'error' && (
@@ -728,7 +731,7 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
 
       <section id="approvals" className="cx-settings-section">
         <h2>Approvals &amp; autonomy</h2>
-        <p className="cx-lede">SEO approve gate and a pointer to Ads pause. Nothing here writes ad platforms.</p>
+        <p className="cx-lede">SEO approve gate and ads pause. Pause lives here. Nothing writes an ad platform until pause is off and a person Approves.</p>
 
         <div className="cx-panel">
           <h2>SEO approval</h2>
@@ -748,11 +751,7 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
           </form>
         </div>
 
-        <div className="cx-panel">
-          <h2>Ads pause</h2>
-          <p className="cx-help">Pause ads and approve suggestions on Ads. This settings page does not apply ads.</p>
-          <Link href="/ads" className="btn-secondary">Open Ads</Link>
-        </div>
+        <AdsPauseToggle returnTo="/settings#ads-pause" />
       </section>
 
       <section id="modules" className="cx-settings-section">

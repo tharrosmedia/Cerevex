@@ -27,6 +27,7 @@ import { adsApi } from '@/lib/ads-bff';
 import { getWorkspaceModuleSettings } from '@/src/lib/db/workspace-modules';
 import { resolveSiteAds } from '@/lib/ads-site';
 import { ConnectButtons } from '@/components/ads/connect-buttons';
+import { AdsPauseToggle } from '@/components/ads/pause-toggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,8 @@ type CockpitParams = {
   connected?: string;
   count?: string;
   oauth_error?: string;
+  pause?: string;
+  message?: string;
 };
 
 export default async function AdsCockpitPage({
@@ -125,11 +128,16 @@ export default async function AdsCockpitPage({
         <p className="cx-banner">Cockpit is recommend-only for this workspace. Nothing new will apply from here.</p>
       ) : null}
       {filters.notice ? <p className="cx-banner" role="status">{filters.notice}</p> : null}
-      {cockpit.workspace?.applyKillSwitch ? (
-        <p className="cx-banner cx-banner-warn">Ads are paused. Approve cannot apply until the pause is off.</p>
-      ) : (
-        <p className="cx-banner">Approve can change live ads. Deny and Snooze never write platforms.</p>
-      )}
+      {params.pause === 'saved' && params.message ? (
+        <p className="cx-banner" role="status">{decodeURIComponent(params.message)}</p>
+      ) : null}
+      {params.pause === 'error' ? (
+        <p className="cx-banner cx-banner-warn" role="status">{params.message ? decodeURIComponent(params.message) : 'Could not update ads pause.'}</p>
+      ) : null}
+      <AdsPauseToggle
+        killSwitchOn={cockpit.workspace ? cockpit.workspace.applyKillSwitch !== false : null}
+        returnTo="/ads"
+      />
 
       {!cockpit.ok ? (
         <p className="cx-banner cx-banner-warn" role="status">

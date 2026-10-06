@@ -887,88 +887,140 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
     if (!canMutate(auth, workspaceId)) {
       throw new HTTPException(403, { message: "Only owners and operators can change modules" });
     }
-    const workspace = await getDb().query.workspaces.findFirst({
-      where: eq(workspaces.id, workspaceId),
-    });
-    if (!workspace) {
-      throw new HTTPException(404, { message: "Workspace not found" });
-    }
 
-    const safetyOns = applySafetyOnIds(parsed.data.capabilities);
-    const needsOwner =
-      parsed.data.applyKillSwitch === false ||
-      safetyOns.length > 0 ||
-      (isServicePrincipal(auth) && parsed.data.applyKillSwitch !== undefined);
-    if (needsOwner && (isServicePrincipal(auth) || workspaceRole(auth, workspaceId) !== "owner")) {
-      const flags = resolveWorkspaceCapabilities(workspace.settingsJson);
-      for (const id of safetyOns) {
+    const saved = await getDb().transaction(async (tx) => {
+      const [workspace] = await tx.select().from(workspaces).where(eq(workspaces.id, workspaceId)).for("update");
+      if (!workspace) {
+        throw new HTTPException(404, { message: "Workspace not found" });
+      }
+
+      const safetyOns = applySafetyOnIds(parsed.data.capabilities);
+      const killRequested = parsed.data.applyKillSwitch;
+      const killChanging = killRequested !== undefined && killRequested !== workspace.applyKillSwitch;
+      // Pause (kill switch on) stays open to anyone who can already change this workspace, including the service key.
+      // Turning pause off is checked on this locked row and stays with a human owner.
+      const turningPauseOff = killChanging && killRequested === false;
+      const needsOwner = turningPauseOff || safetyOns.length > 0;
+      if (needsOwner && (isServicePrincipal(auth) || workspaceRole(auth, workspaceId) !== "owner")) {
+        // Release the row lock before the refusal audit. Writing it on another
+        // connection while this transaction holds FOR UPDATE waits on the
+        // audit_log workspace foreign key and never finishes.
+        return {
+          kind: "refused" as const,
+          workspace,
+          safetyOns,
+          flags: resolveWorkspaceCapabilities(workspace.settingsJson),
+        };
+      }
+
+      let next = workspace.settingsJson as unknown;
+      if (parsed.data.businessType && isBusinessType(parsed.data.businessType)) {
+        next = applyBusinessTypeSettings(next, parsed.data.businessType);
+      }
+      if (parsed.data.modules) {
+        next = applyModuleOverrideSettings(next, parsed.data.modules);
+      }
+      if (parsed.data.capabilities) {
+        const overrides: Record<string, "on" | "hidden" | "recommend_only"> = {};
+        for (const [id, state] of Object.entries(parsed.data.capabilities)) {
+          if (isCapabilityId(id) && isCapabilityState(state)) overrides[id] = state;
+        }
+        if (Object.keys(overrides).length === 0) {
+          throw new HTTPException(400, { message: `Unknown capability. Known: ${CAPABILITY_IDS.join(", ")}` });
+        }
+        for (const [id, state] of Object.entries(overrides)) {
+          const blocked = isCapabilityId(id) ? capabilityOnBlockedReason(id, state) : null;
+          if (blocked) {
+            throw new HTTPException(409, { message: blocked });
+          }
+        }
+        next = applyCapabilityOverrideSettings(next, overrides);
+      }
+
+      if (!killChanging && next === workspace.settingsJson) {
+        return {
+          kind: "saved" as const,
+          wrote: false as const,
+          workspace,
+          updated: workspace,
+          safetyOns: safetyOns.slice(0, 0),
+          previous: null,
+        };
+      }
+
+      const patch: { settingsJson: unknown; applyKillSwitch?: boolean } = { settingsJson: next };
+      if (killChanging) patch.applyKillSwitch = killRequested;
+
+      const [updated] = await tx.update(workspaces).set(patch).where(eq(workspaces.id, workspaceId)).returning();
+      if (!updated) {
+        throw new HTTPException(404, { message: "Workspace not found" });
+      }
+
+      if (killChanging) {
+        const actor = auditActor(auth);
+        await writeAuditEvent(
+          {
+            workspaceId,
+            ...actor,
+            action: "kill_flip",
+            entityType: "workspace",
+            entityId: workspaceId,
+            payload: {
+              applyKillSwitch: killRequested,
+              old: workspace.applyKillSwitch,
+              new: killRequested,
+              actor: actor.actorType === "service" ? "service" : actor.actorId,
+            },
+          },
+          tx,
+        );
+      }
+
+      return {
+        kind: "saved" as const,
+        wrote: true as const,
+        workspace,
+        updated,
+        safetyOns,
+        previous: safetyOns.length > 0 ? resolveWorkspaceCapabilities(workspace.settingsJson) : null,
+      };
+    });
+
+    if (saved.kind === "refused") {
+      for (const id of saved.safetyOns) {
         await writeAuditEvent({
           workspaceId,
           ...auditActor(auth),
           action: "capability_flip",
           entityType: "workspace",
           entityId: workspaceId,
-          payload: { capability: id, from: flags[id], to: "on", allowed: false },
+          payload: { capability: id, from: saved.flags[id], to: "on", allowed: false },
         });
       }
       assertApplySafetyOwner(auth, workspaceId);
+      throw new HTTPException(403, { message: "Only a workspace owner can turn the kill switch off, unfreeze an ad account, or turn an apply capability on." });
     }
 
-    let next = workspace.settingsJson as unknown;
-    if (parsed.data.businessType && isBusinessType(parsed.data.businessType)) {
-      next = applyBusinessTypeSettings(next, parsed.data.businessType);
-    }
-    if (parsed.data.modules) {
-      next = applyModuleOverrideSettings(next, parsed.data.modules);
-    }
-    if (parsed.data.capabilities) {
-      const overrides: Record<string, "on" | "hidden" | "recommend_only"> = {};
-      for (const [id, state] of Object.entries(parsed.data.capabilities)) {
-        if (isCapabilityId(id) && isCapabilityState(state)) overrides[id] = state;
-      }
-      if (Object.keys(overrides).length === 0) {
-        throw new HTTPException(400, { message: `Unknown capability. Known: ${CAPABILITY_IDS.join(", ")}` });
-      }
-      for (const [id, state] of Object.entries(overrides)) {
-        const blocked = isCapabilityId(id) ? capabilityOnBlockedReason(id, state) : null;
-        if (blocked) {
-          throw new HTTPException(409, { message: blocked });
-        }
-      }
-      next = applyCapabilityOverrideSettings(next, overrides);
-    }
-
-    const patch: { settingsJson: unknown; applyKillSwitch?: boolean } = { settingsJson: next };
-    if (parsed.data.applyKillSwitch !== undefined) {
-      patch.applyKillSwitch = parsed.data.applyKillSwitch;
-    }
-
-    const [updated] = await getDb()
-      .update(workspaces)
-      .set(patch)
-      .where(eq(workspaces.id, workspaceId))
-      .returning();
-
-    if (parsed.data.applyKillSwitch !== undefined) {
-      await writeAuditEvent({
-        workspaceId,
-        ...auditActor(auth),
-        action: "kill_flip",
-        entityType: "workspace",
-        entityId: workspaceId,
-        payload: { applyKillSwitch: parsed.data.applyKillSwitch },
+    if (!saved.wrote) {
+      const summary = toWorkspaceSummary(saved.workspace);
+      return c.json({
+        workspace: summary,
+        ownerUserId: auth.user?.id ?? null,
+        canMutate: true,
+        canApprove: canApproveApply(auth.user?.email) && !isServicePrincipal(auth),
+        ...capabilityPublicMeta(summary.capabilities),
       });
     }
-    if (safetyOns.length > 0) {
-      const previous = resolveWorkspaceCapabilities(workspace.settingsJson);
-      for (const id of safetyOns) {
+
+    if (saved.safetyOns.length > 0 && saved.previous) {
+      for (const id of saved.safetyOns) {
         await writeAuditEvent({
           workspaceId,
           ...auditActor(auth),
           action: "capability_flip",
           entityType: "workspace",
           entityId: workspaceId,
-          payload: { capability: id, from: previous[id], to: "on", allowed: true },
+          payload: { capability: id, from: saved.previous[id], to: "on", allowed: true },
         });
       }
     }
@@ -983,9 +1035,7 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
       applyKillSwitch: parsed.data.applyKillSwitch,
     });
 
-    const summary = updated
-      ? toWorkspaceSummary(updated)
-      : toWorkspaceSummary({ ...workspace, settingsJson: next });
+    const summary = toWorkspaceSummary(saved.updated);
     return c.json({
       workspace: summary,
       ownerUserId: auth.user?.id ?? null,

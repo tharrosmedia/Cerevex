@@ -18,10 +18,16 @@ export function adsModuleOrigin(flags?: CapabilityFlags | null): string {
   return (process.env.NEXT_PUBLIC_ADS_ORIGIN ?? '').replace(/\/$/, '');
 }
 
-/** ads-web Settings, where the owner turns apply safety on in their own session. */
+/**
+ * Owner unpause. ads-web Settings (`src/app/app/settings/page.tsx`) is the page
+ * whose "Turn pause off" button calls patchWorkspace({ applyKillSwitch }).
+ * Not Brain /settings, and not a leftover /app route that does not own the switch.
+ */
+export const ADS_OWNER_UNPAUSE_PATH = '/app/settings';
+
 export function adsSafetySettingsHref(): string {
   const origin = (process.env.NEXT_PUBLIC_ADS_ORIGIN ?? '').replace(/\/$/, '');
-  return origin ? `${origin}/app/settings` : '';
+  return origin ? `${origin}${ADS_OWNER_UNPAUSE_PATH}` : ADS_OWNER_UNPAUSE_PATH;
 }
 
 export function adsModuleHref(path: string, flags?: CapabilityFlags | null): string {
