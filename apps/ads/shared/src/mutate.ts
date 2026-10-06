@@ -2,10 +2,11 @@ import { and, eq } from "drizzle-orm";
 import type { CapabilityFlags } from "@cerevex/contracts";
 import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
 import { getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
+import { attachMetaLiveCurrency } from "./connectors/meta";
 import { ApplyCallBudgetError, platformCallBudgetMs } from "./connectors/write-timeout";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { loadTokens } from "./credentials";
-import { isMetaPermissionMissing, isMetaRateLimited, isMetaTokenExpired } from "./meta-graph-error";
+import { isMetaPermissionMissing, isMetaRateLimited, isMetaTokenExpired, scrubMetaSecrets } from "./meta-graph-error";
 import { ensureFreshPlatformTokens, metaMutationFailure } from "./meta-token";
 import { getDb } from "./db";
 import {
@@ -35,12 +36,39 @@ import { isMockToken, realTokenLiveBlock } from "./live-or-loud";
 import { metaLiveConfirmRefusal, metaWriteInputRefusal } from "./meta-write-safety";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
 import { isCreateNewMutationAction, isExecutableMutationAction } from "./mutations";
-import type { LiveEntityState, MutationOutcome } from "./mutate-types";
+import {
+  OUTCOME_UNIT,
+  outcomeValue,
+  stampNoBefore,
+  type LiveEntityState,
+  type MutationOutcome,
+  type OutcomeValue,
+} from "./mutate-types";
 import { adAccounts, adEntities } from "./schema";
 import type { ApplyMutation } from "./audit-schemas";
 import type { Platform, StoredOAuthTokens } from "./types";
 
-export type { LiveEntityState, MutationOutcome } from "./mutate-types";
+export type { LiveEntityState, MutationOutcome, OutcomeValue } from "./mutate-types";
+
+function mockValue(partial: { status?: string; amount?: string }, readAt = new Date().toISOString()): OutcomeValue {
+  return outcomeValue({ ...partial, unit: OUTCOME_UNIT.mock, readAt });
+}
+
+function mockMoney(raw: Record<string, unknown>, action: string, payload: Record<string, unknown>): {
+  before: OutcomeValue;
+  after: OutcomeValue;
+} {
+  const current = action === "update_bid" ? raw.bidAmount : (raw.dailyBudget ?? raw.budget);
+  const beforeAmount = current == null || current === "" ? "0" : String(current);
+  const payloadAmount = payload.amount;
+  const afterAmount =
+    typeof payloadAmount === "number" || typeof payloadAmount === "string" ? String(payloadAmount) : beforeAmount;
+  const readAt = new Date().toISOString();
+  return {
+    before: mockValue({ amount: beforeAmount }, readAt),
+    after: mockValue({ amount: afterAmount }, readAt),
+  };
+}
 
 async function applyMockMutation(
   adAccountId: string,
@@ -109,6 +137,7 @@ async function applyMockMutation(
 
   if (mutation.action === "pause") {
     if (entity && ["paused", "paused"].includes(entity.status.toLowerCase())) {
+      const paused = mockValue({ status: "paused" });
       return {
         action: mutation.action,
         platform: mutation.platform,
@@ -117,8 +146,12 @@ async function applyMockMutation(
         mode: "mock",
         writes: false,
         reason: "Already paused in local tables.",
+        before: paused,
+        after: paused,
+        revertible: true,
       };
     }
+    const beforeStatus = entity?.status ?? "active";
     if (entity) {
       await db
         .update(adEntities)
@@ -128,6 +161,7 @@ async function applyMockMutation(
         })
         .where(eq(adEntities.id, entity.id));
     }
+    const readAt = new Date().toISOString();
     return {
       action: mutation.action,
       platform: mutation.platform,
@@ -136,6 +170,9 @@ async function applyMockMutation(
       mode: "mock",
       writes: true,
       reason: "Mock apply updated local entity status. No live platform call.",
+      before: mockValue({ status: beforeStatus }, readAt),
+      after: mockValue({ status: "paused" }, readAt),
+      revertible: true,
     };
   }
 
@@ -153,6 +190,10 @@ async function applyMockMutation(
       .where(eq(adEntities.id, entity.id));
   }
 
+  const money =
+    mutation.action === "update_budget" || mutation.action === "update_bid"
+      ? mockMoney((entity?.rawJson as Record<string, unknown> | null) ?? {}, mutation.action, mutation.payload ?? {})
+      : null;
   return {
     action: mutation.action,
     platform: mutation.platform,
@@ -161,6 +202,7 @@ async function applyMockMutation(
     mode: "mock",
     writes: true,
     reason: `Mock apply recorded ${mutation.action}. No live platform call.`,
+    ...(money ? { ...money, revertible: true as const } : {}),
   };
 }
 
@@ -262,15 +304,25 @@ export async function applyViaConnector(input: {
       live,
       accountExternalId: input.accountExternalId,
     });
-    if (confirmed) return confirmed;
+    if (confirmed) return live ? confirmed : stampNoBefore(confirmed);
   }
-  return connector.applyLive({
+  let liveForWrite = live;
+  // readAt marks a real connector read. A caller-supplied live state does not fetch currency.
+  if (input.platform === "meta" && liveForWrite?.readAt && !liveForWrite.currency) {
+    liveForWrite = await attachMetaLiveCurrency(liveForWrite, {
+      accessToken: input.tokens.accessToken,
+      accountExternalId: input.accountExternalId,
+      deadlineAt: input.deadlineAt,
+    });
+  }
+  const outcome = await connector.applyLive({
     tokens: input.tokens,
     mutation: input.mutation,
-    live,
+    live: liveForWrite,
     accountExternalId: input.accountExternalId,
     deadlineAt: input.deadlineAt,
   });
+  return live ? outcome : stampNoBefore(outcome);
 }
 
 export function classifyMutation(
@@ -412,7 +464,38 @@ export function classifyMutation(
   return null;
 }
 
+async function scrubStoredOutcome(adAccountId: string, outcome: MutationOutcome): Promise<MutationOutcome> {
+  let secrets: string[] = [];
+  try {
+    const tokens = await loadTokens(adAccountId);
+    secrets = [tokens?.accessToken, tokens?.refreshToken].filter(
+      (value): value is string => typeof value === "string" && value.length >= 8,
+    );
+  } catch {
+    return outcome;
+  }
+  if (secrets.length === 0) return outcome;
+  const variants = [...new Set(secrets.flatMap((secret) => [secret, secret.toLowerCase(), secret.toUpperCase()]))];
+  const cleaned = scrubMetaSecrets(JSON.stringify(outcome), variants);
+  try {
+    return JSON.parse(cleaned) as MutationOutcome;
+  } catch {
+    return outcome;
+  }
+}
+
 export async function executeMutation(input: {
+  adAccountId: string;
+  platform: Platform;
+  accountExternalId: string;
+  mutation: ApplyMutation;
+  capabilities?: CapabilityFlags;
+  deadlineAt?: number;
+}): Promise<MutationOutcome> {
+  return scrubStoredOutcome(input.adAccountId, await runExecuteMutation(input));
+}
+
+async function runExecuteMutation(input: {
   adAccountId: string;
   platform: Platform;
   accountExternalId: string;

@@ -1,7 +1,20 @@
 import type { CapabilityFlags } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import { platformSyncLiveEnabled } from "../flags";
-import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
+import {
+  GOOGLE_MICROS_SCALE,
+  OUTCOME_UNIT,
+  amountSnapshots,
+  nativeOrScaled,
+  outcomeValue,
+  percentOf,
+  platformNativeAmount,
+  stampNoBefore,
+  statusSnapshots,
+  utcNow,
+  type LiveEntityState,
+  type MutationOutcome,
+} from "../mutate-types";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
 import { refuseMockPull } from "../live-or-loud";
 import { mockPull, type PullResult, type PulledEntity } from "../platforms";
@@ -431,8 +444,8 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     const resource = mutation.target.externalId;
     const query =
       mutation.target.entityType === "campaign"
-        ? `SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros FROM campaign WHERE campaign.id = ${resource} LIMIT 1`
-        : `SELECT ad_group.id, ad_group.name, ad_group.status, ad_group.cpc_bid_micros FROM ad_group WHERE ad_group.id = ${resource} LIMIT 1`;
+        ? `SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros, customer.currency_code FROM campaign WHERE campaign.id = ${resource} LIMIT 1`
+        : `SELECT ad_group.id, ad_group.name, ad_group.status, ad_group.cpc_bid_micros, customer.currency_code FROM ad_group WHERE ad_group.id = ${resource} LIMIT 1`;
     const customer = customerId ?? process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? "";
     if (!customer) return null;
     const res = await fetch(`${GOOGLE_ADS}/customers/${customer.replace(/-/g, "")}/googleAds:search`, {
@@ -447,15 +460,24 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
         campaign?: { status?: string };
         campaignBudget?: { amountMicros?: string };
         adGroup?: { status?: string; cpcBidMicros?: string };
+        customer?: { currencyCode?: string };
       }>;
     };
     const row = body.results?.[0];
+    if (!row) return null;
+    const budgetNative = platformNativeAmount(row.campaignBudget?.amountMicros);
+    const bidNative = platformNativeAmount(row.adGroup?.cpcBidMicros);
+    const currency = typeof row.customer?.currencyCode === "string" ? row.customer.currencyCode : null;
     return {
       externalId: mutation.target.externalId,
       entityType: mutation.target.entityType,
-      status: (row?.campaign?.status ?? row?.adGroup?.status ?? "unknown").toLowerCase(),
-      dailyBudget: row?.campaignBudget?.amountMicros ? Number(row.campaignBudget.amountMicros) / 1_000_000 : null,
-      bidAmount: row?.adGroup?.cpcBidMicros ? Number(row.adGroup.cpcBidMicros) / 1_000_000 : null,
+      status: (row.campaign?.status ?? row.adGroup?.status ?? "unknown").toLowerCase(),
+      dailyBudget: budgetNative ? Number(budgetNative) / GOOGLE_MICROS_SCALE : null,
+      bidAmount: bidNative ? Number(bidNative) / GOOGLE_MICROS_SCALE : null,
+      budgetNative,
+      bidNative,
+      currency,
+      readAt: utcNow(),
     };
   }
 
@@ -468,6 +490,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     const customerId = accountExternalId.replace(/^customers\//, "").replace(/-/g, "");
     const operations: Record<string, unknown>[] = [];
 
+    let recorded: Pick<MutationOutcome, "before" | "after" | "revertible" | "revertBlock"> | null = null;
     if (mutation.action === "pause") {
       if (live?.status === "paused") {
         return {
@@ -478,6 +501,13 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
           mode: "live",
           writes: false,
           reason: "Already paused on Google Ads.",
+          ...statusSnapshots({
+            beforeStatus: "paused",
+            afterStatus: "paused",
+            currency: live.currency,
+            readAt: live.readAt,
+            alreadyApplied: true,
+          }),
         };
       }
       operations.push({
@@ -489,33 +519,65 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
           updateMask: "status",
         },
       });
+      recorded = live
+        ? statusSnapshots({
+            beforeStatus: live.status,
+            afterStatus: "paused",
+            currency: live.currency,
+            readAt: live.readAt,
+          })
+        : stampNoBefore({
+            action: mutation.action,
+            platform: "google",
+            target: mutation.target,
+            status: "applied",
+            mode: "live",
+            writes: true,
+            after: outcomeValue({ status: "paused", unit: OUTCOME_UNIT.status }),
+          });
     } else if (mutation.action === "update_budget") {
       const next = percentOf(live?.dailyBudget ?? null, mutation.payload);
       if (next == null) {
         throw new Error("Cannot compute Google budget change without a current budget or absolute amount.");
       }
+      const afterAmount = String(Math.round(next * GOOGLE_MICROS_SCALE));
       operations.push({
         campaignBudgetOperation: {
           update: {
             resourceName: `customers/${customerId}/campaignBudgets/${mutation.target.externalId}`,
-            amountMicros: String(Math.round(next * 1_000_000)),
+            amountMicros: afterAmount,
           },
           updateMask: "amount_micros",
         },
+      });
+      recorded = amountSnapshots({
+        beforeAmount: nativeOrScaled(live?.budgetNative, live?.dailyBudget, GOOGLE_MICROS_SCALE),
+        afterAmount,
+        unit: OUTCOME_UNIT.micros,
+        currency: live?.currency,
+        readAt: live?.readAt,
       });
     } else if (mutation.action === "update_bid") {
       const next = percentOf(live?.bidAmount ?? null, mutation.payload);
       if (next == null) {
         throw new Error("Cannot compute Google bid change without a current bid or absolute amount.");
       }
+      const afterAmount = String(Math.round(next * GOOGLE_MICROS_SCALE));
       operations.push({
         adGroupOperation: {
           update: {
             resourceName: `customers/${customerId}/adGroups/${mutation.target.externalId}`,
-            cpcBidMicros: String(Math.round(next * 1_000_000)),
+            cpcBidMicros: afterAmount,
           },
           updateMask: "cpc_bid_micros",
         },
+      });
+      recorded = amountSnapshots({
+        beforeAmount: nativeOrScaled(live?.bidNative, live?.bidAmount, GOOGLE_MICROS_SCALE),
+        afterAmount,
+        unit: OUTCOME_UNIT.micros,
+        currency: live?.currency,
+        readAt: live?.readAt,
       });
     } else if (mutation.action === "add_negative") {
       const text =
@@ -584,7 +646,15 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       signal: input.signal ?? requirePlatformSignal(input.deadlineAt),
     });
     await readPlatformWriteBody(res, "Google Ads write failed");
-    return { action: mutation.action, platform: "google", target: mutation.target, status: "applied", mode: "live", writes: true };
+    return {
+      action: mutation.action,
+      platform: "google",
+      target: mutation.target,
+      status: "applied",
+      mode: "live",
+      writes: true,
+      ...recorded,
+    };
   }
 }
 

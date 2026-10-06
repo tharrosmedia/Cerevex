@@ -1,5 +1,5 @@
 import type { ApplyMutation } from "./audit-schemas";
-import type { LiveEntityState, MutationOutcome } from "./mutate-types";
+import { stampNoBefore, type LiveEntityState, type MutationOutcome } from "./mutate-types";
 
 /** Q7. A live re-check that does not confirm the target writes nothing. */
 export const META_COULD_NOT_CONFIRM = "Couldn't confirm this on Meta. Nothing was written.";
@@ -180,7 +180,8 @@ export function metaLiveConfirmRefusal(input: {
   const { mutation, live } = input;
   if (!META_WRITE_ACTIONS.has(mutation.action)) return null;
   if (!live || live.accountId == null || live.accountId === "") {
-    return metaWriteFailure(mutation, META_COULD_NOT_CONFIRM);
+    const failure = metaWriteFailure(mutation, META_COULD_NOT_CONFIRM);
+    return live ? failure : stampNoBefore(failure);
   }
   if (!metaAccountsMatch(live.accountId, input.accountExternalId)) {
     return metaWriteFailure(mutation, META_TARGET_NOT_IN_ACCOUNT_REASON);

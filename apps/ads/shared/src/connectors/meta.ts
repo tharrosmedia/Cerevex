@@ -1,7 +1,19 @@
 import type { CapabilityFlags } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
 import { platformSyncLiveEnabled } from "../flags";
-import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
+import {
+  META_MINOR_SCALE,
+  OUTCOME_UNIT,
+  amountSnapshots,
+  nativeOrScaled,
+  percentOf,
+  platformNativeAmount,
+  stampNoBefore,
+  statusSnapshots,
+  utcNow,
+  type LiveEntityState,
+  type MutationOutcome,
+} from "../mutate-types";
 import { refuseMockPull } from "../live-or-loud";
 import { META_GRAPH_VERSION } from "../meta-graph";
 import {
@@ -303,11 +315,19 @@ function metaLiveReadFields(mutation: ApplyMutation): string {
   return fields.join(",");
 }
 
-async function metaCurrencyWriteRefusal(input: ConnectorApplyInput): Promise<MutationOutcome | null> {
+async function resolveMetaCurrency(input: ConnectorApplyInput): Promise<{
+  currency: string | null;
+  refusal: MutationOutcome | null;
+}> {
+  const fromLive = input.live?.currency?.trim() || null;
+  if (fromLive) {
+    const refusal = metaCurrencyRefusal(fromLive);
+    return { currency: fromLive, refusal: refusal ? metaWriteFailure(input.mutation, refusal) : null };
+  }
   const { mutation, tokens } = input;
   const signal = input.signal ?? requirePlatformSignal(input.deadlineAt);
   const accountId = normalizeMetaAccountId(input.accountExternalId);
-  if (!accountId) return metaWriteFailure(mutation, META_COULD_NOT_CONFIRM);
+  if (!accountId) return { currency: null, refusal: metaWriteFailure(mutation, META_COULD_NOT_CONFIRM) };
   let currency: string | null = null;
   try {
     const json = (await graphGet(`act_${accountId}?fields=currency`, tokens.accessToken, signal)) as {
@@ -316,10 +336,32 @@ async function metaCurrencyWriteRefusal(input: ConnectorApplyInput): Promise<Mut
     currency = typeof json.currency === "string" ? json.currency : null;
   } catch (error) {
     if (error instanceof MetaGraphError || error instanceof ApplyCallBudgetError) throw error;
-    return metaWriteFailure(mutation, META_COULD_NOT_CONFIRM);
+    return { currency: null, refusal: metaWriteFailure(mutation, META_COULD_NOT_CONFIRM) };
   }
   const refusal = metaCurrencyRefusal(currency);
-  return refusal ? metaWriteFailure(mutation, refusal) : null;
+  return { currency, refusal: refusal ? metaWriteFailure(mutation, refusal) : null };
+}
+
+/** Account currency for a confirmed live read. A miss does not block pause. Token errors still throw. */
+export async function attachMetaLiveCurrency(
+  live: LiveEntityState,
+  input: { accessToken: string; accountExternalId: string; deadlineAt?: number },
+): Promise<LiveEntityState> {
+  if (live.currency?.trim()) return live;
+  const accountId = normalizeMetaAccountId(input.accountExternalId);
+  if (!accountId) return live;
+  try {
+    const json = (await graphGet(
+      `act_${accountId}?fields=currency`,
+      input.accessToken,
+      requirePlatformSignal(input.deadlineAt),
+    )) as { currency?: unknown };
+    const currency = typeof json.currency === "string" ? json.currency : null;
+    return currency ? { ...live, currency } : live;
+  } catch (error) {
+    if (error instanceof MetaGraphError || error instanceof ApplyCallBudgetError) throw error;
+    return live;
+  }
 }
 
 export class MetaAdPlatformConnector implements AdPlatformConnector {
@@ -501,13 +543,18 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
       bid_amount?: string;
       account_id?: string | number;
     };
+    const budgetNative = platformNativeAmount(json.daily_budget);
+    const bidNative = platformNativeAmount(json.bid_amount);
     return {
       externalId: json.id ?? mutation.target.externalId,
       entityType: mutation.target.entityType,
       status: (json.status ?? "unknown").toLowerCase(),
-      dailyBudget: json.daily_budget ? Number(json.daily_budget) / 100 : null,
-      bidAmount: json.bid_amount ? Number(json.bid_amount) / 100 : null,
+      dailyBudget: budgetNative ? Number(budgetNative) / META_MINOR_SCALE : null,
+      bidAmount: bidNative ? Number(bidNative) / META_MINOR_SCALE : null,
+      budgetNative,
+      bidNative,
       accountId: normalizeMetaAccountId(json.account_id),
+      readAt: utcNow(),
     };
   }
 
@@ -532,30 +579,89 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
           mode: "live",
           writes: false,
           reason: "Already paused on Meta.",
+          ...statusSnapshots({
+            beforeStatus: "paused",
+            afterStatus: "paused",
+            currency: live.currency,
+            readAt: live.readAt,
+            alreadyApplied: true,
+          }),
         };
       }
       await graphPost(id, tokens.accessToken, { status: "PAUSED" }, requirePlatformSignal(input.deadlineAt));
-      return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
+      if (!live) {
+        return stampNoBefore({
+          action: mutation.action,
+          platform: "meta",
+          target: mutation.target,
+          status: "applied",
+          mode: "live",
+          writes: true,
+        });
+      }
+      return {
+        action: mutation.action,
+        platform: "meta",
+        target: mutation.target,
+        status: "applied",
+        mode: "live",
+        writes: true,
+        ...statusSnapshots({
+          beforeStatus: live.status,
+          afterStatus: "paused",
+          currency: live.currency,
+          readAt: live.readAt,
+        }),
+      };
     }
     if (mutation.action === "update_budget" || mutation.action === "update_bid") {
-      const currencyRefusal = await metaCurrencyWriteRefusal(input);
-      if (currencyRefusal) return currencyRefusal;
-    }
-    if (mutation.action === "update_budget") {
-      const next = percentOf(live?.dailyBudget ?? null, mutation.payload);
-      if (next == null) {
-        throw new Error("Cannot compute Meta budget change without a current daily budget or absolute amount.");
+      const currencyCheck = await resolveMetaCurrency(input);
+      if (currencyCheck.refusal) return currencyCheck.refusal;
+      const currency = currencyCheck.currency;
+      if (mutation.action === "update_budget") {
+        const next = percentOf(live?.dailyBudget ?? null, mutation.payload);
+        if (next == null) {
+          throw new Error("Cannot compute Meta budget change without a current daily budget or absolute amount.");
+        }
+        const afterAmount = String(Math.round(next * META_MINOR_SCALE));
+        await graphPost(id, tokens.accessToken, { daily_budget: afterAmount }, requirePlatformSignal(input.deadlineAt));
+        return {
+          action: mutation.action,
+          platform: "meta",
+          target: mutation.target,
+          status: "applied",
+          mode: "live",
+          writes: true,
+          ...amountSnapshots({
+            beforeAmount: nativeOrScaled(live?.budgetNative, live?.dailyBudget, META_MINOR_SCALE),
+            afterAmount,
+            unit: OUTCOME_UNIT.minor,
+            currency,
+            readAt: live?.readAt,
+          }),
+        };
       }
-      await graphPost(id, tokens.accessToken, { daily_budget: String(Math.round(next * 100)) }, requirePlatformSignal(input.deadlineAt));
-      return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
-    }
-    if (mutation.action === "update_bid") {
       const next = percentOf(live?.bidAmount ?? null, mutation.payload);
       if (next == null) {
         throw new Error("Cannot compute Meta bid change without a current bid or absolute amount.");
       }
-      await graphPost(id, tokens.accessToken, { bid_amount: String(Math.round(next * 100)) }, requirePlatformSignal(input.deadlineAt));
-      return { action: mutation.action, platform: "meta", target: mutation.target, status: "applied", mode: "live", writes: true };
+      const afterAmount = String(Math.round(next * META_MINOR_SCALE));
+      await graphPost(id, tokens.accessToken, { bid_amount: afterAmount }, requirePlatformSignal(input.deadlineAt));
+      return {
+        action: mutation.action,
+        platform: "meta",
+        target: mutation.target,
+        status: "applied",
+        mode: "live",
+        writes: true,
+        ...amountSnapshots({
+          beforeAmount: nativeOrScaled(live?.bidNative, live?.bidAmount, META_MINOR_SCALE),
+          afterAmount,
+          unit: OUTCOME_UNIT.minor,
+          currency,
+          readAt: live?.readAt,
+        }),
+      };
     }
     if (mutation.action === "create_ad") {
       const copy = metaCreateCopy(mutation.payload);
