@@ -1,14 +1,16 @@
 import {
   ADS_MODULE_IDS,
-  BUSINESS_TYPE_LABELS,
-  BUSINESS_TYPES,
   LEADS_NOT_LIVE_COPY,
   MODULE_COPY,
   isAdsModuleBuilt,
-  isBusinessType,
   isLeadsProductUnfinished,
-  type BusinessType,
 } from '@cerevex/contracts';
+import {
+  CLIENT_BUSINESS_TYPES,
+  CLIENT_BUSINESS_TYPE_LABELS,
+  clientBusinessTypeLabel,
+  isClientBusinessType,
+} from '@/src/lib/db/client-workspace';
 import { getWorkspaceModuleSettings, saveBusinessType, saveModuleOverrides } from '@/src/lib/db/workspace-modules';
 
 async function saveTypeAction(formData: FormData) {
@@ -16,10 +18,10 @@ async function saveTypeAction(formData: FormData) {
   const { revalidatePath } = await import('next/cache');
   const { redirect } = await import('next/navigation');
   const value = formData.get('businessType');
-  if (!isBusinessType(value)) {
+  if (!isClientBusinessType(value)) {
     redirect('/settings?modules=error');
   }
-  await saveBusinessType(value as BusinessType);
+  await saveBusinessType(value);
   revalidatePath('/');
   revalidatePath('/settings');
   revalidatePath('/ads');
@@ -55,16 +57,16 @@ export async function WorkspaceModulesSettings() {
       <div className="mb-6">
         <div className="text-sm mb-2">
           Business type:{' '}
-          <strong>{settings.businessType ? BUSINESS_TYPE_LABELS[settings.businessType] : 'Not chosen yet'}</strong>
+          <strong>{settings.businessType ? clientBusinessTypeLabel(settings.businessType) : 'Not chosen yet'}</strong>
         </div>
         <p className="text-xs mb-3" style={{ color: 'var(--muted-foreground)' }}>
           Picking a type resets modules to the defaults for that type.
         </p>
         <div className="cx-actions">
-          {BUSINESS_TYPES.map((type) => (
+          {CLIENT_BUSINESS_TYPES.map((type) => (
             <form key={type} action={saveTypeAction}>
               <input type="hidden" name="businessType" value={type} />
-              <button type="submit" className="btn-secondary">{BUSINESS_TYPE_LABELS[type]}</button>
+              <button type="submit" className="btn-secondary">{CLIENT_BUSINESS_TYPE_LABELS[type]}</button>
             </form>
           ))}
         </div>

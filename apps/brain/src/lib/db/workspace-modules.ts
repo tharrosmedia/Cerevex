@@ -5,10 +5,8 @@ import {
   isProductionRuntime,
   parseWorkspaceModuleSettings,
   resolveWorkspaceCapabilities,
-  settingsJsonWithBusinessType,
   settingsJsonWithCapabilityOverrides,
   settingsJsonWithModuleOverrides,
-  type BusinessType,
   type CapabilityFlags,
   type CapabilityOverrides,
   type ModuleFlags,
@@ -17,6 +15,7 @@ import {
 import { adsApi } from '@/lib/ads-bff';
 import { stripEditableWorkspaceSettings } from '../ads-confirmed-safety';
 import { getActiveStoreId, getStore, updateStore } from './stores';
+import { commitClientBusinessType, resolveWorkspaceModuleSettings, settingsRecordForSave } from './client-workspace';
 import {
   adsWorkspaceSettingsPatch,
   capabilityPatchShowsSaved,
@@ -95,22 +94,20 @@ async function getActiveStoreRow() {
 
 export async function getWorkspaceModuleSettings(): Promise<WorkspaceModuleSettings> {
   const store = await getActiveStoreRow();
-  const fromStore = asRecord(store?.config).workspace;
-  if (fromStore && typeof fromStore === 'object') {
-    const parsed = parseWorkspaceModuleSettings(fromStore);
-    if (parsed.businessType || parsed.onboardingCompletedAt) return parsed;
-  }
-  const fromCookie = await readCookieSettings();
-  if (fromCookie) return parseWorkspaceModuleSettings(fromCookie);
-  return parseWorkspaceModuleSettings({});
+  const cookie = store ? null : await readCookieSettings();
+  return resolveWorkspaceModuleSettings({ store, cookie });
 }
 
-export async function saveBusinessType(businessType: BusinessType) {
-  const current = await currentSettingsRecord();
-  const next = settingsJsonWithBusinessType(current, businessType);
-  await persistSettings(next);
-  await patchAdsWorkspaceSettings({ businessType });
-  return parseWorkspaceModuleSettings(next);
+export async function saveBusinessType(businessType: unknown) {
+  const store = await getActiveStoreRow();
+  const cookie = store ? null : await readCookieSettings();
+  // Per client, on this store only. Do not PATCH businessType; the shared ads workspace stays agency.
+  return commitClientBusinessType(businessType, {
+    store,
+    cookie,
+    persist: persistSettings,
+    patchAds: (body) => patchAdsWorkspaceSettings(body),
+  });
 }
 
 export async function saveModuleOverrides(overrides: Partial<ModuleFlags>) {
@@ -171,9 +168,8 @@ export async function getWorkspaceProductSettings(): Promise<WorkspaceProductSet
 
 async function currentSettingsRecord(): Promise<Record<string, unknown>> {
   const store = await getActiveStoreRow();
-  const fromStore = stripEditableWorkspaceSettings(asRecord(asRecord(store?.config).workspace));
-  if (Object.keys(fromStore).length > 0) return fromStore;
-  return (await readCookieSettings()) ?? {};
+  const cookie = store ? null : await readCookieSettings();
+  return settingsRecordForSave({ store, cookie });
 }
 
 async function persistSettings(next: Record<string, unknown>) {

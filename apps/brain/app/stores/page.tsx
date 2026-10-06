@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
+import { emptyClientWorkspaceConfig } from '@/src/lib/db/client-workspace';
 import { listStores, createStore, getStore, getActiveStoreId } from '@/src/lib/db/stores';
 import { inngest } from '@/src/inngest/client';
 import { PageHeader } from '@/components/page-header';
@@ -69,6 +70,7 @@ async function addShopifyStore(formData: FormData) {
     shopify_access_token: token,
     platform: 'shopify',
     connector_type: 'shopify',
+    config: emptyClientWorkspaceConfig(),
   });
   await setActiveStore(store.id);
 

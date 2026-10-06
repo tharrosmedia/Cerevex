@@ -1,20 +1,19 @@
 import { redirect } from 'next/navigation';
+import { BUSINESS_TYPE_HELP } from '@cerevex/contracts';
 import {
-  BUSINESS_TYPE_HELP,
-  BUSINESS_TYPE_LABELS,
-  BUSINESS_TYPES,
-  isBusinessType,
-  type BusinessType,
-} from '@cerevex/contracts';
+  CLIENT_BUSINESS_TYPES,
+  CLIENT_BUSINESS_TYPE_LABELS,
+  isClientBusinessType,
+} from '@/src/lib/db/client-workspace';
 import { saveBusinessType } from '@/src/lib/db/workspace-modules';
 
 async function chooseBusinessType(formData: FormData) {
   'use server';
   const value = formData.get('businessType');
-  if (!isBusinessType(value)) {
+  if (!isClientBusinessType(value)) {
     redirect('/onboarding?error=1');
   }
-  await saveBusinessType(value as BusinessType);
+  await saveBusinessType(value);
   redirect('/ads');
 }
 
@@ -40,12 +39,12 @@ export default async function OnboardingPage({
       )}
 
       <div className="cx-card-grid">
-        {BUSINESS_TYPES.map((type) => (
+        {CLIENT_BUSINESS_TYPES.map((type) => (
           <form key={type} action={chooseBusinessType} className="cx-card">
             <input type="hidden" name="businessType" value={type} />
-            <h2 className="cx-card-title">{BUSINESS_TYPE_LABELS[type]}</h2>
+            <h2 className="cx-card-title">{CLIENT_BUSINESS_TYPE_LABELS[type]}</h2>
             <p className="cx-help">{BUSINESS_TYPE_HELP[type]}</p>
-            <button type="submit" className="btn-cta">Use {BUSINESS_TYPE_LABELS[type]}</button>
+            <button type="submit" className="btn-cta">Use {CLIENT_BUSINESS_TYPE_LABELS[type]}</button>
           </form>
         ))}
       </div>
