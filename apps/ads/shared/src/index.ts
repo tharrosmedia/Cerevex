@@ -162,7 +162,9 @@ export {
 } from "./apply-gate";
 // Skill-config import and the database guard use pg-connection-string (Node `fs`).
 // They live on `@tharros/ads-shared/server`, not this client-reachable barrel.
-export { SKILL_CLIENT_ALIASES } from "./skill-client-aliases";
+export { SKILL_CLIENT_ALIASES, skillSlugForClientName } from "./skill-client-aliases";
+export { SKILL_GROUP_LABEL, SKILL_REC_EVIDENCE_KEY, readSkillRec } from "./skill-rec-view";
+export type { SkillRecView } from "./skill-rec-view";
 export {
   findingDraftSchema,
   recommendationDraftSchema,

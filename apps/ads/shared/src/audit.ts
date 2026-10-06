@@ -1,6 +1,7 @@
 import { isCapabilityOn, isCapabilityVisible } from "@cerevex/contracts";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { resolveAuditActor } from "./actor";
+import { readSkillRec } from "./skill-rec-view";
 import { loadFunnelSignal } from "./analytics";
 import { evaluateAccount } from "./audit-engine";
 import { evaluateClientM51 } from "./m51-engine";
@@ -497,6 +498,13 @@ export class RecommendationNotOpenError extends Error {
   }
 }
 
+export class SkillApproveHiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SkillApproveHiddenError";
+  }
+}
+
 export class RecommendationGateError extends Error {
   readonly reason: "apply_kill_switch" | "account_frozen";
 
@@ -537,6 +545,14 @@ export async function decideRecommendation(input: {
       (input.action !== "authorize" && row.status === "authorized");
     if (!canDecide) {
       throw new RecommendationNotOpenError();
+    }
+    if (input.action === "authorize") {
+      const skillRec = readSkillRec(row.evidenceJson);
+      if (skillRec?.approveHidden) {
+        throw new SkillApproveHiddenError(
+          skillRec.approveHiddenReason ?? "Approve stays hidden until the missing gate is filled.",
+        );
+      }
     }
     if (input.action === "authorize" && !adsPlatformMutationRefusal(row.scope)) {
       const workspace = await tx.query.workspaces.findFirst({

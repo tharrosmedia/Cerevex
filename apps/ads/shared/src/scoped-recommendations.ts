@@ -1,6 +1,6 @@
 /**
  * Insert a store- or client-scoped recommendation.
- * PR3 ingestion and MCP call this later. It does not ingest, tag, dedupe, or apply.
+ * Skill ingestion calls this for new rows. Dedupe updates an existing row instead.
  */
 import { sealSkillJobApproval } from "@cerevex/skills";
 import { and, eq, ne } from "drizzle-orm";
@@ -34,6 +34,8 @@ export type ScopedRecommendationInput = {
   proposedMutations?: unknown[];
   source: string;
   module?: string;
+  actorType?: string;
+  actorId?: string | null;
 };
 
 function cleanStoreId(value: string | null | undefined): string | null {
@@ -104,7 +106,8 @@ export async function insertScopedRecommendation(
         clientId: inserted.clientId,
         storeId: inserted.storeId,
         module: input.module ?? "recs",
-        actorType: "worker",
+        actorType: input.actorType ?? "worker",
+        actorId: input.actorId ?? null,
         entityType: "recommendation",
         entityId: inserted.id,
         source: input.source.trim(),

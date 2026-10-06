@@ -1,3 +1,26 @@
+export type { GuardResult } from "./guards";
+export { capacityBlocksSpend, isSpendIncrease, runRecGuards, unmetRequires } from "./guards";
+
+export type {
+  ExistingSkillRec,
+  IngestAccept,
+  IngestOptions,
+  IngestRejection,
+  IngestResult,
+  PreparedSkillRec,
+  SkillRecEvidence,
+  SliceClientGate,
+} from "./ingest";
+export {
+  DEDUPE_WINDOW_MS,
+  SKILL_REC_KEY,
+  canonicalDedupeKey,
+  ingestRecommendationRecords,
+  ingestRecommendationYaml,
+} from "./ingest";
+
+export { RecommendationYamlError, parseRecommendationYaml } from "./rec-yaml";
+
 export type {
   ApprovalStatus,
   ExecutedBy,
