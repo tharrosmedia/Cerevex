@@ -94,6 +94,8 @@ export type StoredOAuthTokens = {
   expiresAt?: string;
   tokenType?: string;
   scopes?: string[];
+  /** Scopes Meta reported on the token response, when it sent them. */
+  grantedScopes?: string[];
   mock?: boolean;
   /** Google Ads manager (MCC) id to send as login-customer-id when the account is reached through a manager. */
   loginCustomerId?: string;

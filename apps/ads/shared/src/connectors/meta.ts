@@ -4,6 +4,23 @@ import { platformSyncLiveEnabled } from "../flags";
 import { percentOf, type LiveEntityState, type MutationOutcome } from "../mutate-types";
 import { refuseMockPull } from "../live-or-loud";
 import { META_GRAPH_VERSION } from "../meta-graph";
+import {
+  META_CONNECT_EXTEND_FAILED,
+  META_CONNECT_INCOMPLETE,
+  META_PERMISSION_MESSAGE,
+  META_PERMISSION_MISSING,
+  META_RATE_LIMIT_MESSAGE,
+  META_RATE_LIMITED,
+  META_RECONNECT_MESSAGE,
+  META_REFRESH_FAILED,
+  META_TOKEN_EXPIRED,
+  MetaGraphError,
+  MetaRefreshError,
+  classifyMetaGraphBody,
+  metaExpiryBand,
+  metaExpiringMessage,
+  scrubMetaSecrets,
+} from "../meta-graph-error";
 import { isMetaConfigured, metaAuthorizeUrl, metaRedirectUri } from "../oauth";
 import { mockPull } from "../platforms";
 import type { AccessibleAdAccount, StoredOAuthTokens } from "../types";
@@ -15,16 +32,14 @@ import type {
   ConnectorExchangeResult,
   ConnectorPullInput,
 } from "./types";
-import { readPlatformWriteBody, requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
+import { UnconfirmedPlatformWriteError, requirePlatformSignal, signalForPlatformCall } from "./write-timeout";
 
 const GRAPH = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 const VERSION_WARNING_HEADER = "X-Ad-Api-Version-Warning";
 
 /** Header text only. The request URL and token stay out of the log line. */
 function versionWarningMessage(raw: string): string {
-  const detail = raw
-    .replace(/(access_token|client_secret|fb_exchange_token|refresh_token|code)=([^&\s]+)/gi, "$1=[redacted]")
-    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+  const detail = scrubMetaSecrets(raw)
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 240);
@@ -54,32 +69,107 @@ function notConfigured(): ConnectorConnectResult {
   };
 }
 
+function graphUrl(path: string): string {
+  if (!path.startsWith("http")) return `${GRAPH}/${path.replace(/^\//, "")}`;
+  const url = new URL(path);
+  url.searchParams.delete("access_token");
+  url.searchParams.delete("appsecret_proof");
+  return url.toString();
+}
+
+function bearerHeaders(accessToken: string, extra?: Record<string, string>): Record<string, string> {
+  return { authorization: `Bearer ${accessToken}`, ...extra };
+}
+
+async function readGraphResponse(res: Response, kind: "read" | "write"): Promise<unknown> {
+  let text = "";
+  try {
+    text = await res.text();
+  } catch {
+    if (kind === "write" && (res.ok || res.status >= 500)) {
+      throw new UnconfirmedPlatformWriteError(
+        res.status >= 500 ? `Meta write failed (${res.status})` : "Meta write returned an unreadable body",
+      );
+    }
+    throw new Error(kind === "write" ? `Meta write failed (${res.status})` : `Meta Graph read failed (${res.status})`);
+  }
+  let parsed: unknown = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch {
+      parsed = null;
+    }
+  }
+  const classified = classifyMetaGraphBody(parsed);
+  if (classified) throw classified;
+  if (kind === "write" && res.status >= 500) {
+    throw new UnconfirmedPlatformWriteError(`Meta write failed (${res.status})`);
+  }
+  if (!res.ok) {
+    throw new Error(kind === "write" ? `Meta write failed (${res.status})` : `Meta Graph read failed (${res.status})`);
+  }
+  if (kind === "write" && !text) throw new UnconfirmedPlatformWriteError("Meta write returned an unreadable body");
+  if (parsed == null) {
+    if (kind === "write") throw new UnconfirmedPlatformWriteError("Meta write returned an unreadable body");
+    throw new Error("Meta Graph read failed");
+  }
+  return parsed;
+}
+
 async function graphPost(
   path: string,
   accessToken: string,
   body: Record<string, string>,
   signal?: AbortSignal | null,
 ): Promise<unknown> {
-  const params = new URLSearchParams({ ...body, access_token: accessToken });
-  const res = await graphFetch(`${GRAPH}/${path}`, {
+  const res = await graphFetch(graphUrl(path), {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: params,
+    headers: bearerHeaders(accessToken, { "content-type": "application/x-www-form-urlencoded" }),
+    body: new URLSearchParams(body),
     signal: signal ?? signalForPlatformCall() ?? undefined,
   });
-  return readPlatformWriteBody(res, "Meta write failed");
+  return readGraphResponse(res, "write");
 }
 
 async function graphGet(path: string, accessToken: string, signal?: AbortSignal | null): Promise<unknown> {
-  const url = path.startsWith("http") ? path : `${GRAPH}/${path}`;
-  const separator = url.includes("?") ? "&" : "?";
-  const res = await graphFetch(`${url}${separator}access_token=${encodeURIComponent(accessToken)}`, {
+  const res = await graphFetch(graphUrl(path), {
+    headers: bearerHeaders(accessToken),
     signal: signal ?? signalForPlatformCall() ?? undefined,
   });
-  if (!res.ok) {
-    throw new Error(`Meta Graph read failed (${res.status})`);
+  return readGraphResponse(res, "read");
+}
+
+type OauthTokenJson = { access_token?: string; expires_in?: number; scope?: string; scopes?: string[] };
+
+function grantedScopesFrom(json: OauthTokenJson): string[] | undefined {
+  if (Array.isArray(json.scopes) && json.scopes.every((scope) => typeof scope === "string") && json.scopes.length > 0) {
+    return json.scopes;
   }
-  return res.json();
+  if (typeof json.scope === "string" && json.scope.trim()) {
+    const scopes = json.scope.split(/[,\s]+/).filter(Boolean);
+    if (scopes.length > 0) return scopes;
+  }
+  return undefined;
+}
+
+async function requestOauthToken(fields: Record<string, string>, failure: string): Promise<OauthTokenJson> {
+  let res: Response;
+  try {
+    res = await graphFetch(`${GRAPH}/oauth/access_token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields),
+    });
+  } catch {
+    throw new Error(failure);
+  }
+  try {
+    return (await readGraphResponse(res, "read")) as OauthTokenJson;
+  } catch (error) {
+    if (error instanceof MetaGraphError) throw error;
+    throw new Error(failure);
+  }
 }
 
 type MetaStatusRow = {
@@ -169,6 +259,7 @@ async function pullMetaLive(tokens: StoredOAuthTokens, externalId: string) {
           tokens.accessToken,
         )) as { data?: MetaInsightRow[] };
       } catch (error) {
+        if (error instanceof MetaGraphError) throw error;
         if (required) throw error;
         continue;
       }
@@ -239,58 +330,88 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
 
   async refreshTokens(tokens: StoredOAuthTokens): Promise<StoredOAuthTokens> {
     if (tokens.mock) return tokens;
-    if (!process.env.META_APP_ID || !process.env.META_APP_SECRET) return tokens;
-    const params = new URLSearchParams({
-      grant_type: "fb_exchange_token",
-      client_id: process.env.META_APP_ID,
-      client_secret: process.env.META_APP_SECRET,
-      fb_exchange_token: tokens.accessToken,
-    });
-    const res = await graphFetch(`${GRAPH}/oauth/access_token?${params.toString()}`);
-    if (!res.ok) return tokens;
-    const json = (await res.json()) as { access_token?: string; expires_in?: number };
-    if (!json.access_token) return tokens;
+    const appId = process.env.META_APP_ID;
+    const appSecret = process.env.META_APP_SECRET;
+    if (!appId || !appSecret) throw new MetaRefreshError();
+    let json: OauthTokenJson;
+    try {
+      json = await requestOauthToken(
+        {
+          grant_type: "fb_exchange_token",
+          client_id: appId,
+          client_secret: appSecret,
+          fb_exchange_token: tokens.accessToken,
+        },
+        META_REFRESH_FAILED,
+      );
+    } catch (error) {
+      if (error instanceof MetaGraphError) throw error;
+      throw new MetaRefreshError();
+    }
+    if (!json.access_token || !json.expires_in) throw new MetaRefreshError();
+    const granted = grantedScopesFrom(json);
     return {
       ...tokens,
       accessToken: json.access_token,
-      expiresAt: json.expires_in
-        ? new Date(Date.now() + json.expires_in * 1000).toISOString()
-        : tokens.expiresAt,
+      expiresAt: new Date(Date.now() + json.expires_in * 1000).toISOString(),
+      tokenType: "long_lived_user",
+      ...(granted ? { grantedScopes: granted } : {}),
     };
   }
 
   async exchangeCode(code: string): Promise<ConnectorExchangeResult> {
-    const params = new URLSearchParams({
-      client_id: process.env.META_APP_ID ?? "",
-      client_secret: process.env.META_APP_SECRET ?? "",
-      redirect_uri: metaRedirectUri(),
-      code,
-    });
-    const res = await graphFetch(`${GRAPH}/oauth/access_token?${params.toString()}`);
-    if (!res.ok) {
-      throw new Error("Meta token exchange failed");
+    const appId = process.env.META_APP_ID;
+    const appSecret = process.env.META_APP_SECRET;
+    if (!appId || !appSecret) throw new Error(META_CONNECT_INCOMPLETE);
+    let shortLived: OauthTokenJson;
+    try {
+      shortLived = await requestOauthToken(
+        {
+          client_id: appId,
+          client_secret: appSecret,
+          redirect_uri: metaRedirectUri(),
+          code,
+        },
+        META_CONNECT_INCOMPLETE,
+      );
+    } catch {
+      throw new Error(META_CONNECT_INCOMPLETE);
     }
-    const json = (await res.json()) as { access_token?: string; expires_in?: number };
-    if (!json.access_token) {
-      throw new Error("Meta token exchange returned no access token");
+    if (!shortLived.access_token) throw new Error(META_CONNECT_INCOMPLETE);
+
+    let longLived: OauthTokenJson;
+    try {
+      longLived = await requestOauthToken(
+        {
+          grant_type: "fb_exchange_token",
+          client_id: appId,
+          client_secret: appSecret,
+          fb_exchange_token: shortLived.access_token,
+        },
+        META_CONNECT_EXTEND_FAILED,
+      );
+    } catch {
+      throw new Error(META_CONNECT_EXTEND_FAILED);
     }
+    if (!longLived.access_token || !longLived.expires_in) throw new Error(META_CONNECT_EXTEND_FAILED);
+
+    const granted = grantedScopesFrom(longLived) ?? grantedScopesFrom(shortLived);
     let externalId = "pending";
     try {
-      const meRes = await graphFetch(
-        `${GRAPH}/me/adaccounts?fields=id,account_id&access_token=${encodeURIComponent(json.access_token)}`,
-      );
-      const me = (await meRes.json()) as { data?: { id?: string; account_id?: string }[] };
+      const me = (await graphGet("me/adaccounts?fields=id,account_id", longLived.access_token)) as {
+        data?: { id?: string; account_id?: string }[];
+      };
       externalId = me.data?.[0]?.id ?? me.data?.[0]?.account_id ?? "pending";
     } catch {
       externalId = "pending";
     }
     return {
       tokens: {
-        accessToken: json.access_token,
-        expiresAt: json.expires_in
-          ? new Date(Date.now() + json.expires_in * 1000).toISOString()
-          : undefined,
+        accessToken: longLived.access_token,
+        expiresAt: new Date(Date.now() + longLived.expires_in * 1000).toISOString(),
+        tokenType: "long_lived_user",
         scopes: ["ads_read", "ads_management"],
+        ...(granted ? { grantedScopes: granted } : {}),
         mock: false,
       },
       externalId,
@@ -443,3 +564,116 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
 }
 
 export const metaAdPlatformConnector = new MetaAdPlatformConnector();
+
+export type MetaConnectionCheck = {
+  state: "connected" | "expiring" | "needs_reconnect" | "limited" | "rate_limited" | "not_configured" | "error";
+  code: string | null;
+  message: string;
+  checkedAt: string;
+  expiresAt: string | null;
+  retry: boolean;
+};
+
+/**
+ * Cheap read for Scheduled Jobs J10. No writes.
+ * A stored expiresAt in the past is Needs reconnect without a Graph call.
+ * A successful read with expiresAt inside 14 days is expiring, and the token still works.
+ */
+export async function checkMetaConnection(
+  tokens: StoredOAuthTokens,
+  now = new Date(),
+): Promise<MetaConnectionCheck> {
+  const checkedAt = now.toISOString();
+  const expiresAt = tokens.expiresAt ?? null;
+  if (tokens.mock) {
+    return {
+      state: "connected",
+      code: null,
+      message: "Test connection.",
+      checkedAt,
+      expiresAt,
+      retry: false,
+    };
+  }
+  if (!isMetaConfigured()) {
+    return {
+      state: "not_configured",
+      code: "meta.not_configured",
+      message: "Meta isn't set up on this server yet.",
+      checkedAt,
+      expiresAt,
+      retry: false,
+    };
+  }
+  const band = metaExpiryBand(expiresAt, now.getTime());
+  if (band === "expired") {
+    return {
+      state: "needs_reconnect",
+      code: META_TOKEN_EXPIRED,
+      message: META_RECONNECT_MESSAGE,
+      checkedAt,
+      expiresAt,
+      retry: false,
+    };
+  }
+  try {
+    await graphGet("me?fields=id", tokens.accessToken);
+  } catch (error) {
+    if (error instanceof MetaGraphError && error.metaCode === META_TOKEN_EXPIRED) {
+      return {
+        state: "needs_reconnect",
+        code: META_TOKEN_EXPIRED,
+        message: META_RECONNECT_MESSAGE,
+        checkedAt,
+        expiresAt,
+        retry: false,
+      };
+    }
+    if (error instanceof MetaGraphError && error.metaCode === META_RATE_LIMITED) {
+      return {
+        state: "rate_limited",
+        code: META_RATE_LIMITED,
+        message: META_RATE_LIMIT_MESSAGE,
+        checkedAt,
+        expiresAt,
+        retry: true,
+      };
+    }
+    if (error instanceof MetaGraphError && error.metaCode === META_PERMISSION_MISSING) {
+      return {
+        state: "limited",
+        code: META_PERMISSION_MISSING,
+        message: META_PERMISSION_MESSAGE,
+        checkedAt,
+        expiresAt,
+        retry: false,
+      };
+    }
+    return {
+      state: "error",
+      code: null,
+      message: "Meta didn't answer. Cerevex will try again later.",
+      checkedAt,
+      expiresAt,
+      retry: true,
+    };
+  }
+  if (band === "expiring" && expiresAt) {
+    return {
+      state: "expiring",
+      code: null,
+      message: metaExpiringMessage(expiresAt),
+      checkedAt,
+      expiresAt,
+      retry: false,
+    };
+  }
+  return {
+    state: "connected",
+    code: null,
+    message: "Connected.",
+    checkedAt,
+    expiresAt,
+    retry: false,
+  };
+}
