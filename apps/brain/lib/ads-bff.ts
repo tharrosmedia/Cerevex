@@ -94,6 +94,8 @@ export function adsApiConfigured(): boolean {
 
 export type AdsCallOptions = {
   anonymous?: boolean;
+  /** Owner bearer token only. The service key is not a workspace owner. */
+  asOwner?: boolean;
 };
 
 const ADS_API_TIMEOUT_MS = 8_000;
@@ -122,15 +124,22 @@ export async function adsApi<T>(
     headers.set("content-type", "application/json");
   }
   // Service secrets only — not product flags. APP_PASSWORD is Brain console session.
-  // Brain does not log in as an ads owner and does not turn apply safety on.
+  // The default call uses the service key. asOwner sends the owner token alone
+  // for writes ads-api refuses from the service principal. Pause stays on the default.
   headers.delete("x-cerevex-internal-key");
   headers.delete("authorization");
   if (!options.anonymous) {
-    const caller = adsCallerHeaders({
-      safetyOn: false,
-      internalKey: process.env.ADS_INTERNAL_KEY,
-      ownerToken: process.env.ADS_API_TOKEN,
-    });
+    const caller = options.asOwner
+      ? adsCallerHeaders({
+          safetyOn: true,
+          internalKey: null,
+          ownerToken: process.env.ADS_API_TOKEN,
+        })
+      : adsCallerHeaders({
+          safetyOn: false,
+          internalKey: process.env.ADS_INTERNAL_KEY,
+          ownerToken: process.env.ADS_API_TOKEN,
+        });
     const internalKey = caller.get("x-cerevex-internal-key");
     const authorization = caller.get("authorization");
     if (internalKey) headers.set("x-cerevex-internal-key", internalKey);

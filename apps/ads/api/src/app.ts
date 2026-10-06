@@ -14,6 +14,7 @@ import { auditLog } from "@tharros/ads-shared/schema";
 import { registerAuditRoutes } from "./audits";
 import { registerClientAuditRoutes } from "./client-audit";
 import { registerSkillIngestRoutes } from "./skill-ingest";
+import { registerSkillsProfileRoutes } from "./skills-profile";
 import { clientConnectionSummary, listPublicAdAccounts } from "./connect";
 import { registerM51Routes } from "./m51";
 import { registerLpIntelligenceRoutes } from "./lp-intelligence";
@@ -270,6 +271,7 @@ export function createApp() {
   registerAuditRoutes(app, requireAuth);
   registerClientAuditRoutes(app, requireAuth);
   registerSkillIngestRoutes(app, requireAuth);
+  registerSkillsProfileRoutes(app, requireAuth);
   registerM51Routes(app, requireAuth);
   registerOfflineRoutes(app, requireAuth);
   registerLpIntelligenceRoutes(app, requireAuth);

@@ -27,6 +27,10 @@ import {
   wordpressWorkspaceSettingsFromStore,
 } from '@/src/lib/wordpress';
 import { isProductionRuntime } from '@/lib/runtime-env';
+import { AUTH_COOKIE_NAME } from '@/lib/auth-cookie';
+import { authorizeApproveSession } from '@/lib/sensitive-auth';
+import { loadSkillsProfileAction } from '@/lib/skills-profile-action';
+import { SKILL_PROFILE_SLUGS } from '@/lib/skills-profile-slugs';
 
 type Platform = 'shopify' | 'wordpress';
 
@@ -151,6 +155,7 @@ type SearchParams = {
   warn?: string;
   test?: string;
   updated?: string;
+  skills?: string;
 };
 
 export const dynamic = 'force-dynamic';
@@ -158,6 +163,11 @@ export const dynamic = 'force-dynamic';
 export default async function StoresPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const platform: Platform | null = params.platform === 'shopify' || params.platform === 'wordpress' ? params.platform : null;
+  const jar = await cookies();
+  const ownerSession = authorizeApproveSession({
+    cookie: jar.get(AUTH_COOKIE_NAME)?.value ?? null,
+    internalKey: null,
+  }).ok;
   let stores: any[] = [];
   let activeId: string | null = null;
   let loadError: string | null = null;
@@ -197,6 +207,8 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
       {params.test === 'error' ? <p className="cx-banner cx-banner-warn" role="status">{params.msg}</p> : null}
       {params.warn ? <p className="cx-banner cx-banner-warn" role="status">{params.warn}</p> : null}
       {params.updated === '1' ? <p className="cx-banner" role="status">Store updated.</p> : null}
+      {params.skills === 'loaded' ? <p className="cx-banner" role="status">{params.msg}</p> : null}
+      {params.skills === 'error' ? <p className="cx-banner cx-banner-warn" role="status">{params.msg}</p> : null}
 
       {stores.length > 0 ? (
         <section className="cx-panel">
@@ -231,6 +243,17 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
                       <SubmitButton className="btn-secondary" pendingLabel="Checking…">Check connection</SubmitButton>
                     </form>
                     <Link href={`/stores/${store.id}/edit`} className="btn-secondary">Edit</Link>
+                    {ownerSession ? (
+                      <form action={loadSkillsProfileAction}>
+                        <input type="hidden" name="storeId" value={store.id} />
+                        <select name="slug" aria-label={`Skills profile for ${store.name}`} defaultValue="hvac-usa">
+                          {SKILL_PROFILE_SLUGS.map((slug) => (
+                            <option key={slug} value={slug}>{slug}</option>
+                          ))}
+                        </select>
+                        <SubmitButton className="btn-secondary" pendingLabel="Loading…">Load skills profile</SubmitButton>
+                      </form>
+                    ) : null}
                   </div>
                 </li>
               );

@@ -1,9 +1,15 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_APPROVE_OPERATOR_EMAIL } from "@cerevex/contracts";
-import type { ClientSkillConfig, SkillConfigBundle } from "@cerevex/skills";
+import type { SkillConfigBundle } from "@cerevex/skills";
 import type { Database } from "./db";
-import { clients, memberships, skillClientConfigs, skillStoreConfigs, users } from "./schema";
+import { clients, memberships, users } from "./schema";
+import {
+  approvalOwnerLabel,
+  importedStoreBrainId,
+  skillStoreRows,
+  upsertSkillClientConfig,
+} from "./skill-profile-link";
 import { SKILL_CLIENT_ALIASES } from "./skill-client-aliases";
 import {
   assessTestDatabase,
@@ -80,12 +86,6 @@ export interface SkillConfigImportResult {
   links: Array<{ slug: string; clientId: string | null; warning: string | null }>;
   approvalOwnerUserId: string;
   warnings: string[];
-}
-
-function approvalOwnerLabel(client: ClientSkillConfig): string {
-  const override = process.env.APPROVAL_OWNER_NAME?.trim();
-  if (override && client.approvalOwnerResolved.resolvedFrom !== "profile") return override;
-  return client.approvalOwnerResolved.name;
 }
 
 function linkedWorkspaceIds(
@@ -222,54 +222,15 @@ export async function importSkillConfigBundle(
         console.warn(linked.warning);
       }
       links.push({ slug: client.slug, clientId: linked.clientId, warning: linked.warning });
-      const label = approvalOwnerLabel(client);
-      const values = {
-        slug: client.slug,
+      await upsertSkillClientConfig(tx, {
+        client,
         clientId: linked.clientId,
-        displayName: client.displayName,
-        snapshotId: client.snapshotId,
-        profileHash: client.profileHash,
-        marketingGate: client.marketingGate,
-        scopeAllowed: true,
-        pilot: client.pilot,
-        approvalOwnerResolved: label,
         approvalOwnerUserId,
-        configJson: client,
-        missingFactsJson: bundle.missingFacts[client.slug],
+        approvalOwnerResolved: approvalOwnerLabel(client),
+        missingFacts: bundle.missingFacts[client.slug],
+        stores: skillStoreRows(client, importedStoreBrainId),
         importedAt,
-      };
-      await tx
-        .insert(skillClientConfigs)
-        .values(values)
-        .onConflictDoUpdate({
-          target: skillClientConfigs.slug,
-          set: {
-            clientId: values.clientId,
-            displayName: values.displayName,
-            snapshotId: values.snapshotId,
-            profileHash: values.profileHash,
-            marketingGate: values.marketingGate,
-            scopeAllowed: values.scopeAllowed,
-            pilot: values.pilot,
-            approvalOwnerResolved: values.approvalOwnerResolved,
-            approvalOwnerUserId: values.approvalOwnerUserId,
-            configJson: values.configJson,
-            missingFactsJson: values.missingFactsJson,
-            importedAt: values.importedAt,
-          },
-        });
-      await tx.delete(skillStoreConfigs).where(eq(skillStoreConfigs.clientSlug, client.slug));
-      if (client.stores.length > 0) {
-        await tx.insert(skillStoreConfigs).values(
-          client.stores.map((store) => ({
-            clientSlug: client.slug,
-            storeKey: store.storeKey,
-            brainStoreId: store.brainStoreId,
-            role: store.role,
-            configJson: store,
-          })),
-        );
-      }
+      });
     }
   });
 
