@@ -174,15 +174,17 @@ describe("Check Google Ads access", () => {
   let ownerId = "";
 
   beforeAll(async () => {
-    const owner = await login(
-      process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com",
-      process.env.SEED_OWNER_PASSWORD ?? "local-dev-only",
-    );
-    ownerToken = owner.token;
-    const ownerUser = await getDb().query.users.findFirst({
-      where: eq(users.email, process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com"),
-    });
-    if (!ownerUser) throw new Error("Seed owner missing");
+    const ownerEmail = "g3.owner@tharrosmedia.com";
+    const ownerPassword = "g3-owner-local";
+    const ownerHash = await hash(ownerPassword, 10);
+    const existingOwner = await getDb().query.users.findFirst({ where: eq(users.email, ownerEmail) });
+    const ownerUser =
+      existingOwner ??
+      (await getDb().insert(users).values({ email: ownerEmail, name: "G3 owner", passwordHash: ownerHash }).returning())[0];
+    if (!ownerUser) throw new Error("G3 owner missing");
+    if (existingOwner) {
+      await getDb().update(users).set({ passwordHash: ownerHash }).where(eq(users.id, ownerUser.id));
+    }
     ownerId = ownerUser.id;
 
     const [workspace] = await getDb()
@@ -196,6 +198,7 @@ describe("Check Google Ads access", () => {
       .returning();
     clientId = client.id;
     await getDb().insert(memberships).values({ userId: ownerId, workspaceId, role: "owner" });
+    ownerToken = (await login(ownerEmail, ownerPassword)).token;
 
     const email = "g3.operator@tharrosmedia.com";
     const passwordHash = await hash("g3-operator-local", 10);
