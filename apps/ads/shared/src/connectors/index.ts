@@ -60,10 +60,12 @@ export {
 } from "./ad-platform";
 export { checkMetaConnection } from "./meta";
 export {
+  GOOGLE_CONFIG_ERROR,
   GOOGLE_PARTIAL_PULL,
   GOOGLE_RATE_LIMITED,
   GOOGLE_REFRESH_REJECTED,
   GOOGLE_RECONNECT_REQUIRED,
+  GoogleOAuthConfigError,
   GoogleRefreshRejected,
   GoogleRetryLater,
 } from "../google-token";

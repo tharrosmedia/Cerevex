@@ -17,9 +17,11 @@ import {
   scrubMetaSecrets,
 } from "./meta-graph-error";
 import {
+  GOOGLE_CONFIG_ERROR,
   GOOGLE_PARTIAL_PULL,
   GOOGLE_RATE_LIMITED,
   GOOGLE_REFRESH_REJECTED,
+  isGoogleOAuthConfigError,
   isGoogleRefreshRejected,
   isGoogleRetryLater,
   markGoogleReconnectRequired,
@@ -80,13 +82,39 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
   }
 
   const previousStatus = account.connectionStatus;
-  const stillSyncing = and(eq(adAccounts.id, adAccountId), ne(adAccounts.connectionStatus, "disconnected"));
+  const stillSyncing = and(
+    eq(adAccounts.id, adAccountId),
+    ne(adAccounts.connectionStatus, "disconnected"),
+    ne(adAccounts.connectionStatus, "needs_reconnect"),
+  );
   const [markedSyncing] = await db
     .update(adAccounts)
     .set({ connectionStatus: "syncing", lastError: null })
     .where(stillSyncing)
     .returning({ id: adAccounts.id });
-  if (!markedSyncing) return skippedSync(adAccountId);
+  if (!markedSyncing) {
+    const current = await db.query.adAccounts.findFirst({ where: eq(adAccounts.id, adAccountId) });
+    if (!current || current.connectionStatus === "disconnected") return skippedSync(adAccountId);
+    if (current.connectionStatus === "needs_reconnect" || current.lastError === GOOGLE_REFRESH_REJECTED) {
+      return {
+        adAccountId,
+        mode: "live",
+        entityCount: 0,
+        status: "error",
+        lastError: current.platform === "google" ? (current.lastError ?? GOOGLE_REFRESH_REJECTED) : META_TOKEN_EXPIRED,
+      };
+    }
+    if (current.lastError === META_TOKEN_EXPIRED) {
+      return {
+        adAccountId,
+        mode: "live",
+        entityCount: 0,
+        status: "error",
+        lastError: META_TOKEN_EXPIRED,
+      };
+    }
+    return skippedSync(adAccountId);
+  }
 
   let tokens: StoredOAuthTokens | null = null;
   try {
@@ -250,6 +278,21 @@ export async function runAdAccountSync(adAccountId: string): Promise<SyncResult>
         status: "error",
         lastError: META_PERMISSION_MISSING,
       };
+    }
+    if (isGoogleOAuthConfigError(error)) {
+      const [noted] = await db
+        .update(adAccounts)
+        .set({ connectionStatus: "error", lastError: GOOGLE_CONFIG_ERROR })
+        .where(
+          and(
+            eq(adAccounts.id, adAccountId),
+            ne(adAccounts.connectionStatus, "disconnected"),
+            ne(adAccounts.connectionStatus, "needs_reconnect"),
+          ),
+        )
+        .returning({ id: adAccounts.id });
+      if (!noted) return skippedSync(adAccountId);
+      throw error;
     }
     if (isGoogleRefreshRejected(error)) {
       await markGoogleReconnectRequired(adAccountId);

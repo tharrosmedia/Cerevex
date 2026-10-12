@@ -6,10 +6,12 @@ import { connectionStatusLabel, defaultCapabilityFlags } from "@tharros/ads-shar
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import {
+  GOOGLE_CONFIG_ERROR,
   GOOGLE_PARTIAL_PULL,
   GOOGLE_RATE_LIMITED,
   GOOGLE_REFRESH_REJECTED,
   GOOGLE_RECONNECT_REQUIRED,
+  GoogleOAuthConfigError,
   GoogleRefreshRejected,
   GoogleRetryLater,
   googleAdPlatformConnector,
@@ -278,6 +280,169 @@ describe("Google customer id and honest refresh", () => {
     assertNoSecrets(logs);
   });
 
+  it.each(["invalid_client", "unauthorized_client", "invalid_request"] as const)(
+    "treats %s as a retryable config error and does not mark reconnect",
+    async (oauthError) => {
+      expect(ownerReady).toBe(true);
+      configureGoogle();
+      const logs = spyConsole();
+      const leaked = `${oauthError} leaked ${REFRESH} secret ${CLIENT_SECRET}`;
+      vi.stubGlobal("fetch", async () => jsonResponse({ error: oauthError, error_description: leaked }, 400));
+      const stored = { accessToken: ACCESS, refreshToken: REFRESH, expiresAt: new Date(Date.now() - 60_000).toISOString() };
+      const rejected = googleAdPlatformConnector.refreshTokens(stored);
+      await expect(rejected).rejects.toBeInstanceOf(GoogleOAuthConfigError);
+      await expect(rejected).rejects.not.toBeInstanceOf(GoogleRefreshRejected);
+      await expect(googleAdPlatformConnector.refreshTokens(stored)).rejects.toMatchObject({
+        message: GOOGLE_CONFIG_ERROR,
+        oauthError,
+      });
+      expect(JSON.stringify(logs)).toContain(oauthError);
+      assertNoSecrets(logs);
+
+      const account = await seedAccount({
+        externalId: `customers/g4cfg${oauthError}${Date.now()}`,
+        loginCustomerId: "111-222-3333",
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      });
+      try {
+        await expect(runAdAccountSync(account.id)).rejects.toBeInstanceOf(GoogleOAuthConfigError);
+        const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+        expect(row?.connectionStatus).toBe("error");
+        expect(row?.connectionStatus).not.toBe("needs_reconnect");
+        expect(row?.lastError).toBe(GOOGLE_CONFIG_ERROR);
+        expect(connectionStatusLabel(toPublicAccount(row!, await loadTokens(account.id)).connectionStatus)).toBe("Error");
+        expect(await reconnectAudits(account.id)).toHaveLength(0);
+        assertNoSecrets(row?.lastError);
+        assertNoSecrets(logs);
+      } finally {
+        await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+      }
+    },
+  );
+
+  it("syncs again after a config error once the token endpoint accepts the secret", async () => {
+    expect(ownerReady).toBe(true);
+    configureGoogle();
+    const logs = spyConsole();
+    let repaired = false;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      const callUrl = String(url);
+      if (callUrl.includes("oauth2.googleapis.com/token")) {
+        if (!repaired) {
+          return jsonResponse(
+            { error: "invalid_client", error_description: `bad secret ${CLIENT_SECRET} ${REFRESH}` },
+            401,
+          );
+        }
+        return jsonResponse({ access_token: NEXT_ACCESS, expires_in: 3600, refresh_token: REFRESH });
+      }
+      const body = typeof init.body === "string" ? init.body : "";
+      expect(headersOf(init).authorization).toBe(`Bearer ${NEXT_ACCESS}`);
+      if (body.includes("LIMIT 50")) {
+        return jsonResponse({ results: [{ campaign: { id: "campaign-1", name: "HVAC", status: "ENABLED" } }] });
+      }
+      return jsonResponse({ results: [] });
+    });
+    const account = await seedAccount({
+      externalId: `customers/g4fix${Date.now()}`,
+      loginCustomerId: "111-222-3333",
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    try {
+      await expect(runAdAccountSync(account.id)).rejects.toBeInstanceOf(GoogleOAuthConfigError);
+      repaired = true;
+      const second = await runAdAccountSync(account.id);
+      expect(second.status).toBe("connected");
+      expect(second.lastError).toBeNull();
+      const stored = await loadTokens(account.id);
+      expect(stored?.accessToken).toBe(NEXT_ACCESS);
+      expect(stored?.refreshToken).toBe(REFRESH);
+      const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+      expect(row?.connectionStatus).toBe("connected");
+      expect(row?.lastError).toBeNull();
+      expect(await reconnectAudits(account.id)).toHaveLength(0);
+      assertNoSecrets(logs);
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it("does not treat another token-endpoint 4xx as a revoked grant", async () => {
+    configureGoogle();
+    const logs = spyConsole();
+    vi.stubGlobal(
+      "fetch",
+      async () => jsonResponse({ error: "invalid_scope", error_description: `scope ${REFRESH} ${CLIENT_SECRET}` }, 400),
+    );
+    const failure = googleAdPlatformConnector.refreshTokens({ accessToken: ACCESS, refreshToken: REFRESH });
+    await expect(failure).rejects.toBeInstanceOf(GoogleOAuthConfigError);
+    await expect(failure).rejects.not.toBeInstanceOf(GoogleRefreshRejected);
+    expect(JSON.stringify(logs)).toContain("invalid_scope");
+    assertNoSecrets(logs);
+  });
+
+  it("treats a token response with no access token as a provider error", async () => {
+    expect(ownerReady).toBe(true);
+    configureGoogle();
+    const logs = spyConsole();
+    const leaked = `empty body ${REFRESH} ${CLIENT_SECRET}`;
+    vi.stubGlobal("fetch", async () => jsonResponse({ token_type: "Bearer", error_description: leaked }));
+    const stored = { accessToken: ACCESS, refreshToken: REFRESH };
+    await expect(googleAdPlatformConnector.refreshTokens(stored)).rejects.toBeInstanceOf(GoogleRetryLater);
+    await expect(googleAdPlatformConnector.refreshTokens(stored)).rejects.not.toBeInstanceOf(GoogleRefreshRejected);
+    expect(JSON.stringify(logs)).toContain("empty_access_token");
+    assertNoSecrets(logs);
+
+    const account = await seedAccount({
+      externalId: `customers/g4empty${Date.now()}`,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    try {
+      await expect(runAdAccountSync(account.id)).rejects.toBeInstanceOf(GoogleRetryLater);
+      const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+      expect(row?.connectionStatus).not.toBe("needs_reconnect");
+      expect(row?.lastError).not.toBe(GOOGLE_REFRESH_REJECTED);
+      expect(row?.lastError).not.toBe(GOOGLE_CONFIG_ERROR);
+      expect(await reconnectAudits(account.id)).toHaveLength(0);
+      assertNoSecrets(row?.lastError);
+      assertNoSecrets(logs);
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it("does not treat a token-endpoint network error as a revoked grant", async () => {
+    expect(ownerReady).toBe(true);
+    configureGoogle();
+    const logs = spyConsole();
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError(`network down ${REFRESH} ${CLIENT_SECRET}`);
+    });
+    await expect(
+      googleAdPlatformConnector.refreshTokens({ accessToken: ACCESS, refreshToken: REFRESH }),
+    ).rejects.toBeInstanceOf(GoogleRetryLater);
+    await expect(
+      googleAdPlatformConnector.refreshTokens({ accessToken: ACCESS, refreshToken: REFRESH }),
+    ).rejects.not.toBeInstanceOf(GoogleRefreshRejected);
+
+    const account = await seedAccount({
+      externalId: `customers/g4net${Date.now()}`,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    try {
+      await expect(runAdAccountSync(account.id)).rejects.toBeInstanceOf(GoogleRetryLater);
+      await expect(runAdAccountSync(account.id)).rejects.not.toBeInstanceOf(GoogleRefreshRejected);
+      const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+      expect(row?.connectionStatus).not.toBe("needs_reconnect");
+      expect(row?.lastError).not.toBe(GOOGLE_REFRESH_REJECTED);
+      expect(await reconnectAudits(account.id)).toHaveLength(0);
+      assertNoSecrets(row?.lastError);
+      assertNoSecrets(logs);
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
   it("marks invalid_grant as Needs reconnect once and does not call Google again", async () => {
     expect(ownerReady).toBe(true);
     configureGoogle();
@@ -525,6 +690,76 @@ describe("Google customer id and honest refresh", () => {
       expect(row?.lastError).toBe(GOOGLE_RATE_LIMITED);
       const entities = await getDb().select().from(adEntities).where(eq(adEntities.adAccountId, account.id));
       expect(entities).toHaveLength(0);
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it("writes one reconnect audit when five invalid_grant syncs run together", async () => {
+    expect(ownerReady).toBe(true);
+    configureGoogle();
+    const logs = spyConsole();
+    vi.stubGlobal("fetch", async () =>
+      jsonResponse({ error: "invalid_grant", error_description: `revoked ${REFRESH} ${CLIENT_SECRET}` }, 400),
+    );
+    const account = await seedAccount({
+      externalId: `customers/g4race${Date.now()}`,
+      loginCustomerId: "111-222-3333",
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    try {
+      const results = await Promise.all(Array.from({ length: 5 }, () => runAdAccountSync(account.id)));
+      expect(results.every((result) => result.lastError === GOOGLE_REFRESH_REJECTED)).toBe(true);
+      const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+      expect(row?.connectionStatus).toBe("needs_reconnect");
+      expect(await reconnectAudits(account.id)).toHaveLength(1);
+      assertNoSecrets(logs);
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it.each([429, 503] as const)("blocks the mutate when the pre-write live read returns %s", async (status) => {
+    expect(ownerReady).toBe(true);
+    configureGoogle();
+    const logs = spyConsole();
+    let mutateCalls = 0;
+    let searchCalls = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      const callUrl = String(url);
+      if (callUrl.includes("oauth2.googleapis.com/token")) {
+        throw new Error("refresh should not run before a fresh token");
+      }
+      if (callUrl.includes("googleAds:mutate")) {
+        mutateCalls += 1;
+        return jsonResponse({ mutateOperationResponses: [{}] });
+      }
+      searchCalls += 1;
+      return new Response(`read failed ${REFRESH}`, { status });
+    });
+    const account = await seedAccount({
+      externalId: `customers/g4read${status}${Date.now()}`,
+      loginCustomerId: "111-222-3333",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    });
+    try {
+      const outcome = await executeMutation({
+        adAccountId: account.id,
+        platform: "google",
+        accountExternalId: account.externalId,
+        mutation: pause,
+        capabilities: defaultCapabilityFlags(),
+      });
+      expect(searchCalls).toBe(1);
+      expect(mutateCalls).toBe(0);
+      expect(outcome.status).toBe("failed");
+      expect(outcome.writes).toBe(false);
+      expect(outcome.reason).toBe(status === 429 ? GOOGLE_RATE_LIMITED : "Google didn't answer. Cerevex will try again later.");
+      const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+      expect(row?.connectionStatus).not.toBe("needs_reconnect");
+      expect(await reconnectAudits(account.id)).toHaveLength(0);
+      assertNoSecrets(outcome);
+      assertNoSecrets(logs);
     } finally {
       await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
     }

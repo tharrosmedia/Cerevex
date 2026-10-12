@@ -17,7 +17,7 @@ import {
   type MutationOutcome,
 } from "../mutate-types";
 import { GOOGLE_ADS_API_VERSION } from "../google-ads";
-import { GoogleRefreshRejected, GoogleRetryLater } from "../google-token";
+import { GoogleOAuthConfigError, GoogleRefreshRejected, GoogleRetryLater } from "../google-token";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
 import { refuseMockPull } from "../live-or-loud";
 import { mockPull, type PullResult, type PulledEntity } from "../platforms";
@@ -33,6 +33,19 @@ import type {
 import { readPlatformWriteBody, requirePlatformSignal } from "./write-timeout";
 
 const GOOGLE_ADS = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
+
+/** These mean the app credentials are wrong. They are not a revoked user grant. */
+const GOOGLE_REFRESH_CONFIG_ERRORS = new Set(["invalid_client", "unauthorized_client", "invalid_request"]);
+
+/** Log a short OAuth code only. Anything else becomes the HTTP status. */
+function loggedRefreshCode(errorCode: string, status: number): string {
+  if (/^[a-z_]{1,40}$/.test(errorCode)) return errorCode;
+  return `http_${status}`;
+}
+
+function logGoogleRefreshCode(code: string): void {
+  console.warn("google.refresh", code);
+}
 
 function notConfigured(): ConnectorConnectResult {
   return {
@@ -429,7 +442,16 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     } catch {
       accessToken = undefined;
     }
-    if (!res.ok || errorCode === "invalid_grant" || !accessToken) throw new GoogleRefreshRejected();
+    if (errorCode === "invalid_grant") throw new GoogleRefreshRejected();
+    if (GOOGLE_REFRESH_CONFIG_ERRORS.has(errorCode) || !res.ok) {
+      const code = loggedRefreshCode(errorCode, res.status);
+      logGoogleRefreshCode(code);
+      throw new GoogleOAuthConfigError(code);
+    }
+    if (!accessToken) {
+      logGoogleRefreshCode("empty_access_token");
+      throw new GoogleRetryLater(502);
+    }
     return {
       ...tokens,
       accessToken,
