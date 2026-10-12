@@ -7,7 +7,7 @@ import { and, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { isProductionRuntime } from "@cerevex/contracts";
 import { EVENTS, canApproveApply, canMutate } from "@tharros/ads-shared";
-import { oauthConfig } from "@tharros/ads-shared/oauth";
+import { oauthConfig, oauthHealthConfig } from "@tharros/ads-shared/oauth";
 import { checkDatabase, getDb } from "@tharros/ads-shared/db";
 import { checkInngest, sendStubPing } from "@tharros/ads-shared/inngest";
 import { auditLog } from "@tharros/ads-shared/schema";
@@ -154,17 +154,18 @@ export function createApp() {
       checkInngest(),
     ]);
     const ok = Boolean(dbOk);
+    const now = new Date();
     return c.json(
       {
         ok,
         service: "tharros-api",
         version: VERSION,
-        time: new Date().toISOString(),
+        time: now.toISOString(),
         checks: {
           db: dbOk ? "ok" : "down",
           inngest: inngestStatus,
         },
-        oauth: oauthConfig(),
+        oauth: oauthHealthConfig(now),
       },
       ok ? 200 : 503,
     );

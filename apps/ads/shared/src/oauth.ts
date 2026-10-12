@@ -1,4 +1,4 @@
-import { loadEnv } from "./env";
+import { googleOAuthClientConfigured, loadEnv } from "./env";
 import { GOOGLE_ADS_API_VERSION } from "./google-ads";
 import { META_GRAPH_VERSION } from "./meta-graph";
 import type { OAuthPlatformConfig, Platform } from "./types";
@@ -30,7 +30,37 @@ export function isMetaConfigured(): boolean {
 }
 
 export function isGoogleConfigured(): boolean {
-  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  return googleOAuthClientConfigured();
+}
+
+/** Readiness values /health is allowed to report. The live check uses the same set. */
+export type GoogleReadiness = "ready" | "not_configured" | "project_not_approved" | "unknown";
+
+/**
+ * Config flags only. A configured process is ready to call Google.
+ * Project approval and token health come from the access check, not from /health.
+ */
+export function googleHealthReadiness(now = new Date()): {
+  readiness: "ready" | "not_configured";
+  checkedAt: string;
+} {
+  return {
+    readiness: isGoogleConfigured() ? "ready" : "not_configured",
+    checkedAt: now.toISOString(),
+  };
+}
+
+export function oauthHealthConfig(now = new Date()) {
+  const config = oauthConfig();
+  const google = googleHealthReadiness(now);
+  return {
+    ...config,
+    google: {
+      ...config.google,
+      readiness: google.readiness,
+      checkedAt: google.checkedAt,
+    },
+  };
 }
 
 export function oauthConfig(): {

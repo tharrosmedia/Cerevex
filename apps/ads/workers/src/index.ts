@@ -7,7 +7,7 @@ import { loadEnv } from "@tharros/ads-shared/env";
 import { assertAdsWorkerProductionSecrets } from "@tharros/ads-shared/production-secrets";
 import { checkDatabase } from "@tharros/ads-shared/db";
 import { checkInngest, inngest } from "@tharros/ads-shared/inngest";
-import { warnIfMetaNotConfigured, workerHealthBody } from "@tharros/ads-shared/worker-health";
+import { warnIfGoogleNotConfigured, warnIfMetaNotConfigured, workerHealthBody } from "@tharros/ads-shared/worker-health";
 import { FUNCTION_IDS, functions } from "./register";
 
 loadEnv();
@@ -51,6 +51,9 @@ const inngestHandler = inngestNodeServe({
 
 const honoListener = getRequestListener(app.fetch);
 warnIfMetaNotConfigured((message) => {
+  logger.warn({ msg: message });
+});
+warnIfGoogleNotConfigured("worker", (message) => {
   logger.warn({ msg: message });
 });
 
