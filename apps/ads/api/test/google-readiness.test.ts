@@ -215,9 +215,8 @@ describe("Check Google Ads access", () => {
     restoreEnv();
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     restoreEnv();
-    if (workspaceId) await getDb().delete(workspaces).where(eq(workspaces.id, workspaceId));
   });
 
   async function audits() {
