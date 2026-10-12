@@ -5,7 +5,7 @@ export type AdsFailReason = "not_configured" | "unreachable" | "unauthorized" | 
 
 export type AdsResult<T> =
   | { ok: true; data: T; status: number }
-  | { ok: false; reason: AdsFailReason; message: string; status: number };
+  | { ok: false; reason: AdsFailReason; message: string; status: number; data?: unknown };
 
 export type AdsClient = {
   id: string;
@@ -170,6 +170,7 @@ export async function adsApi<T>(
         reason: "unauthorized",
         message: body?.error ?? "Ads module is not authorized.",
         status: res.status,
+        data: body,
       };
     }
     if (res.status === 404) {
@@ -178,6 +179,7 @@ export async function adsApi<T>(
         reason: "not_found",
         message: body?.error ?? "Not found.",
         status: 404,
+        data: body,
       };
     }
     if (!res.ok) {
@@ -186,6 +188,7 @@ export async function adsApi<T>(
         reason: "error",
         message: body?.error ?? `Ads request failed (${res.status})`,
         status: res.status,
+        data: body,
       };
     }
     if (!body) {
@@ -194,6 +197,7 @@ export async function adsApi<T>(
         reason: "error",
         message: "Ads response was not JSON.",
         status: res.status,
+        data: null,
       };
     }
     return { ok: true, data: body, status: res.status };
@@ -260,6 +264,26 @@ export function renameAdsClient(clientId: string, name: string) {
     { method: "PATCH", body: JSON.stringify({ name }) },
     { asOwner: true },
   );
+}
+
+export type ClientSetupSummary = {
+  name: string;
+  accounts: {
+    meta: Array<{ externalId: string; displayName: string | null; status: string }>;
+    google: Array<{ externalId: string; displayName: string | null; status: string }>;
+  };
+  callrail: { present: boolean };
+  skills: {
+    slug: string | null;
+    loaded: boolean;
+    linked: boolean;
+    missingFacts: number;
+  };
+};
+
+/** Read-only setup summary. Website, business type, Search Console, and GA4 stay in Brain. */
+export function getClientSetup(clientId: string) {
+  return adsApi<ClientSetupSummary>(`/clients/${encodeURIComponent(clientId)}/setup`);
 }
 
 export function linkAdsClientSite(clientId: string, siteId: string | null) {
