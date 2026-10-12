@@ -433,6 +433,25 @@ describe("Check Google Ads access", () => {
     }
   });
 
+  it("still checks access when the developer token is blank", async () => {
+    configureGoogleEnv();
+    process.env.GOOGLE_ADS_DEVELOPER_TOKEN = "   ";
+    const account = await seedRealToken(`g3-no-dev-token-${Date.now()}`);
+    const calls = stubFetch(200, { resourceNames: ["customers/9988776655"] });
+    try {
+      const result = await check(ownerToken);
+      expect(result.status).toBe(200);
+      expectPublicStatus(result.body, "ok", "ready", GOOGLE_READY_MESSAGE);
+      expect(calls).toHaveLength(1);
+      const headers = new Headers(calls[0].init?.headers);
+      expect(headers.get("developer-token")).toBeNull();
+      expect(JSON.stringify(result.body)).not.toContain("9988776655");
+      expectNoSecrets(result.after[0]?.payloadJson);
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
   it("hides an unclassified Google failure instead of returning its body", async () => {
     configureGoogleEnv();
     const account = await seedRealToken(`g3-unknown-${Date.now()}`);
