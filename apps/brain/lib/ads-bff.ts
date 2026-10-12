@@ -238,11 +238,35 @@ export async function loadAdsCockpit() {
   };
 }
 
-/** The ads client that owns this site's ad accounts; the ads API creates it on first use. */
+/**
+ * The ads client that owns this site's ad accounts.
+ * Add, rename, and link refuse the service key, so these calls send the owner token alone.
+ */
 export function ensureSiteClient(siteId: string, name: string) {
   return adsApi<{ client: AdsClient; created: boolean; adopted: boolean }>(
     `/sites/${encodeURIComponent(siteId)}/client`,
     { method: "PUT", body: JSON.stringify({ name }) },
+    { asOwner: true },
+  );
+}
+
+export function listAdsClients() {
+  return adsApi<{ clients: AdsClient[] }>("/clients", {}, { asOwner: true });
+}
+
+export function renameAdsClient(clientId: string, name: string) {
+  return adsApi<{ client: AdsClient }>(
+    `/clients/${encodeURIComponent(clientId)}`,
+    { method: "PATCH", body: JSON.stringify({ name }) },
+    { asOwner: true },
+  );
+}
+
+export function linkAdsClientSite(clientId: string, siteId: string | null) {
+  return adsApi<{ client: AdsClient }>(
+    `/clients/${encodeURIComponent(clientId)}/site`,
+    { method: "POST", body: JSON.stringify({ siteId }) },
+    { asOwner: true },
   );
 }
 

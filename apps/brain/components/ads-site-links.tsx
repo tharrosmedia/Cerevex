@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { adsApi, type AdsClient } from '@/lib/ads-bff';
+import { adsApi, linkAdsClientSite, type AdsClient } from '@/lib/ads-bff';
 import { listStores } from '@/src/lib/db/stores';
 import { SubmitButton } from '@/components/submit-button';
 
@@ -10,10 +10,7 @@ async function linkClientAction(formData: FormData) {
   const clientId = String(formData.get('clientId') || '');
   const siteId = String(formData.get('siteId') || '');
   if (!clientId || !siteId) redirect('/settings?adslink=missing#ads-accounts');
-  const result = await adsApi(`/clients/${encodeURIComponent(clientId)}/site`, {
-    method: 'POST',
-    body: JSON.stringify({ siteId }),
-  });
+  const result = await linkAdsClientSite(clientId, siteId);
   revalidatePath('/settings');
   revalidatePath('/ads');
   if (!result.ok) redirect(`/settings?adslink=error&message=${encodeURIComponent(result.message)}#ads-accounts`);

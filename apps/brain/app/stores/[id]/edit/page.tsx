@@ -7,6 +7,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { platformLabel } from '@/lib/labels';
 import { normalizeShopDomain, verifyShopifyConnection } from '@/src/lib/shopify/verify';
 import { stripEditableApplyGates } from '@/src/lib/ads-confirmed-safety';
+import { syncAdsClientOnRename } from '@/lib/ads-client-link';
 import { isWordpressStore } from '@/src/lib/wordpress';
 
 function editUrl(id: string, error: string) {
@@ -48,6 +49,9 @@ async function update(formData: FormData) {
       redirect(editUrl(id, 'Not saved. Advanced settings must be valid JSON (an object).'));
     }
   }
+
+  const synced = await syncAdsClientOnRename({ siteId: id, previousName: store.name, nextName: name });
+  if (!synced.ok) redirect(editUrl(id, synced.message));
 
   await updateStore(id, {
     name,

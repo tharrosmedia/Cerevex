@@ -6,7 +6,7 @@ import { z } from "zod";
 import { canMutate, workspaceIdsFor, type AuthContext } from "@tharros/ads-shared";
 import { getDb } from "@tharros/ads-shared/db";
 import { clients } from "@tharros/ads-shared/schema";
-import { auditActor } from "./auth";
+import { auditActor, isServicePrincipal } from "./auth";
 import { requireMutableClient } from "./connect";
 import { activateStore, assignClientSite } from "@tharros/ads-shared/entitlements";
 import { writeAuditEvent } from "@tharros/ads-shared/audit";
@@ -15,6 +15,16 @@ import type { AppEnv } from "./types";
 const siteIdSchema = z.string().trim().min(1).max(200);
 const ensureSchema = z.object({ name: z.string().trim().min(1).max(200) });
 const linkSchema = z.object({ siteId: siteIdSchema.nullable() });
+const renameSchema = z.object({ name: z.string().trim().min(1).max(200) });
+
+const SESSION_REQUIRED = "Owner or operator role required";
+
+/** Add, rename, and link stay with a signed-in owner or operator. The service key is refused. */
+function refuseServiceKey(auth: AuthContext): void {
+  if (isServicePrincipal(auth)) {
+    throw new HTTPException(403, { message: SESSION_REQUIRED });
+  }
+}
 
 export type SiteClient = {
   id: string;
@@ -65,6 +75,7 @@ async function uniqueClientName(workspaceId: string, base: string): Promise<stri
  * An unlinked client with the same name (e.g. an existing pilot) is adopted instead of duplicated.
  */
 export async function ensureSiteClient(auth: AuthContext, siteId: string, name: string) {
+  refuseServiceKey(auth);
   const db = getDb();
   const workspaceId = mutableWorkspaceId(auth);
 
@@ -118,19 +129,101 @@ export async function ensureSiteClient(auth: AuthContext, siteId: string, name: 
   return { client: row, created: Boolean(created), adopted: false };
 }
 
+function databaseCode(error: unknown): string | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current && typeof current === "object"; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+function renameErrorMessage(body: unknown): string {
+  const raw =
+    body && typeof body === "object" && !Array.isArray(body) && "name" in body
+      ? (body as { name: unknown }).name
+      : undefined;
+  if (typeof raw === "string" && raw.trim().length > 200) return "Client name is too long.";
+  return "Enter a client name.";
+}
+
+async function nameTakenMessage(workspaceId: string, name: string, exceptId: string): Promise<string | null> {
+  const matches = await getDb()
+    .select()
+    .from(clients)
+    .where(and(eq(clients.workspaceId, workspaceId), sql`lower(${clients.name}) = lower(${name})`));
+  const taken = matches.find((row) => row.id !== exceptId);
+  if (!taken) return null;
+  return `There's already a client called ${taken.name}.`;
+}
+
+/**
+ * Rename one ads client. One site stays linked to that one client.
+ * v1 has no delete or archive.
+ */
+export async function renameClient(auth: AuthContext, clientId: string, name: string) {
+  refuseServiceKey(auth);
+  const client = await requireMutableClient(auth, clientId);
+  if (client.name === name) return client;
+
+  const conflict = await nameTakenMessage(client.workspaceId, name, client.id);
+  if (conflict) throw new HTTPException(409, { message: conflict });
+
+  const db = getDb();
+  try {
+    const [updated] = await db
+      .update(clients)
+      .set({ name })
+      .where(and(eq(clients.id, client.id), eq(clients.workspaceId, client.workspaceId)))
+      .returning();
+    if (!updated) throw new HTTPException(404, { message: "Client not found" });
+    await writeAuditEvent({
+      workspaceId: client.workspaceId,
+      ...auditActor(auth),
+      action: "client.renamed",
+      entityType: "client",
+      entityId: client.id,
+      payload: { from: client.name, to: name },
+    });
+    return updated;
+  } catch (error) {
+    if (error instanceof HTTPException) throw error;
+    if (databaseCode(error) === "23505") {
+      const message = (await nameTakenMessage(client.workspaceId, name, client.id)) ?? `There's already a client called ${name}.`;
+      throw new HTTPException(409, { message });
+    }
+    throw error;
+  }
+}
+
 export function registerSiteRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHandler<AppEnv>) {
   app.put("/sites/:siteId/client", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    refuseServiceKey(auth);
     const siteId = siteIdSchema.parse(c.req.param("siteId"));
     const parsed = ensureSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new HTTPException(400, { message: "name is required" });
-    const result = await ensureSiteClient(c.get("auth"), siteId, parsed.data.name);
+    const result = await ensureSiteClient(auth, siteId, parsed.data.name);
     return c.json({ client: toSiteClient(result.client), created: result.created, adopted: result.adopted });
   });
 
+  app.patch("/clients/:id", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    refuseServiceKey(auth);
+    const client = await requireMutableClient(auth, c.req.param("id"));
+    const body = await c.req.json().catch(() => null);
+    const parsed = renameSchema.safeParse(body);
+    if (!parsed.success) throw new HTTPException(400, { message: renameErrorMessage(body) });
+    const row = await renameClient(auth, client.id, parsed.data.name);
+    return c.json({ client: toSiteClient(row) });
+  });
+
   app.post("/clients/:id/site", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    refuseServiceKey(auth);
     const parsed = linkSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new HTTPException(400, { message: "siteId must be a string or null" });
-    const auth = c.get("auth");
     const client = await requireMutableClient(auth, c.req.param("id"));
     const db = getDb();
     if (parsed.data.siteId) {
