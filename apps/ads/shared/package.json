@@ -18,6 +18,7 @@
     "./usage": "./src/usage.ts",
     "./crypto": "./src/crypto.ts",
     "./oauth": "./src/oauth.ts",
+    "./google-access": "./src/google-access.ts",
     "./credentials": "./src/credentials.ts",
     "./sync": "./src/sync.ts",
     "./live-or-loud": "./src/live-or-loud.ts",

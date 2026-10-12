@@ -33,8 +33,14 @@ import { signOAuthState, verifyOAuthState } from "./oauth-state";
 import { connectChosenAccounts, createPendingConnection } from "./pending-connect";
 import type { AccessibleAdAccount } from "@tharros/ads-shared";
 import { EntitlementError } from "@tharros/ads-shared/entitlements";
-import { actorRef } from "./auth";
+import { actorRef, auditActor } from "./auth";
 import { requireWritableCapability } from "./capabilities";
+import {
+  GOOGLE_ACCESS_OWNER_ONLY,
+  auditGoogleReadiness,
+  googleAccessAllowed,
+  runGoogleAdsAccessCheck,
+} from "./google-access";
 import { getVisibleClient } from "./tenancy";
 import type { AppEnv } from "./types";
 
@@ -59,6 +65,32 @@ function postConnectDest(): URL {
 }
 
 export function registerConnectRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHandler<AppEnv>) {
+  app.post("/oauth/google/access-check", requireAuth, async (c) => {
+    const parsed = z
+      .object({ workspaceId: z.string().uuid().optional() })
+      .safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: "Invalid request" });
+    }
+    const auth = c.get("auth");
+    const requested = parsed.data.workspaceId?.trim();
+    if (requested && !auth.memberships.some((row) => row.workspaceId === requested)) {
+      throw new HTTPException(404, { message: "Workspace not found" });
+    }
+    const workspaceId = requested || auth.memberships[0]?.workspaceId;
+    if (!workspaceId) {
+      throw new HTTPException(403, { message: "No workspace membership" });
+    }
+    const actor = auditActor(auth);
+    if (!googleAccessAllowed(auth, workspaceId)) {
+      await auditGoogleReadiness({ workspaceId, ...actor, allowed: false });
+      throw new HTTPException(403, { message: GOOGLE_ACCESS_OWNER_ONLY });
+    }
+    const check = await runGoogleAdsAccessCheck(workspaceId);
+    await auditGoogleReadiness({ workspaceId, ...actor, allowed: true, check });
+    return c.json(check);
+  });
+
   app.get("/oauth/config", requireAuth, (c) => {
     return c.json({
       platforms: oauthConfig(),

@@ -50,3 +50,8 @@ export function optionalEnv(name: string): string | undefined {
 export function googleAdsDeveloperToken(): string | undefined {
   return optionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN");
 }
+
+/** True when both Google OAuth client values are set. Does not return either value. */
+export function googleOAuthClientConfigured(): boolean {
+  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
