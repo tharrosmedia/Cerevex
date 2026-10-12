@@ -13,7 +13,7 @@ import { actorRef, assertApplySafetyOwner, auditActor } from "./auth";
 import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 
-function publicConnectionStatus(row: typeof adAccounts.$inferSelect): string {
+export function publicConnectionStatus(row: typeof adAccounts.$inferSelect): string {
   if (row.connectionStatus === "needs_reconnect" || row.lastError === "meta.token_expired") {
     return "needs_reconnect";
   }
