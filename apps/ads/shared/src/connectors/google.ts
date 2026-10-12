@@ -1,5 +1,6 @@
 import type { CapabilityFlags } from "@cerevex/contracts";
 import type { ApplyMutation } from "../audit-schemas";
+import { googleAdsDeveloperToken } from "../env";
 import { platformSyncLiveEnabled } from "../flags";
 import {
   GOOGLE_MICROS_SCALE,
@@ -45,17 +46,25 @@ function digitsOnly(id: string): string {
   return id.replace(/^customers\//, "").replace(/-/g, "");
 }
 
+/** Blank values are absent. The token is never logged. */
+function putDeveloperToken(headers: Record<string, string>, developerToken: string | null | undefined): void {
+  if (typeof developerToken !== "string") return;
+  const token = developerToken.trim();
+  if (!token) return;
+  headers["developer-token"] = token;
+}
+
 /** Accounts reached through a manager (MCC) need login-customer-id on every call. */
 export function googleAdsHeaders(
   tokens: Pick<StoredOAuthTokens, "accessToken" | "loginCustomerId">,
-  developerToken: string,
+  developerToken?: string | null,
   loginCustomerId?: string | null,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${tokens.accessToken}`,
-    "developer-token": developerToken,
     "content-type": "application/json",
   };
+  putDeveloperToken(headers, developerToken);
   const login = loginCustomerId ?? tokens.loginCustomerId ?? process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
   if (login) headers["login-customer-id"] = digitsOnly(login);
   return headers;
@@ -63,7 +72,7 @@ export function googleAdsHeaders(
 
 async function googleSearch<T>(
   tokens: StoredOAuthTokens,
-  developerToken: string,
+  developerToken: string | null | undefined,
   customerId: string,
   query: string,
   loginCustomerId?: string | null,
@@ -88,13 +97,10 @@ type GoogleCustomerClientRow = {
 const MAX_GOOGLE_ROOTS = 50;
 
 export async function listGoogleAccessibleAccounts(tokens: StoredOAuthTokens): Promise<AccessibleAdAccount[]> {
-  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-  if (!developerToken) {
-    throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is not configured — cannot list Google Ads accounts");
-  }
-  const res = await fetch(`${GOOGLE_ADS}/customers:listAccessibleCustomers`, {
-    headers: { authorization: `Bearer ${tokens.accessToken}`, "developer-token": developerToken },
-  });
+  const developerToken = googleAdsDeveloperToken();
+  const headers: Record<string, string> = { authorization: `Bearer ${tokens.accessToken}` };
+  putDeveloperToken(headers, developerToken);
+  const res = await fetch(`${GOOGLE_ADS}/customers:listAccessibleCustomers`, { headers });
   if (!res.ok) throw new Error(`Google Ads account list failed (${res.status})`);
   const { resourceNames = [] } = (await res.json()) as { resourceNames?: string[] };
 
@@ -147,10 +153,7 @@ export async function listGoogleAccessibleAccounts(tokens: StoredOAuthTokens): P
 }
 
 async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
-  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-  if (!developerToken) {
-    throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is not configured — cannot live-read Google Ads");
-  }
+  const developerToken = googleAdsDeveloperToken();
   const customerId = digitsOnly(externalId);
   const query = `
     SELECT campaign.id, campaign.name, campaign.status
@@ -244,7 +247,7 @@ const GOOGLE_METRIC_WINDOWS = [
 
 async function googleSearchSafe<T>(
   tokens: StoredOAuthTokens,
-  developerToken: string,
+  developerToken: string | null | undefined,
   customerId: string,
   query: string,
 ): Promise<T[]> {
@@ -257,7 +260,7 @@ async function googleSearchSafe<T>(
 
 async function pullGoogleMetrics(
   tokens: StoredOAuthTokens,
-  developerToken: string,
+  developerToken: string | null | undefined,
   customerId: string,
 ): Promise<PullResult["metrics"]> {
   const metrics: PullResult["metrics"] = [];
@@ -436,8 +439,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     signal?: AbortSignal;
   }): Promise<LiveEntityState | null> {
     if (input.tokens.mock) return null;
-    const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-    if (!developerToken) return null;
+    const developerToken = googleAdsDeveloperToken();
     const { mutation, tokens } = input;
     const customerId = mutation.target.externalId.includes("/")
       ? mutation.target.externalId.split("/")[1]
@@ -484,10 +486,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
 
   async applyLive(input: ConnectorApplyInput): Promise<MutationOutcome> {
     const { tokens, mutation, live, accountExternalId } = input;
-    const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-    if (!developerToken) {
-      throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is not configured — cannot live-write Google Ads");
-    }
+    const developerToken = googleAdsDeveloperToken();
     const customerId = accountExternalId.replace(/^customers\//, "").replace(/-/g, "");
     const operations: Record<string, unknown>[] = [];
 
