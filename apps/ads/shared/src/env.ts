@@ -31,3 +31,22 @@ export function requiredEnv(name: string): string {
   }
   return value;
 }
+
+/**
+ * Optional environment value. Unset, empty, and whitespace-only values are absent.
+ * The raw value is never logged and never included in an error.
+ *
+ * `GOOGLE_ADS_DEVELOPER_TOKEN` is optional (Q7). Callers send `developer-token`
+ * only when `googleAdsDeveloperToken()` returns a value. A missing token must
+ * not block list, pull, live re-read, or mutate.
+ */
+export function optionalEnv(name: string): string | undefined {
+  const value = process.env[name];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function googleAdsDeveloperToken(): string | undefined {
+  return optionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN");
+}
