@@ -24,6 +24,7 @@ import { registerPlanningRoutes } from "./planning";
 import { checkViolationMessage } from "./db-errors";
 import { registerConnectRoutes } from "./routes";
 import { registerPendingConnectRoutes } from "./pending-connect";
+import { registerClientSetupRoutes } from "./client-setup";
 import { registerSiteRoutes } from "./sites";
 import { registerEntitlementRoutes } from "./entitlements";
 import { EntitlementError } from "@tharros/ads-shared/entitlements";
@@ -266,6 +267,7 @@ export function createApp() {
 
   registerConnectRoutes(app, requireAuth);
   registerPendingConnectRoutes(app, requireAuth);
+  registerClientSetupRoutes(app, requireAuth);
   registerSiteRoutes(app, requireAuth);
   registerEntitlementRoutes(app, requireAuth);
   registerAuditRoutes(app, requireAuth);
