@@ -712,6 +712,76 @@ a { color: var(--foreground); }
   overflow-wrap: anywhere;
 }
 
+.cx-setup {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.cx-setup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cx-setup-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.cx-setup-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.cx-setup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.cx-setup-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.cx-setup-row p,
+.cx-setup-flags p {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.cx-setup .cx-actions {
+  margin-top: 0.15rem;
+  max-width: 100%;
+}
+
+.cx-setup .btn-cta,
+.cx-setup .btn-secondary,
+.cx-setup select {
+  white-space: normal;
+  max-width: 100%;
+  height: auto;
+}
+
+.cx-setup-flags {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  max-width: 100%;
+  min-width: 0;
+}
+
 .cx-choice-grid {
   display: grid;
   gap: 0.75rem;

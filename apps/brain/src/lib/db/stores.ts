@@ -6,7 +6,7 @@ import { toSafeJsonb } from './safe-json';
 
 export async function listStores() {
   const sql = neon(process.env.DATABASE_URL!);
-  return sql`SELECT id, name, shopify_domain, platform, connector_type, config, created_at FROM stores ORDER BY created_at DESC`;
+  return sql`SELECT id, name, shopify_domain, platform, connector_type, config, created_at, (shopify_access_token IS NOT NULL) AS has_shopify_token FROM stores ORDER BY created_at DESC`;
 }
 
 export async function getStore(id: string) {

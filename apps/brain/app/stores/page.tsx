@@ -32,6 +32,8 @@ import { authorizeApproveSession } from '@/lib/sensitive-auth';
 import { loadSkillsProfileAction } from '@/lib/skills-profile-action';
 import { SKILL_PROFILE_SLUGS } from '@/lib/skills-profile-slugs';
 import { adoptedClientSentence, nameAndLinkSiteClient } from '@/lib/ads-client-link';
+import { safeSetupNext } from '@/lib/client-setup-checklist';
+import { loadSetupProgress } from '@/lib/client-setup-data';
 
 type Platform = 'shopify' | 'wordpress';
 
@@ -167,6 +169,15 @@ async function selectStore(formData: FormData) {
   redirect('/');
 }
 
+async function openSetup(formData: FormData) {
+  'use server';
+  const storeId = String(formData.get('storeId') || '');
+  const next = safeSetupNext(storeId, `/stores/${storeId}/setup`);
+  if (!next) redirect('/stores');
+  await setActiveStore(storeId);
+  redirect(next);
+}
+
 type SearchParams = {
   platform?: string;
   add?: string;
@@ -198,6 +209,15 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
     activeId = await getActiveStoreId();
   } catch (e: any) {
     loadError = operatorLoadError(e.message) || 'Could not load stores.';
+  }
+
+  let setupProgress = new Map<string, string>();
+  if (stores.length > 0) {
+    try {
+      setupProgress = await loadSetupProgress(stores);
+    } catch {
+      setupProgress = new Map();
+    }
   }
 
   let wordpressConnectVisible = false;
@@ -266,6 +286,12 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
                       <SubmitButton className="btn-secondary" pendingLabel="Checking…">Check connection</SubmitButton>
                     </form>
                     <Link href={`/stores/${store.id}/edit`} className="btn-secondary">Edit</Link>
+                    <form action={openSetup}>
+                      <input type="hidden" name="storeId" value={store.id} />
+                      <button type="submit" className="btn-secondary">
+                        {setupProgress.get(store.id) ? `Setup · ${setupProgress.get(store.id)}` : 'Setup'}
+                      </button>
+                    </form>
                     {ownerSession ? (
                       <form action={loadSkillsProfileAction}>
                         <input type="hidden" name="storeId" value={store.id} />
