@@ -78,6 +78,7 @@ export class MockAdPlatformConnector implements AdPlatformConnector {
   async readLiveEntityState(_input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
+    accountExternalId?: string;
   }): Promise<LiveEntityState | null> {
     return null;
   }

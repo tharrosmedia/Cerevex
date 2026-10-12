@@ -17,6 +17,7 @@ import {
   type MutationOutcome,
 } from "../mutate-types";
 import { GOOGLE_ADS_API_VERSION } from "../google-ads";
+import { GoogleRefreshRejected, GoogleRetryLater } from "../google-token";
 import { googleAuthorizeUrl, googleRedirectUri, isGoogleConfigured } from "../oauth";
 import { refuseMockPull } from "../live-or-loud";
 import { mockPull, type PullResult, type PulledEntity } from "../platforms";
@@ -54,7 +55,11 @@ function putDeveloperToken(headers: Record<string, string>, developerToken: stri
   headers["developer-token"] = token;
 }
 
-/** Accounts reached through a manager (MCC) need login-customer-id on every call. */
+/**
+ * Accounts reached through a manager (MCC) need login-customer-id on every call.
+ * Undefined uses the token's stored manager id. Null sends no manager header.
+ * There is no process-wide manager fallback.
+ */
 export function googleAdsHeaders(
   tokens: Pick<StoredOAuthTokens, "accessToken" | "loginCustomerId">,
   developerToken?: string | null,
@@ -65,7 +70,7 @@ export function googleAdsHeaders(
     "content-type": "application/json",
   };
   putDeveloperToken(headers, developerToken);
-  const login = loginCustomerId ?? tokens.loginCustomerId ?? process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
+  const login = loginCustomerId === undefined ? tokens.loginCustomerId : loginCustomerId;
   if (login) headers["login-customer-id"] = digitsOnly(login);
   return headers;
 }
@@ -79,10 +84,14 @@ async function googleSearch<T>(
 ): Promise<T[]> {
   const res = await fetch(`${GOOGLE_ADS}/customers/${digitsOnly(customerId)}/googleAds:search`, {
     method: "POST",
-    headers: googleAdsHeaders(tokens, developerToken, loginCustomerId ?? null),
+    headers: googleAdsHeaders(tokens, developerToken, loginCustomerId),
     body: JSON.stringify({ query }),
   });
-  if (!res.ok) throw new Error(`Google Ads read failed (${res.status})`);
+  if (!res.ok) {
+    await res.text().catch(() => undefined);
+    if (res.status === 429 || res.status >= 500) throw new GoogleRetryLater(res.status);
+    throw new Error(`Google Ads read failed (${res.status})`);
+  }
   const body = (await res.json()) as { results?: T[] };
   return body.results ?? [];
 }
@@ -166,6 +175,8 @@ async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
     body: JSON.stringify({ query }),
   });
   if (!res.ok) {
+    await res.text().catch(() => undefined);
+    if (res.status === 429 || res.status >= 500) throw new GoogleRetryLater(res.status);
     throw new Error(`Google Ads read failed (${res.status})`);
   }
   const body = (await res.json()) as {
@@ -183,12 +194,14 @@ async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
     ];
   });
 
-  const groups = await googleSearchSafe<GoogleAdGroupRow>(
+  const groupsResult = await googleSearchOptional<GoogleAdGroupRow>(
     tokens,
     developerToken,
     customerId,
     "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id FROM ad_group WHERE ad_group.status != 'REMOVED' LIMIT 200",
   );
+  const groups = groupsResult.rows;
+  let partial = groupsResult.failed;
   for (const row of groups) {
     if (!row.adGroup?.id) continue;
     entities.push({
@@ -200,12 +213,14 @@ async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
     });
   }
 
-  const ads = await googleSearchSafe<GoogleAdRow>(
+  const adsResult = await googleSearchOptional<GoogleAdRow>(
     tokens,
     developerToken,
     customerId,
     "SELECT ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.status, ad_group.id, campaign.id FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED' LIMIT 200",
   );
+  const ads = adsResult.rows;
+  partial = partial || adsResult.failed;
   for (const row of ads) {
     const adId = row.adGroupAd?.ad?.id;
     if (!adId) continue;
@@ -218,8 +233,15 @@ async function pullGoogleLive(tokens: StoredOAuthTokens, externalId: string) {
     });
   }
 
-  const metrics = await pullGoogleMetrics(tokens, developerToken, customerId);
-  return { mode: "live" as const, externalAccountId: customerId, entities, metrics };
+  const metricsResult = await pullGoogleMetrics(tokens, developerToken, customerId);
+  partial = partial || metricsResult.partial;
+  return {
+    mode: "live" as const,
+    externalAccountId: customerId,
+    entities,
+    metrics: metricsResult.metrics,
+    ...(partial ? { partial: true as const } : {}),
+  };
 }
 
 type GoogleAdGroupRow = {
@@ -245,16 +267,17 @@ const GOOGLE_METRIC_WINDOWS = [
   ["LAST_30_DAYS", "30d"],
 ] as const;
 
-async function googleSearchSafe<T>(
+/** A failed secondary search is a partial pull, not an empty success. The error text is dropped. */
+async function googleSearchOptional<T>(
   tokens: StoredOAuthTokens,
   developerToken: string | null | undefined,
   customerId: string,
   query: string,
-): Promise<T[]> {
+): Promise<{ rows: T[]; failed: boolean }> {
   try {
-    return await googleSearch<T>(tokens, developerToken, customerId, query);
+    return { rows: await googleSearch<T>(tokens, developerToken, customerId, query), failed: false };
   } catch {
-    return [];
+    return { rows: [], failed: true };
   }
 }
 
@@ -262,8 +285,9 @@ async function pullGoogleMetrics(
   tokens: StoredOAuthTokens,
   developerToken: string | null | undefined,
   customerId: string,
-): Promise<PullResult["metrics"]> {
+): Promise<{ metrics: PullResult["metrics"]; partial: boolean }> {
   const metrics: PullResult["metrics"] = [];
+  let partial = false;
   const levels = [
     {
       entityType: "campaign",
@@ -283,12 +307,14 @@ async function pullGoogleMetrics(
   ] as const;
   for (const level of levels) {
     for (const [during, window] of GOOGLE_METRIC_WINDOWS) {
-      const rows = await googleSearchSafe<GoogleMetricRow>(
+      const searched = await googleSearchOptional<GoogleMetricRow>(
         tokens,
         developerToken,
         customerId,
         `SELECT ${level.entityType === "ad" ? "ad_group_ad.ad.id" : level.entityType === "ad_group" ? "ad_group.id" : "campaign.id"}, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions FROM ${level.from} WHERE segments.date DURING ${during}`,
       );
+      if (searched.failed) partial = true;
+      const rows = searched.rows;
       const summed = new Map<string, { costMicros: number; impressions: number; clicks: number; conversions: number }>();
       for (const row of rows) {
         const id = level.idOf(row);
@@ -313,7 +339,7 @@ async function pullGoogleMetrics(
       }
     }
   }
-  return metrics;
+  return { metrics, partial };
 }
 
 export class GoogleAdPlatformConnector implements AdPlatformConnector {
@@ -362,27 +388,54 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
   }
 
   async refreshTokens(tokens: StoredOAuthTokens): Promise<StoredOAuthTokens> {
-    if (tokens.mock || !tokens.refreshToken) return tokens;
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return tokens;
+    if (tokens.mock) return tokens;
+    if (!tokens.refreshToken) throw new GoogleRefreshRejected();
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      throw new Error("google.not_configured");
+    }
     const body = new URLSearchParams({
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
       refresh_token: tokens.refreshToken,
       grant_type: "refresh_token",
     });
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body,
-    });
-    if (!res.ok) return tokens;
-    const json = (await res.json()) as { access_token?: string; expires_in?: number };
-    if (!json.access_token) return tokens;
+    let res: Response;
+    try {
+      res = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body,
+      });
+    } catch {
+      throw new GoogleRetryLater(503);
+    }
+    const raw = await res.text().catch(() => "");
+    if (res.status === 429 || res.status >= 500) throw new GoogleRetryLater(res.status);
+    let accessToken: string | undefined;
+    let expiresIn: number | undefined;
+    let refreshToken: string | undefined;
+    let errorCode = "";
+    try {
+      const json = JSON.parse(raw) as {
+        access_token?: string;
+        expires_in?: number;
+        refresh_token?: string;
+        error?: string;
+      };
+      accessToken = typeof json.access_token === "string" ? json.access_token : undefined;
+      expiresIn = json.expires_in;
+      refreshToken = typeof json.refresh_token === "string" ? json.refresh_token : undefined;
+      errorCode = typeof json.error === "string" ? json.error : "";
+    } catch {
+      accessToken = undefined;
+    }
+    if (!res.ok || errorCode === "invalid_grant" || !accessToken) throw new GoogleRefreshRejected();
     return {
       ...tokens,
-      accessToken: json.access_token,
-      expiresAt: json.expires_in
-        ? new Date(Date.now() + json.expires_in * 1000).toISOString()
+      accessToken,
+      refreshToken: refreshToken || tokens.refreshToken,
+      expiresAt: typeof expiresIn === "number"
+        ? new Date(Date.now() + expiresIn * 1000).toISOString()
         : tokens.expiresAt,
     };
   }
@@ -435,29 +488,31 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
   async readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
+    accountExternalId?: string;
     deadlineAt?: number;
     signal?: AbortSignal;
   }): Promise<LiveEntityState | null> {
     if (input.tokens.mock) return null;
     const developerToken = googleAdsDeveloperToken();
     const { mutation, tokens } = input;
-    const customerId = mutation.target.externalId.includes("/")
-      ? mutation.target.externalId.split("/")[1]
-      : undefined;
+    const customer = input.accountExternalId ? digitsOnly(input.accountExternalId) : "";
+    if (!customer) return null;
     const resource = mutation.target.externalId;
     const query =
       mutation.target.entityType === "campaign"
         ? `SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros, customer.currency_code FROM campaign WHERE campaign.id = ${resource} LIMIT 1`
         : `SELECT ad_group.id, ad_group.name, ad_group.status, ad_group.cpc_bid_micros, customer.currency_code FROM ad_group WHERE ad_group.id = ${resource} LIMIT 1`;
-    const customer = customerId ?? process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? "";
-    if (!customer) return null;
-    const res = await fetch(`${GOOGLE_ADS}/customers/${customer.replace(/-/g, "")}/googleAds:search`, {
+    const res = await fetch(`${GOOGLE_ADS}/customers/${customer}/googleAds:search`, {
       method: "POST",
       headers: googleAdsHeaders(tokens, developerToken),
       body: JSON.stringify({ query }),
       signal: input.signal ?? requirePlatformSignal(input.deadlineAt),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      await res.text().catch(() => undefined);
+      if (res.status === 429 || res.status >= 500) throw new GoogleRetryLater(res.status);
+      return null;
+    }
     const body = (await res.json()) as {
       results?: Array<{
         campaign?: { status?: string };

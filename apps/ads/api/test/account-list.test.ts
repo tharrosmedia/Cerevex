@@ -66,8 +66,9 @@ describe("listing accounts a login can reach", () => {
   });
 
   it("sends login-customer-id only when the account is reached through a manager", () => {
-    delete process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
+    process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID = "0001112223";
     expect(googleAdsHeaders({ accessToken: "t" }, "d")["login-customer-id"]).toBeUndefined();
+    expect(googleAdsHeaders({ accessToken: "t" }, "d", null)["login-customer-id"]).toBeUndefined();
     expect(googleAdsHeaders({ accessToken: "t", loginCustomerId: "123-456-7890" }, "d")["login-customer-id"]).toBe("1234567890");
   });
 

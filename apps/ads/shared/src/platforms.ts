@@ -24,6 +24,8 @@ export type PullResult = {
   externalAccountId: string;
   entities: PulledEntity[];
   metrics: PulledMetric[];
+  /** A secondary Google search failed. Campaigns may still be present. Not a plain success. */
+  partial?: boolean;
 };
 
 function metric(

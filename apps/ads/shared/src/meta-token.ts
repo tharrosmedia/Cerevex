@@ -4,6 +4,7 @@ import { writeAuditEvent } from "./audit";
 import { getAdPlatformConnector } from "./connectors";
 import { storeTokens, tokenNearExpiry } from "./credentials";
 import { getDb } from "./db";
+import { GOOGLE_REFRESH_REJECTED, GoogleRefreshRejected, isGoogleRefreshRejected, markGoogleReconnectRequired } from "./google-token";
 import {
   META_PERMISSION_MISSING,
   META_RATE_LIMITED,
@@ -61,8 +62,9 @@ export async function noteMetaAccountCode(adAccountId: string, code: string): Pr
 }
 
 /**
- * Shared refresh-before-use hook. Meta never treats the stored token as a successful refresh.
- * Google still returns its previous token when its refresh fails; G4 tightens that later.
+ * Shared refresh-before-use hook. A failed refresh is never reported as the old token.
+ * Meta marks Needs reconnect on an expired token. Google does that on invalid_grant.
+ * A 429 or 5xx is left to the caller to retry and does not mark reconnect.
  */
 export async function ensureFreshPlatformTokens(input: {
   adAccountId: string;
@@ -84,6 +86,12 @@ export async function ensureFreshPlatformTokens(input: {
     }
   }
 
+  if (account.platform === "google") {
+    if (account.connectionStatus === "needs_reconnect" || account.lastError === GOOGLE_REFRESH_REJECTED) {
+      throw new GoogleRefreshRejected();
+    }
+  }
+
   if (!tokenNearExpiry(input.tokens)) return input.tokens;
 
   const connector = getAdPlatformConnector(account.platform);
@@ -94,6 +102,9 @@ export async function ensureFreshPlatformTokens(input: {
     if (account.platform === "meta" && isMetaTokenExpired(error)) {
       await markMetaReconnectRequired(account.id);
     }
+    if (account.platform === "google" && isGoogleRefreshRejected(error)) {
+      await markGoogleReconnectRequired(account.id);
+    }
     throw error;
   }
 
@@ -101,6 +112,10 @@ export async function ensureFreshPlatformTokens(input: {
     refreshed.accessToken === input.tokens.accessToken && refreshed.expiresAt === input.tokens.expiresAt;
   if (unchanged) {
     if (account.platform === "meta") throw new MetaRefreshError();
+    if (account.platform === "google") {
+      await markGoogleReconnectRequired(account.id);
+      throw new GoogleRefreshRejected();
+    }
     return input.tokens;
   }
 
