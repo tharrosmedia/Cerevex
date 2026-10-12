@@ -35,6 +35,8 @@ export function mutationActionLabel(action: string): string {
   switch (action) {
     case "pause":
       return "Pause";
+    case "resume":
+      return "Turn back on";
     case "update_bid":
       return "Change bid";
     case "update_budget":

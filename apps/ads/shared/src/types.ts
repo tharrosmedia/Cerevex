@@ -188,6 +188,7 @@ export const RECOMMENDATION_TYPES = [
   "brand_guardrails",
   "seasonality",
   "weekly_narrative",
+  "revert",
 ] as const;
 export type RecommendationType = (typeof RECOMMENDATION_TYPES)[number];
 
@@ -202,6 +203,7 @@ export type ApplyJobStatus = (typeof APPLY_JOB_STATUSES)[number];
 
 export const MUTATION_ACTIONS = [
   "pause",
+  "resume",
   "update_budget",
   "update_bid",
   "add_negative",
@@ -213,7 +215,11 @@ export const MUTATION_ACTIONS = [
 ] as const;
 export type MutationAction = (typeof MUTATION_ACTIONS)[number];
 
-/** Mutate-existing classes executed under Approve. create_ad / add_keyword need apply.create_entity. */
+/**
+ * Mutate-existing classes executed under Approve. create_ad / add_keyword need apply.create_entity.
+ * `resume` (turn back on) is a planned undo action only. It stays out of this list until the
+ * connector writes it (Apply Revert R3), so Approve cannot execute it yet.
+ */
 export const EXECUTABLE_MUTATION_ACTIONS = [
   "pause",
   "add_negative",
