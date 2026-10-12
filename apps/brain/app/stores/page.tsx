@@ -31,6 +31,7 @@ import { AUTH_COOKIE_NAME } from '@/lib/auth-cookie';
 import { authorizeApproveSession } from '@/lib/sensitive-auth';
 import { loadSkillsProfileAction } from '@/lib/skills-profile-action';
 import { SKILL_PROFILE_SLUGS } from '@/lib/skills-profile-slugs';
+import { adoptedClientSentence, nameAndLinkSiteClient } from '@/lib/ads-client-link';
 
 type Platform = 'shopify' | 'wordpress';
 
@@ -79,8 +80,10 @@ async function addShopifyStore(formData: FormData) {
     config: emptyClientWorkspaceConfig(),
   });
   await setActiveStore(store.id);
+  const linked = await nameAndLinkSiteClient(store.id, store.name);
 
   let warn = scopeWarning(verified.missingScopes);
+  if (!linked.ok) warn = [warn, linked.message].filter(Boolean).join(' ');
   try {
     const { syncProductsForStore } = await import('@/src/lib/shopify/sync');
     await syncProductsForStore(store.id);
@@ -93,7 +96,13 @@ async function addShopifyStore(formData: FormData) {
     console.warn('[stores] catalog sync enqueue failed', e);
   }
   revalidatePath('/stores');
-  redirect(storesUrl({ add: 'success', name: store.name, warn }));
+  redirect(storesUrl({
+    add: 'success',
+    name: store.name,
+    warn,
+    adopted: linked.ok && linked.data.adopted ? '1' : undefined,
+    client: linked.ok && linked.data.adopted ? linked.data.client.name : undefined,
+  }));
 }
 
 async function addWordpressSite(formData: FormData) {
@@ -110,9 +119,20 @@ async function addWordpressSite(formData: FormData) {
   if (!result.ok) {
     redirect(storesUrl({ platform: 'wordpress', add: 'error', msg: result.reason || 'Could not connect the site.' }));
   }
-  revalidatePath('/stores');
   const created = result.storeId ? await getStore(result.storeId) : null;
-  redirect(storesUrl({ add: 'success', name: created?.name }));
+  let warn: string | undefined;
+  let adopted: string | undefined;
+  let client: string | undefined;
+  if (created) {
+    const linked = await nameAndLinkSiteClient(created.id, created.name);
+    if (!linked.ok) warn = linked.message;
+    else if (linked.data.adopted) {
+      adopted = '1';
+      client = linked.data.client.name;
+    }
+  }
+  revalidatePath('/stores');
+  redirect(storesUrl({ add: 'success', name: created?.name, warn, adopted, client }));
 }
 
 async function testConnection(formData: FormData) {
@@ -156,6 +176,8 @@ type SearchParams = {
   test?: string;
   updated?: string;
   skills?: string;
+  adopted?: string;
+  client?: string;
 };
 
 export const dynamic = 'force-dynamic';
@@ -201,6 +223,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
       {params.add === 'success' ? (
         <p className="cx-banner" role="status">
           {params.name ? `${params.name} added` : 'Added'} and selected. Its pages are syncing in the background.
+          {params.adopted === '1' && params.client ? ` ${adoptedClientSentence(params.client)}` : ''}
         </p>
       ) : null}
       {params.test === 'success' ? <p className="cx-banner" role="status">{params.msg}</p> : null}
