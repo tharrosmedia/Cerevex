@@ -8,6 +8,20 @@ export * from "./approve";
 export * from "./capabilities";
 export * from "./mutation-families";
 export {
+  REVERT_WINDOW_MS,
+  planRevert,
+  revertOwnerMayConfirm,
+} from "./revert";
+export type {
+  PlannedRevertMutation,
+  PlanRevertInput,
+  RevertActor,
+  RevertPlan,
+  RevertRefusalCode,
+  RevertSourceJob,
+  RevertSourceRec,
+} from "./revert";
+export {
   ADS_NAV_CATALOG,
   ADS_NAV_HREFS_IN_SHELL,
   ADS_NAV_HREFS_LEGACY_WEB,

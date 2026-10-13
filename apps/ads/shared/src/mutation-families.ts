@@ -35,10 +35,10 @@ export type MutationFamily = {
 export const MUTATION_FAMILIES: Record<MutationFamilyId, MutationFamily> = {
   pause: {
     id: "pause",
-    actions: ["pause"],
+    actions: ["pause", "resume"],
     capability: null,
     sealed: false,
-    help: "Pause an existing campaign, ad set, ad group, or ad.",
+    help: "Pause an existing campaign, ad set, ad group, or ad. resume turns one back on and is planned by the revert planner only. It is not executable until the connector writes it.",
   },
   negatives: {
     id: "negatives",

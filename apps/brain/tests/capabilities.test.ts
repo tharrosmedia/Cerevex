@@ -221,6 +221,7 @@ for (const id of [
   'apply',
   'apply.create_entity',
   'apply.meta',
+  'apply.revert',
   'apply.budget',
   'apply.bid',
   'm52.booked_job_signal',
