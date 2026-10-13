@@ -185,6 +185,8 @@ export interface AdPlatformConnector extends Connector {
   readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
+    /** The ad account's own external id. Google uses it as the customer id. */
+    accountExternalId?: string;
     deadlineAt?: number;
     signal?: AbortSignal;
   }): Promise<LiveEntityState | null>;

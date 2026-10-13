@@ -6,6 +6,7 @@ import { attachMetaLiveCurrency } from "./connectors/meta";
 import { ApplyCallBudgetError, platformCallBudgetMs } from "./connectors/write-timeout";
 import { siteApplyBlockedReason } from "./lp-intelligence";
 import { loadTokens } from "./credentials";
+import { googleMutationFailure, isGoogleRefreshRejected, isGoogleRetryLater } from "./google-token";
 import { isMetaPermissionMissing, isMetaRateLimited, isMetaTokenExpired, scrubMetaSecrets } from "./meta-graph-error";
 import { ensureFreshPlatformTokens, metaMutationFailure } from "./meta-token";
 import { getDb } from "./db";
@@ -210,10 +211,12 @@ export async function readLiveEntityState(input: {
   platform: Platform;
   tokens: StoredOAuthTokens;
   mutation: ApplyMutation;
+  accountExternalId?: string;
 }): Promise<LiveEntityState | null> {
   return getAdPlatformConnector(input.platform).readLiveEntityState({
     tokens: input.tokens,
     mutation: input.mutation,
+    accountExternalId: input.accountExternalId,
   });
 }
 
@@ -290,10 +293,16 @@ export async function applyViaConnector(input: {
     if (inputRefusal) return inputRefusal;
   }
   const live = await connector
-    .readLiveEntityState({ tokens: input.tokens, mutation: input.mutation, deadlineAt: input.deadlineAt })
+    .readLiveEntityState({
+      tokens: input.tokens,
+      mutation: input.mutation,
+      accountExternalId: input.accountExternalId,
+      deadlineAt: input.deadlineAt,
+    })
     .catch((error: unknown) => {
       if (error instanceof ApplyCallBudgetError) throw error;
       if (isMetaTokenExpired(error) || isMetaRateLimited(error) || isMetaPermissionMissing(error)) throw error;
+      if (isGoogleRefreshRejected(error) || isGoogleRetryLater(error)) throw error;
       if (input.deadlineAt != null && platformCallBudgetMs(input.deadlineAt) <= 0) throw new ApplyCallBudgetError();
       return null;
     });
@@ -576,7 +585,9 @@ async function runExecuteMutation(input: {
   try {
     fresh = await ensureFreshPlatformTokens({ adAccountId: input.adAccountId, tokens });
   } catch (error) {
-    const failed = await metaMutationFailure(input.adAccountId, input.mutation, error);
+    const failed =
+      (await metaMutationFailure(input.adAccountId, input.mutation, error)) ??
+      (await googleMutationFailure(input.adAccountId, input.mutation, error));
     if (failed) return failed;
     throw error;
   }
@@ -590,7 +601,9 @@ async function runExecuteMutation(input: {
       deadlineAt: input.deadlineAt,
     });
   } catch (error) {
-    const failed = await metaMutationFailure(input.adAccountId, input.mutation, error);
+    const failed =
+      (await metaMutationFailure(input.adAccountId, input.mutation, error)) ??
+      (await googleMutationFailure(input.adAccountId, input.mutation, error));
     if (failed) return failed;
     throw error;
   }

@@ -245,7 +245,7 @@ describe("R1 live before and after", () => {
     return { rec, job: stored, responseOutcomes: response.outcomes ?? [], auditOutcomes };
   }
 
-  function configureLive(platform: PlatformName, customerId?: string) {
+  function configureLive(platform: PlatformName) {
     if (platform === "meta") {
       process.env.META_APP_ID = "r1-test-app";
       process.env.META_APP_SECRET = "r1-test-secret";
@@ -254,7 +254,6 @@ describe("R1 live before and after", () => {
     process.env.GOOGLE_CLIENT_ID = "r1-google-client";
     process.env.GOOGLE_CLIENT_SECRET = "r1-google-secret";
     process.env.GOOGLE_ADS_DEVELOPER_TOKEN = "r1-developer-token";
-    if (customerId) process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID = customerId;
   }
 
   function stubMeta(input: {
@@ -333,7 +332,7 @@ describe("R1 live before and after", () => {
     const seeded = await seedAccount({ platform, entityType });
     const posts: string[] = [];
     const mutates: string[] = [];
-    configureLive(platform, seeded.digits);
+    configureLive(platform);
     if (platform === "meta") stubMeta({ accountDigits: seeded.digits, kind: action === "update_bid" ? "bid" : "active", posts });
     else stubGoogle({ kind: action === "update_bid" ? "bid" : "active", mutates });
     try {
@@ -369,7 +368,7 @@ describe("R1 live before and after", () => {
     const seeded = await seedAccount({ platform });
     const posts: string[] = [];
     const mutates: string[] = [];
-    configureLive(platform, seeded.digits);
+    configureLive(platform);
     if (platform === "meta") stubMeta({ accountDigits: seeded.digits, kind: "paused", posts });
     else stubGoogle({ kind: "paused", mutates });
     try {
@@ -418,7 +417,7 @@ describe("R1 live before and after", () => {
         expect(metaRan.responseOutcomes[0]?.before).toBeUndefined();
         expectStored(metaRan.responseOutcomes, metaRan.auditOutcomes, metaRan.responseOutcomes[0]!);
 
-        configureLive("google", google.digits);
+        configureLive("google");
         stubGoogle({ kind: "empty", mutates: [] });
         const googleRan = await runJob({
           accountId: google.account.id,

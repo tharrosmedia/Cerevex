@@ -14,7 +14,11 @@ import { requireWritableCapability } from "./capabilities";
 import { getVisibleClient } from "./tenancy";
 
 export function publicConnectionStatus(row: typeof adAccounts.$inferSelect): string {
-  if (row.connectionStatus === "needs_reconnect" || row.lastError === "meta.token_expired") {
+  if (
+    row.connectionStatus === "needs_reconnect" ||
+    row.lastError === "meta.token_expired" ||
+    row.lastError === "google.refresh_rejected"
+  ) {
     return "needs_reconnect";
   }
   const error = (row.lastError ?? "").toLowerCase();

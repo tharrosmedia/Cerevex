@@ -526,6 +526,7 @@ export class MetaAdPlatformConnector implements AdPlatformConnector {
   async readLiveEntityState(input: {
     tokens: StoredOAuthTokens;
     mutation: ApplyMutation;
+    accountExternalId?: string;
     deadlineAt?: number;
     signal?: AbortSignal;
   }): Promise<LiveEntityState | null> {

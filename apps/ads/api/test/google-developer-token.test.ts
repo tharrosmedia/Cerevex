@@ -124,6 +124,7 @@ async function exercise() {
   const live = await googleAdPlatformConnector.readLiveEntityState({
     tokens,
     mutation: rereadMutation,
+    accountExternalId: "555",
   });
   const outcome = await googleAdPlatformConnector.applyLive({
     tokens,
@@ -223,7 +224,11 @@ describe("Google Ads developer token", () => {
         }),
       ).rejects.toThrow("Google Ads read failed (400)");
       await expect(
-        googleAdPlatformConnector.readLiveEntityState({ tokens, mutation: rereadMutation }),
+        googleAdPlatformConnector.readLiveEntityState({
+          tokens,
+          mutation: rereadMutation,
+          accountExternalId: "555",
+        }),
       ).resolves.toBeNull();
       await expect(
         googleAdPlatformConnector.applyLive({

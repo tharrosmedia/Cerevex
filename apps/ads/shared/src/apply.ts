@@ -684,7 +684,10 @@ async function pauseNotLanded(
   const connector = getAdPlatformConnector(mutation.platform);
   if (!isMockToken(tokens)) {
     if (!connector.isLiveAllowed(tokens, flags)) return null;
-    const live = await connector.readLiveEntityState({ tokens, mutation }).catch(() => null);
+    const account = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, adAccountId) });
+    const live = await connector
+      .readLiveEntityState({ tokens, mutation, accountExternalId: account?.externalId })
+      .catch(() => null);
     if (!live?.status) return null;
     return live.status.toLowerCase() !== "paused";
   }
