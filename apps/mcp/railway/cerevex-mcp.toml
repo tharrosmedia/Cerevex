@@ -1,0 +1,25 @@
+# cerevex-mcp — Railway service notes for the MCP connector skeleton.
+# Notes only. Railway Config as Code is not used in this repo.
+# Do not set railwayConfigFile. Do not place this file at the repo root
+# (a root railway.toml would also apply to the Brain service).
+#
+# Dashboard:
+#   service name: cerevex-mcp
+#   root directory: repo root (same monorepo as cerevex-ads-api)
+#   healthcheck path: /health
+#
+# Required env var names (values stay in Railway, never in git):
+#   HOST
+#   PORT                  (Railway injects this)
+#   MCP_ALLOWED_ORIGINS
+#   MCP_CONNECTOR_KILL_SWITCH
+#   ADS_API_URL
+#   ADS_INTERNAL_KEY
+
+[build]
+builder = "RAILPACK"
+buildCommand = "npm install"
+
+[deploy]
+startCommand = "HOST=0.0.0.0 npm run start --workspace=@cerevex/mcp"
+healthcheckPath = "/health"
