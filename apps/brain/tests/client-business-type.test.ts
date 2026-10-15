@@ -198,8 +198,9 @@ assert.match(onboarding, /isClientBusinessType/);
 assert.equal(onboarding.includes('agency'), false);
 assert.match(onboarding, /CLIENT_BUSINESS_TYPE_LABELS/);
 
-const storesPage = readFileSync(join(root, '../app/stores/page.tsx'), 'utf8');
-assert.match(storesPage, /config: emptyClientWorkspaceConfig\(\)/);
+const addClient = readFileSync(join(root, '../lib/add-client-flow.ts'), 'utf8');
+assert.match(addClient, /emptyClientWorkspaceConfig\(\)/);
+assert.equal(addClient.includes('cerevex_workspace'), false);
 
 const connectSrc = readFileSync(join(root, '../src/lib/wordpress/connect.ts'), 'utf8');
 assert.match(connectSrc, /newWordpressStoreConfig\(\{ wordpress \}\)/);

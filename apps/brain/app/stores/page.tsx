@@ -2,22 +2,31 @@ import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { emptyClientWorkspaceConfig } from '@/src/lib/db/client-workspace';
-import { listStores, createStore, getStore, getActiveStoreId } from '@/src/lib/db/stores';
+import { isClientBusinessType } from '@/src/lib/db/client-workspace';
+import { listStores, createStore, getStore, updateStore, getActiveStoreId } from '@/src/lib/db/stores';
 import { inngest } from '@/src/inngest/client';
+import { AddClientButton, AddClientFlow } from '@/components/add-client-flow';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { SubmitButton } from '@/components/submit-button';
 import { isWordpressConnectVisible } from '@cerevex/contracts';
 import { WordpressAddSiteDownload } from '@/components/wordpress-add-site-download';
-import { operatorLoadError } from '@/lib/ui-copy';
+import { operatorLoadError, PICK_BUSINESS_TYPE } from '@/lib/ui-copy';
 import { formatWhen, platformLabel } from '@/lib/labels';
-import {
-  SHOPIFY_REQUIRED_SCOPES,
-  normalizeShopDomain,
-  verifyShopifyConnection,
-} from '@/src/lib/shopify/verify';
+import { verifyShopifyConnection } from '@/src/lib/shopify/verify';
 import { hasShopifyAccessToken, SHOPIFY_NOT_CONNECTED_MESSAGE } from '@/src/lib/shopify/not-connected';
+import { listAdsClients } from '@/lib/ads-bff';
+import {
+  addClientHref,
+  clientWorkspaceRecord,
+  decideClientIdentity,
+  namedStores,
+  planShopifyAdd,
+  planWordpressAdd,
+  setupHref,
+  skillProfileSuggestions,
+  wordpressConnectFailureMessage,
+} from '@/lib/add-client-flow';
 import {
   connectWordpressStore,
   decryptWordpressPluginKey,
@@ -32,7 +41,7 @@ import { AUTH_COOKIE_NAME } from '@/lib/auth-cookie';
 import { authorizeApproveSession } from '@/lib/sensitive-auth';
 import { loadSkillsProfileAction } from '@/lib/skills-profile-action';
 import { SKILL_PROFILE_SLUGS } from '@/lib/skills-profile-slugs';
-import { adoptedClientSentence, nameAndLinkSiteClient } from '@/lib/ads-client-link';
+import { nameAndLinkSiteClient } from '@/lib/ads-client-link';
 import { safeSetupNext } from '@/lib/client-setup-checklist';
 import { loadSetupProgress } from '@/lib/client-setup-data';
 
@@ -59,28 +68,99 @@ function scopeWarning(missing: string[]): string | undefined {
   return `The token is missing ${missing.join(', ')}. Some syncing or publishing will fail until you add ${missing.length > 1 ? 'these permissions' : 'this permission'} and paste a new token.`;
 }
 
+async function clientsForAdd() {
+  try {
+    const listed = await listAdsClients();
+    if (!listed.ok) return [];
+    return listed.data.clients.map((client) => ({ name: client.name, siteId: client.siteId }));
+  } catch {
+    return [];
+  }
+}
+
+async function storesForAdd() {
+  try {
+    return namedStores(await listStores());
+  } catch {
+    return [];
+  }
+}
+
+function flowBack(params: {
+  step?: 'who' | 'site';
+  name?: string;
+  business?: string;
+  platform?: string;
+  match?: string;
+  msg?: string;
+}): never {
+  redirect(addClientHref(params));
+}
+
+async function saveClientIdentity(formData: FormData) {
+  'use server';
+  const name = String(formData.get('name') || '');
+  const businessType = String(formData.get('businessType') || '');
+  const rawChoice = String(formData.get('choice') || 'continue');
+  const choice = rawChoice === 'use' || rawChoice === 'new' ? rawChoice : 'continue';
+  const decision = decideClientIdentity({
+    name,
+    businessType,
+    choice,
+    clients: await clientsForAdd(),
+  });
+  if (!decision.ok) {
+    flowBack({
+      step: 'who',
+      name: decision.code === 'type-new' ? undefined : name.trim(),
+      business: isClientBusinessType(businessType) ? businessType : undefined,
+      match: decision.code === 'choose-existing' ? '1' : undefined,
+      msg: decision.code === 'choose-existing' ? undefined : decision.message,
+    });
+  }
+  flowBack({ step: 'site', name: decision.name, business: decision.businessType });
+}
+
 async function addShopifyStore(formData: FormData) {
   'use server';
-  const domain = normalizeShopDomain(String(formData.get('shopify_domain') || ''));
-  const token = String(formData.get('shopify_access_token') || '').trim();
-  const nameInput = String(formData.get('name') || '').trim();
-  if (!domain) {
-    redirect(storesUrl({ platform: 'shopify', add: 'error', msg: 'Enter your store address, like mystore.myshopify.com.' }));
+  const name = String(formData.get('name') || '');
+  const businessType = String(formData.get('businessType') || '');
+  const connect = String(formData.get('connect') || '') === 'paste' ? 'paste' : 'later';
+  const back = { step: 'site' as const, name: name.trim(), business: businessType, platform: 'shopify' };
+  const plan = planShopifyAdd({
+    name,
+    businessType,
+    domain: String(formData.get('shopify_domain') || ''),
+    token: String(formData.get('shopify_access_token') || ''),
+    connect,
+    stores: await storesForAdd(),
+  });
+  if (!plan.ok) flowBack({ ...back, msg: plan.message });
+
+  if (plan.mode === 'later') {
+    const store = await createStore({
+      name: plan.name,
+      shopify_domain: plan.domain,
+      shopify_access_token: null,
+      platform: 'shopify',
+      connector_type: 'shopify',
+      config: plan.config,
+    });
+    await setActiveStore(store.id);
+    const linked = await nameAndLinkSiteClient(store.id, store.name);
+    revalidatePath('/stores');
+    redirect(setupHref(store.id, linked.ok ? undefined : linked.message));
   }
-  if (!token) {
-    redirect(storesUrl({ platform: 'shopify', add: 'error', msg: 'Paste the Admin API access token.' }));
-  }
-  const verified = await verifyShopifyConnection(domain, token);
-  if (!verified.ok) {
-    redirect(storesUrl({ platform: 'shopify', add: 'error', msg: `Could not connect: ${verified.error}` }));
-  }
+
+  const verified = await verifyShopifyConnection(plan.domain, plan.token || '');
+  if (!verified.ok) flowBack({ ...back, msg: `Could not connect: ${verified.error}` });
   const store = await createStore({
-    name: nameInput || verified.shopName,
-    shopify_domain: domain,
-    shopify_access_token: token,
+    name: plan.name,
+    shopify_domain: plan.domain,
+    shopify_access_token: plan.token,
     platform: 'shopify',
     connector_type: 'shopify',
-    config: emptyClientWorkspaceConfig(),
+    config: plan.config,
   });
   await setActiveStore(store.id);
   const linked = await nameAndLinkSiteClient(store.id, store.name);
@@ -99,43 +179,48 @@ async function addShopifyStore(formData: FormData) {
     console.warn('[stores] catalog sync enqueue failed', e);
   }
   revalidatePath('/stores');
-  redirect(storesUrl({
-    add: 'success',
-    name: store.name,
-    warn,
-    adopted: linked.ok && linked.data.adopted ? '1' : undefined,
-    client: linked.ok && linked.data.adopted ? linked.data.client.name : undefined,
-  }));
+  redirect(setupHref(store.id, warn));
 }
 
 async function addWordpressSite(formData: FormData) {
   'use server';
+  const name = String(formData.get('name') || '');
+  const businessType = String(formData.get('businessType') || '');
+  const siteUrl = String(formData.get('siteUrl') || '');
+  const back = { step: 'site' as const, name: name.trim(), business: businessType, platform: 'wordpress' };
+  if (!isClientBusinessType(businessType)) flowBack({ step: 'who', name: name.trim(), msg: PICK_BUSINESS_TYPE });
+  const planned = planWordpressAdd({ siteUrl, stores: await storesForAdd() });
+  if (!planned.ok) flowBack({ ...back, msg: planned.message });
+
   const activeId = await getActiveStoreId();
   const active = activeId ? await getStore(activeId) : null;
   const result = await connectWordpressStore({
     storeId: null,
     workspaceSettings: wordpressWorkspaceSettingsFromStore(active),
-    name: String(formData.get('name') || ''),
-    siteUrl: String(formData.get('siteUrl') || ''),
+    name,
+    siteUrl,
     pluginKey: String(formData.get('pluginKey') || ''),
   });
-  if (!result.ok) {
-    redirect(storesUrl({ platform: 'wordpress', add: 'error', msg: result.reason || 'Could not connect the site.' }));
-  }
+  if (!result.ok) flowBack({ ...back, msg: wordpressConnectFailureMessage(result) });
+
   const created = result.storeId ? await getStore(result.storeId) : null;
-  let warn: string | undefined;
-  let adopted: string | undefined;
-  let client: string | undefined;
-  if (created) {
-    const linked = await nameAndLinkSiteClient(created.id, created.name);
-    if (!linked.ok) warn = linked.message;
-    else if (linked.data.adopted) {
-      adopted = '1';
-      client = linked.data.client.name;
-    }
+  if (!created) flowBack({ ...back, msg: 'Could not connect the site.' });
+  try {
+    const current = created.config && typeof created.config === 'object' ? created.config : {};
+    await updateStore(created.id, {
+      name: created.name,
+      shopify_domain: created.shopify_domain,
+      shopify_access_token: '',
+      platform: 'wordpress',
+      connector_type: 'wordpress',
+      config: { ...current, workspace: clientWorkspaceRecord(businessType) },
+    });
+  } catch (error) {
+    console.warn('[stores] business type was not saved', error);
   }
+  const linked = await nameAndLinkSiteClient(created.id, created.name);
   revalidatePath('/stores');
-  redirect(storesUrl({ add: 'success', name: created?.name, warn, adopted, client }));
+  redirect(setupHref(created.id, linked.ok ? undefined : linked.message));
 }
 
 async function testConnection(formData: FormData) {
@@ -180,16 +265,17 @@ async function openSetup(formData: FormData) {
 }
 
 type SearchParams = {
+  flow?: string;
+  step?: string;
   platform?: string;
-  add?: string;
+  business?: string;
+  match?: string;
   name?: string;
   msg?: string;
   warn?: string;
   test?: string;
   updated?: string;
   skills?: string;
-  adopted?: string;
-  client?: string;
 };
 
 export const dynamic = 'force-dynamic';
@@ -197,6 +283,10 @@ export const dynamic = 'force-dynamic';
 export default async function StoresPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const platform: Platform | null = params.platform === 'shopify' || params.platform === 'wordpress' ? params.platform : null;
+  const flowName = typeof params.name === 'string' ? params.name : '';
+  const flowBusiness = isClientBusinessType(params.business) ? params.business : '';
+  const flow = params.flow === '1';
+  const step: 'who' | 'site' = flow && params.step === 'site' && flowName && flowBusiness ? 'site' : 'who';
   const jar = await cookies();
   const ownerSession = authorizeApproveSession({
     cookie: jar.get(AUTH_COOKIE_NAME)?.value ?? null,
@@ -221,8 +311,24 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
     }
   }
 
+  let suggestions: string[] = [];
+  let existingClientName: string | null = null;
+  if (flow) {
+    const clients = await clientsForAdd();
+    suggestions = skillProfileSuggestions({ stores, clients });
+    if (params.match === '1' && flowName) {
+      const decision = decideClientIdentity({
+        name: flowName,
+        businessType: flowBusiness || 'home_service',
+        choice: 'continue',
+        clients,
+      });
+      existingClientName = !decision.ok && decision.code === 'choose-existing' ? decision.existingName ?? null : null;
+    }
+  }
+
   let wordpressConnectVisible = false;
-  if (platform === 'wordpress') {
+  if (flow && step === 'site' && platform === 'wordpress') {
     try {
       const active = stores.find((store) => store.id === activeId) ?? null;
       const flags = await wordpressConnectFlagsForAddSite(active);
@@ -238,15 +344,10 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
         kicker="Stores"
         title="Stores"
         lede="Your Shopify stores and WordPress sites. Switch between them from the header."
+        actions={flow ? undefined : <AddClientButton href={addClientHref({ step: 'who' })} />}
       />
 
       {loadError ? <p className="cx-banner cx-banner-warn" role="status">{loadError}</p> : null}
-      {params.add === 'success' ? (
-        <p className="cx-banner" role="status">
-          {params.name ? `${params.name} added` : 'Added'} and selected. Its pages are syncing in the background.
-          {params.adopted === '1' && params.client ? ` ${adoptedClientSentence(params.client)}` : ''}
-        </p>
-      ) : null}
       {params.test === 'success' ? <p className="cx-banner" role="status">{params.msg}</p> : null}
       {params.test === 'error' ? <p className="cx-banner cx-banner-warn" role="status">{params.msg}</p> : null}
       {params.warn ? <p className="cx-banner cx-banner-warn" role="status">{params.warn}</p> : null}
@@ -279,7 +380,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
                     {!isActive ? (
                       <form action={selectStore}>
                         <input type="hidden" name="storeId" value={store.id} />
-                        <button type="submit" className="btn-cta">Switch to this store</button>
+                        <button type="submit" className="btn-secondary">Switch to this store</button>
                       </form>
                     ) : null}
                     <form action={testConnection}>
@@ -312,86 +413,42 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
         </section>
       ) : null}
 
-      <section className="cx-panel" id="add">
-        <h2>{stores.length ? 'Add another store or site' : 'Add your store or site'}</h2>
-        <p className="cx-help">What kind of site is it?</p>
-        <div className="cx-choice-grid" role="group" aria-label="Site type">
-          <Link
-            href={storesUrl({ platform: 'shopify' }) + '#add'}
-            className={`cx-choice${platform === 'shopify' ? ' cx-choice-current' : ''}`}
-            aria-current={platform === 'shopify' ? 'true' : undefined}
-          >
-            <strong>Shopify store</strong>
-            <span>Connect with an Admin API access token.</span>
-          </Link>
-          <Link
-            href={storesUrl({ platform: 'wordpress' }) + '#add'}
-            className={`cx-choice${platform === 'wordpress' ? ' cx-choice-current' : ''}`}
-            aria-current={platform === 'wordpress' ? 'true' : undefined}
-          >
-            <strong>WordPress site</strong>
-            <span>Connect with the Cerevex plugin.</span>
-          </Link>
-        </div>
-
-        {params.add === 'error' ? <p className="cx-banner cx-banner-warn" role="status">{params.msg}</p> : null}
-
-        {platform === 'shopify' ? (
-          <form action={addShopifyStore} className="cx-form">
-            <div className="cx-field">
-              <label htmlFor="store-domain">Store address</label>
-              <input id="store-domain" name="shopify_domain" placeholder="mystore.myshopify.com" autoComplete="off" required />
-              <p className="cx-help">Your .myshopify.com address. You can paste the full URL.</p>
-            </div>
-            <div className="cx-field">
-              <label htmlFor="store-token">Admin API access token</label>
-              <input id="store-token" name="shopify_access_token" placeholder="shpat_…" type="password" autoComplete="off" required />
-              <details className="cx-details">
-                <summary>How to create a token</summary>
-                <ol className="cx-help cx-steps">
-                  <li>In Shopify admin, open Settings → Apps and sales channels → Develop apps.</li>
-                  <li>Create an app, then choose Configure Admin API scopes.</li>
-                  <li>Turn on: {SHOPIFY_REQUIRED_SCOPES.join(', ')}.</li>
-                  <li>Install the app and copy the Admin API access token.</li>
-                </ol>
-              </details>
-            </div>
-            <div className="cx-field">
-              <label htmlFor="store-name">Name (optional)</label>
-              <input id="store-name" name="name" placeholder="Uses your Shopify store name" />
-            </div>
-            <SubmitButton className="btn-cta" pendingLabel="Checking connection…">Connect store</SubmitButton>
-          </form>
-        ) : null}
-
-        {platform === 'wordpress' && wordpressConnectVisible ? (
-          <form action={addWordpressSite} className="cx-form">
-            <ol className="cx-help cx-steps">
-              <li>
-                Install the Cerevex plugin on your site.
-                <WordpressAddSiteDownload visible />
-              </li>
-              <li>In WordPress, open Settings → Cerevex and copy the plugin key.</li>
-            </ol>
-            <div className="cx-field">
-              <label htmlFor="wp-url">Site address</label>
-              <input id="wp-url" name="siteUrl" placeholder="https://example.com" required />
-            </div>
-            <div className="cx-field">
-              <label htmlFor="wp-key">Plugin key</label>
-              <input id="wp-key" name="pluginKey" type="password" autoComplete="off" required />
-            </div>
-            <div className="cx-field">
-              <label htmlFor="wp-name">Name (optional)</label>
-              <input id="wp-name" name="name" placeholder="Uses the site address" />
-            </div>
-            <SubmitButton className="btn-cta" pendingLabel="Checking connection…">Connect site</SubmitButton>
-          </form>
-        ) : null}
-        {platform === 'wordpress' && !wordpressConnectVisible ? (
-          <WordpressAddSiteDownload visible={false} />
-        ) : null}
-      </section>
+      {flow ? (
+        <AddClientFlow
+          step={step}
+          name={flowName}
+          businessType={flowBusiness}
+          suggestions={suggestions}
+          existingClientName={existingClientName}
+          platform={platform}
+          message={params.msg || null}
+          identityAction={saveClientIdentity}
+          shopifyAction={addShopifyStore}
+          wordpress={platform === 'wordpress' && wordpressConnectVisible ? (
+            <form action={addWordpressSite} className="cx-form">
+              <input type="hidden" name="name" value={flowName} />
+              <input type="hidden" name="businessType" value={flowBusiness} />
+              <ol className="cx-help cx-steps">
+                <li>
+                  Download the Cerevex plugin (<WordpressAddSiteDownload visible />) and install it in WordPress.
+                </li>
+                <li>Copy the plugin key from Settings → Cerevex.</li>
+              </ol>
+              <div className="cx-field">
+                <label htmlFor="wp-url">Site address</label>
+                <input id="wp-url" name="siteUrl" placeholder="https://example.com" required />
+              </div>
+              <div className="cx-field">
+                <label htmlFor="wp-key">Plugin key</label>
+                <input id="wp-key" name="pluginKey" type="password" autoComplete="off" required />
+              </div>
+              <SubmitButton className="btn-cta" pendingLabel="Checking connection…">Connect site</SubmitButton>
+            </form>
+          ) : platform === 'wordpress' ? (
+            <WordpressAddSiteDownload visible={false} />
+          ) : null}
+        />
+      ) : null}
     </div>
   );
 }

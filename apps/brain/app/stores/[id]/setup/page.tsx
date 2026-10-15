@@ -37,7 +37,7 @@ export default async function StoreSetupPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ skills?: string; msg?: string }>;
+  searchParams: Promise<{ skills?: string; msg?: string; warn?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -83,6 +83,7 @@ export default async function StoreSetupPage({
       />
       {query.skills === 'loaded' ? <p className="cx-banner" role="status">{query.msg || 'Skills profile loaded.'}</p> : null}
       {query.skills === 'error' ? <p className="cx-banner cx-banner-warn" role="status">{query.msg || 'Could not load that profile.'}</p> : null}
+      {query.warn ? <p className="cx-banner cx-banner-warn" role="status">{query.warn}</p> : null}
       {selected ? null : (
         <form action={openNext} className="cx-banner">
           <p>This checklist is for {store.name}. Switch to it so the next step uses this store.</p>
