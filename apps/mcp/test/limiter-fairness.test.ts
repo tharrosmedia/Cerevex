@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DENIED_IP_LIMIT, DENIED_IP_WINDOW_MS } from "../src/app";
+import { DENIED_IP_LIMIT, DENIED_IP_WINDOW_MS, VERIFIED_BEARER_MAX, VERIFIED_BEARER_TTL_MS } from "../src/app";
 import { PROTOCOL_2026 } from "../src/protocol";
 import type { GuardClient } from "../src/guards";
 import { ALLOWED_ORIGIN, request2026, testApp } from "./helpers";
@@ -12,6 +12,10 @@ const IDENTITY = {
 
 function token(mark: string): string {
   return `cxm_${mark}${"a".repeat(42)}`;
+}
+
+function numberedToken(n: number): string {
+  return `cxm_${n.toString(36).padStart(43, "0")}`;
 }
 
 function get(app: { request: (path: string, init?: RequestInit) => Response | Promise<Response> }, ip: string) {
@@ -362,6 +366,113 @@ describe("limiter fairness", () => {
     const post = await app.request("/mcp", authed("203.0.113.81"));
     expect(post.status).toBe(200);
     expect(lookups).toBe(1);
+  });
+
+  it("removes a hash when verify fails, so a revoked token stops skipping the limits", async () => {
+    let revoked = false;
+    let lookups = 0;
+    const { app } = testApp({
+      failedLookupPerIp: 1,
+      globalBearerCapacity: 1,
+      globalBearerRefillPerSecond: 0,
+      globalDenialCapacity: 10,
+      authenticator: () => {
+        lookups += 1;
+        if (revoked) return { ok: false };
+        return { ok: true, identity: IDENTITY };
+      },
+    });
+    const ip = "203.0.113.90";
+    expect((await app.request("/mcp", authed(ip))).status).toBe(200);
+    revoked = true;
+    expect((await app.request("/mcp", authed(ip))).status).toBe(401);
+    expect(lookups).toBe(2);
+    expect((await app.request("/mcp", authed(ip))).status).toBe(429);
+    expect(lookups).toBe(2);
+  });
+
+  it("stops skipping the lookup bucket when the verified-token TTL has passed", async () => {
+    let now = 5_000_000;
+    let lookups = 0;
+    const kept = token("k");
+    const expiring = token("e");
+    const { app } = testApp({
+      now: () => now,
+      globalBearerCapacity: 1,
+      globalBearerRefillPerSecond: 0,
+      globalDenialCapacity: 10,
+      failedLookupPerIp: 10,
+      authenticator: (header) => {
+        lookups += 1;
+        if (header === `Bearer ${kept}` || header === `Bearer ${expiring}`) return { ok: true, identity: IDENTITY };
+        return { ok: false };
+      },
+    });
+    expect((await app.request("/mcp", authed("198.51.100.1", kept))).status).toBe(200);
+    expect((await app.request("/mcp", authed("198.51.100.2", expiring))).status).toBe(200);
+    expect((await app.request("/mcp", authed("198.51.100.3", token("f")))).status).toBe(401);
+
+    now += VERIFIED_BEARER_TTL_MS - 1;
+    const still = await app.request("/mcp", authed("198.51.100.1", kept));
+    expect(still.status).toBe(200);
+    expect(lookups).toBe(4);
+
+    now += 1;
+    const before = lookups;
+    const expired = await app.request("/mcp", authed("198.51.100.2", expiring));
+    expect(expired.status).toBe(429);
+    expect(lookups).toBe(before);
+  });
+
+  it("drops the oldest verified hash once the set reaches the identity cap", async () => {
+    let lookups = 0;
+    const fake = token("f");
+    const { app } = testApp({
+      globalBearerCapacity: 1,
+      globalBearerRefillPerSecond: 0,
+      globalDenialCapacity: 10,
+      failedLookupPerIp: 10,
+      authenticator: (header) => {
+        lookups += 1;
+        if (header === `Bearer ${fake}`) return { ok: false };
+        return { ok: true, identity: IDENTITY };
+      },
+    });
+    for (let n = 0; n < VERIFIED_BEARER_MAX; n += 1) {
+      expect((await app.request("/mcp", authed(`198.51.100.1`, numberedToken(n)))).status).toBe(200);
+    }
+    expect((await app.request("/mcp", authed("198.51.100.1", numberedToken(VERIFIED_BEARER_MAX)))).status).toBe(200);
+    expect((await app.request("/mcp", authed("198.51.100.2", fake))).status).toBe(401);
+
+    const evicted = await app.request("/mcp", authed("198.51.100.3", numberedToken(0)));
+    expect(evicted.status).toBe(429);
+    expect(lookups).toBe(VERIFIED_BEARER_MAX + 2);
+    const newest = await app.request("/mcp", authed("198.51.100.4", numberedToken(VERIFIED_BEARER_MAX)));
+    expect(newest.status).toBe(200);
+    expect(lookups).toBe(VERIFIED_BEARER_MAX + 3);
+  });
+
+  it("removes a hash when a later verify returns an empty identity", async () => {
+    let empty = false;
+    let lookups = 0;
+    const { app } = testApp({
+      failedLookupPerIp: 1,
+      globalBearerCapacity: 1,
+      globalBearerRefillPerSecond: 0,
+      globalDenialCapacity: 10,
+      authenticator: () => {
+        lookups += 1;
+        if (empty) return { ok: true, identity: { id: IDENTITY.id, name: IDENTITY.name, scopes: [] } };
+        return { ok: true, identity: IDENTITY };
+      },
+    });
+    const ip = "203.0.113.91";
+    expect((await app.request("/mcp", authed(ip))).status).toBe(200);
+    empty = true;
+    expect((await app.request("/mcp", authed(ip))).status).toBe(401);
+    expect(lookups).toBe(2);
+    expect((await app.request("/mcp", authed(ip))).status).toBe(429);
+    expect(lookups).toBe(2);
   });
 
   it("does not spend the bearer bucket while the kill switch is on", async () => {
