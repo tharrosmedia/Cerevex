@@ -355,6 +355,82 @@ async function pullGoogleMetrics(
   return { metrics, partial };
 }
 
+export const GOOGLE_PAUSE_OR_BID = "Google apply is pause or bid only. Nothing was written.";
+
+function refusedGoogle(mutation: ApplyMutation, reason: string): MutationOutcome {
+  return {
+    action: mutation.action,
+    platform: "google",
+    target: mutation.target,
+    status: "failed",
+    mode: "live",
+    writes: false,
+    reason,
+  };
+}
+
+function googleLiveQuery(mutation: ApplyMutation): string {
+  const resource = mutation.target.externalId;
+  if (mutation.target.entityType === "ad") {
+    return `SELECT ad_group_ad.ad.id, ad_group_ad.status, ad_group.id, customer.currency_code FROM ad_group_ad WHERE ad_group_ad.ad.id = ${resource} LIMIT 2`;
+  }
+  if (mutation.target.entityType === "campaign") {
+    return `SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros, customer.currency_code FROM campaign WHERE campaign.id = ${resource} LIMIT 1`;
+  }
+  return `SELECT ad_group.id, ad_group.name, ad_group.status, ad_group.cpc_bid_micros, customer.currency_code FROM ad_group WHERE ad_group.id = ${resource} LIMIT 1`;
+}
+
+/** Pause: campaign, ad group, and ad each have their own resource. An ad's status lives on the ad group ad. */
+function googlePauseOperation(
+  customerId: string,
+  mutation: ApplyMutation,
+  live: LiveEntityState | null,
+): { operation: Record<string, unknown> } | { reason: string } {
+  const id = mutation.target.externalId;
+  if (mutation.target.entityType === "campaign") {
+    return {
+      operation: {
+        campaignOperation: {
+          update: {
+            resourceName: `customers/${customerId}/campaigns/${id}`,
+            status: "PAUSED",
+          },
+          updateMask: "status",
+        },
+      },
+    };
+  }
+  if (mutation.target.entityType === "ad_group") {
+    return {
+      operation: {
+        adGroupOperation: {
+          update: {
+            resourceName: `customers/${customerId}/adGroups/${id}`,
+            status: "PAUSED",
+          },
+          updateMask: "status",
+        },
+      },
+    };
+  }
+  if (mutation.target.entityType === "ad") {
+    const adGroupId = live?.parentExternalId?.trim();
+    if (!adGroupId) return { reason: "Missing ad group. Nothing was written." };
+    return {
+      operation: {
+        adGroupAdOperation: {
+          update: {
+            resourceName: `customers/${customerId}/adGroupAds/${adGroupId}~${id}`,
+            status: "PAUSED",
+          },
+          updateMask: "status",
+        },
+      },
+    };
+  }
+  return { reason: "Google pause needs a campaign, ad group, or ad. Nothing was written." };
+}
+
 export class GoogleAdPlatformConnector implements AdPlatformConnector {
   readonly kind = "ad_platform" as const;
   readonly id = "google" as const;
@@ -519,11 +595,7 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
     const { mutation, tokens } = input;
     const customer = input.accountExternalId ? digitsOnly(input.accountExternalId) : "";
     if (!customer) return null;
-    const resource = mutation.target.externalId;
-    const query =
-      mutation.target.entityType === "campaign"
-        ? `SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros, customer.currency_code FROM campaign WHERE campaign.id = ${resource} LIMIT 1`
-        : `SELECT ad_group.id, ad_group.name, ad_group.status, ad_group.cpc_bid_micros, customer.currency_code FROM ad_group WHERE ad_group.id = ${resource} LIMIT 1`;
+    const query = googleLiveQuery(mutation);
     const res = await fetch(`${GOOGLE_ADS}/customers/${customer}/googleAds:search`, {
       method: "POST",
       headers: googleAdsHeaders(tokens, developerToken),
@@ -539,11 +611,27 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       results?: Array<{
         campaign?: { status?: string };
         campaignBudget?: { amountMicros?: string };
-        adGroup?: { status?: string; cpcBidMicros?: string };
+        adGroup?: { id?: string; status?: string; cpcBidMicros?: string };
+        adGroupAd?: { status?: string };
         customer?: { currencyCode?: string };
       }>;
     };
-    const row = body.results?.[0];
+    const results = body.results ?? [];
+    if (mutation.target.entityType === "ad") {
+      if (results.length !== 1) return null;
+      const parent = results[0]?.adGroup?.id?.trim();
+      if (!parent) return null;
+      const currency = typeof results[0]?.customer?.currencyCode === "string" ? results[0].customer.currencyCode : null;
+      return {
+        externalId: mutation.target.externalId,
+        entityType: mutation.target.entityType,
+        status: (results[0]?.adGroupAd?.status ?? "unknown").toLowerCase(),
+        parentExternalId: parent,
+        currency,
+        readAt: utcNow(),
+      };
+    }
+    const row = results[0];
     if (!row) return null;
     const budgetNative = platformNativeAmount(row.campaignBudget?.amountMicros);
     const bidNative = platformNativeAmount(row.adGroup?.cpcBidMicros);
@@ -563,6 +651,9 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
 
   async applyLive(input: ConnectorApplyInput): Promise<MutationOutcome> {
     const { tokens, mutation, live, accountExternalId } = input;
+    if (mutation.action !== "pause" && mutation.action !== "update_bid") {
+      return refusedGoogle(mutation, GOOGLE_PAUSE_OR_BID);
+    }
     const developerToken = googleAdsDeveloperToken();
     const customerId = accountExternalId.replace(/^customers\//, "").replace(/-/g, "");
     const operations: Record<string, unknown>[] = [];
@@ -587,15 +678,9 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
           }),
         };
       }
-      operations.push({
-        campaignOperation: {
-          update: {
-            resourceName: `customers/${customerId}/campaigns/${mutation.target.externalId}`,
-            status: "PAUSED",
-          },
-          updateMask: "status",
-        },
-      });
+      const pause = googlePauseOperation(customerId, mutation, live);
+      if ("reason" in pause) return refusedGoogle(mutation, pause.reason);
+      operations.push(pause.operation);
       recorded = live
         ? statusSnapshots({
             beforeStatus: live.status,
@@ -612,34 +697,31 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
             writes: true,
             after: outcomeValue({ status: "paused", unit: OUTCOME_UNIT.status }),
           });
-    } else if (mutation.action === "update_budget") {
-      const next = percentOf(live?.dailyBudget ?? null, mutation.payload);
-      if (next == null) {
-        throw new Error("Cannot compute Google budget change without a current budget or absolute amount.");
-      }
-      const afterAmount = String(Math.round(next * GOOGLE_MICROS_SCALE));
-      operations.push({
-        campaignBudgetOperation: {
-          update: {
-            resourceName: `customers/${customerId}/campaignBudgets/${mutation.target.externalId}`,
-            amountMicros: afterAmount,
-          },
-          updateMask: "amount_micros",
-        },
-      });
-      recorded = amountSnapshots({
-        beforeAmount: nativeOrScaled(live?.budgetNative, live?.dailyBudget, GOOGLE_MICROS_SCALE),
-        afterAmount,
-        unit: OUTCOME_UNIT.micros,
-        currency: live?.currency,
-        readAt: live?.readAt,
-      });
-    } else if (mutation.action === "update_bid") {
+    } else {
       const next = percentOf(live?.bidAmount ?? null, mutation.payload);
       if (next == null) {
         throw new Error("Cannot compute Google bid change without a current bid or absolute amount.");
       }
       const afterAmount = String(Math.round(next * GOOGLE_MICROS_SCALE));
+      const beforeAmount = nativeOrScaled(live?.bidNative, live?.bidAmount, GOOGLE_MICROS_SCALE);
+      if (beforeAmount != null && beforeAmount === afterAmount) {
+        return {
+          action: mutation.action,
+          platform: "google",
+          target: mutation.target,
+          status: "already_applied",
+          mode: "live",
+          writes: false,
+          reason: "Bid already matches on Google Ads.",
+          ...amountSnapshots({
+            beforeAmount,
+            afterAmount,
+            unit: OUTCOME_UNIT.micros,
+            currency: live?.currency,
+            readAt: live?.readAt,
+          }),
+        };
+      }
       operations.push({
         adGroupOperation: {
           update: {
@@ -650,70 +732,12 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
         },
       });
       recorded = amountSnapshots({
-        beforeAmount: nativeOrScaled(live?.bidNative, live?.bidAmount, GOOGLE_MICROS_SCALE),
+        beforeAmount,
         afterAmount,
         unit: OUTCOME_UNIT.micros,
         currency: live?.currency,
         readAt: live?.readAt,
       });
-    } else if (mutation.action === "add_negative") {
-      const text =
-        typeof mutation.payload.text === "string" ? mutation.payload.text : "ductless mini split free";
-      operations.push({
-        campaignCriterionOperation: {
-          create: {
-            campaign: `customers/${customerId}/campaigns/${mutation.target.externalId}`,
-            negative: true,
-            keyword: { text, matchType: "PHRASE" },
-          },
-        },
-      });
-    } else if (mutation.action === "create_ad") {
-      const headline =
-        typeof mutation.payload.headline === "string"
-          ? mutation.payload.headline
-          : typeof mutation.payload.proposedName === "string"
-            ? mutation.payload.proposedName
-            : "Same-week home visit";
-      const body =
-        typeof mutation.payload.body === "string" ? mutation.payload.body : "Factory-trained techs. Book a visit.";
-      operations.push({
-        adGroupAdOperation: {
-          create: {
-            adGroup: `customers/${customerId}/adGroups/${mutation.target.externalId}`,
-            status: "PAUSED",
-            ad: {
-              responsiveSearchAd: {
-                headlines: [{ text: headline.slice(0, 30) }],
-                descriptions: [{ text: body.slice(0, 90) }],
-              },
-            },
-          },
-        },
-      });
-    } else if (mutation.action === "tighten_geo") {
-      return {
-        action: mutation.action,
-        platform: "google",
-        target: mutation.target,
-        status: "skipped",
-        mode: "live",
-        writes: false,
-        reason: "Service-area tighten is Approve-recorded. Live location targeting is not in this slice.",
-      };
-    } else if (mutation.action === "exclude_placement") {
-      const url = typeof mutation.payload.placement === "string" ? mutation.payload.placement : "example.com";
-      operations.push({
-        campaignCriterionOperation: {
-          create: {
-            campaign: `customers/${customerId}/campaigns/${mutation.target.externalId}`,
-            negative: true,
-            placement: { url },
-          },
-        },
-      });
-    } else {
-      throw new Error(`Google mutation ${mutation.action} is not implemented`);
     }
 
     const res = await fetch(`${GOOGLE_ADS}/customers/${customerId}/googleAds:mutate`, {
@@ -722,6 +746,10 @@ export class GoogleAdPlatformConnector implements AdPlatformConnector {
       body: JSON.stringify({ mutateOperations: operations }),
       signal: input.signal ?? requirePlatformSignal(input.deadlineAt),
     });
+    if (res.status === 429) {
+      await res.text().catch(() => undefined);
+      throw new GoogleRetryLater(res.status);
+    }
     await readPlatformWriteBody(res, "Google Ads write failed");
     return {
       action: mutation.action,

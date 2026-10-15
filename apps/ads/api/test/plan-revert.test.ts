@@ -300,7 +300,7 @@ describe("planRevert", () => {
     }
   });
 
-  it("turns a Google campaign pause back on and leaves a Meta pause as resume", () => {
+  it("skips a Google campaign pause because resume is not a Google write", () => {
     const google = pauseOutcome({
       platform: "google",
       entityType: "campaign",
@@ -308,16 +308,7 @@ describe("planRevert", () => {
       name: "Search",
       beforeStatus: "enabled",
     });
-    const result = plan({ applyJob: job({ outcomes: [google] }) });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.mutations).toEqual([
-      expect.objectContaining({
-        action: "resume",
-        platform: "google",
-        payload: expect.objectContaining({ status: "enabled", expect: google.after }),
-      }),
-    ]);
+    expectRefusal(plan({ applyJob: job({ outcomes: [google] }) }), "google_pause_not_campaign");
   });
 
   it("keeps the recorded status casing and reads outcomes from response_json", () => {
@@ -522,7 +513,7 @@ describe("planRevert", () => {
 
   it("refuses the whole undo when any applied change has no before-value", () => {
     const broken = pauseOutcome({
-      platform: "google",
+      platform: "meta",
       entityType: "campaign",
       externalId: "5",
       beforeStatus: "enabled",
@@ -593,8 +584,8 @@ describe("planRevert", () => {
     );
   });
 
-  it("refuses a Google pause that did not target a campaign", () => {
-    for (const entityType of ["ad_group", "ad", "AD_GROUP"]) {
+  it("skips every Google pause until resume exists", () => {
+    for (const entityType of ["campaign", "ad_group", "ad", "AD_GROUP"]) {
       expectRefusal(
         plan({
           applyJob: job({

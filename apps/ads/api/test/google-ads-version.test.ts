@@ -222,7 +222,7 @@ describe("Google Ads API version", () => {
     ]);
   });
 
-  it("writes pause, budget, bid, negative, create, and placement on the shared Ads version", async () => {
+  it("writes pause and bid on the shared Ads version and refuses every other Google write", async () => {
     process.env.GOOGLE_ADS_DEVELOPER_TOKEN = "dev-token";
     const calls: { url: string; body: unknown }[] = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
@@ -265,49 +265,37 @@ describe("Google Ads API version", () => {
       live: campaignLive,
       accountExternalId: CUSTOMER,
     });
-    const budget = await googleAdPlatformConnector.applyLive({
-      tokens,
-      mutation: mutation("update_budget", { amount: 40 }),
-      live: campaignLive,
-      accountExternalId: CUSTOMER,
-    });
     const bid = await googleAdPlatformConnector.applyLive({
       tokens,
       mutation: mutation("update_bid", { amount: 1.5 }, "ad_group", "220"),
       live: bidLive,
       accountExternalId: CUSTOMER,
     });
-    const negative = await googleAdPlatformConnector.applyLive({
-      tokens,
-      mutation: mutation("add_negative", { text: "free install" }),
-      live: null,
-      accountExternalId: CUSTOMER,
-    });
-    const created = await googleAdPlatformConnector.applyLive({
-      tokens,
-      mutation: mutation("create_ad", { headline: "Same-week visit", body: "Book a tech." }, "ad_group", "220"),
-      live: null,
-      accountExternalId: CUSTOMER,
-    });
-    const placement = await googleAdPlatformConnector.applyLive({
-      tokens,
-      mutation: mutation("exclude_placement", { placement: "example.com" }),
-      live: null,
-      accountExternalId: CUSTOMER,
-    });
+    const beforeRefusal = calls.length;
+    for (const change of [
+      mutation("update_budget", { amount: 40 }),
+      mutation("add_negative", { text: "free install" }),
+      mutation("create_ad", { headline: "Same-week visit", body: "Book a tech." }, "ad_group", "220"),
+      mutation("exclude_placement", { placement: "example.com" }),
+    ]) {
+      const refused = await googleAdPlatformConnector.applyLive({
+        tokens,
+        mutation: change,
+        live: campaignLive,
+        accountExternalId: CUSTOMER,
+      });
+      expect(refused).toMatchObject({
+        status: "failed",
+        writes: false,
+        reason: "Google apply is pause or bid only. Nothing was written.",
+      });
+    }
+    expect(calls).toHaveLength(beforeRefusal);
 
     expect(paused).toMatchObject({ status: "applied", writes: true });
-    expect(budget).toMatchObject({ status: "applied", writes: true });
     expect(bid).toMatchObject({ status: "applied", writes: true });
-    expect(negative).toMatchObject({ status: "applied", writes: true });
-    expect(created).toMatchObject({ status: "applied", writes: true });
-    expect(placement).toMatchObject({ status: "applied", writes: true });
 
     expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
-      `/${GOOGLE_ADS_API_VERSION}/customers/${CUSTOMER}/googleAds:mutate`,
-      `/${GOOGLE_ADS_API_VERSION}/customers/${CUSTOMER}/googleAds:mutate`,
-      `/${GOOGLE_ADS_API_VERSION}/customers/${CUSTOMER}/googleAds:mutate`,
-      `/${GOOGLE_ADS_API_VERSION}/customers/${CUSTOMER}/googleAds:mutate`,
       `/${GOOGLE_ADS_API_VERSION}/customers/${CUSTOMER}/googleAds:mutate`,
       `/${GOOGLE_ADS_API_VERSION}/customers/${CUSTOMER}/googleAds:mutate`,
     ]);
@@ -321,55 +309,9 @@ describe("Google Ads API version", () => {
     });
     expect(calls[1].body).toEqual({
       mutateOperations: [{
-        campaignBudgetOperation: {
-          update: { resourceName: `customers/${CUSTOMER}/campaignBudgets/111`, amountMicros: "40000000" },
-          updateMask: "amount_micros",
-        },
-      }],
-    });
-    expect(calls[2].body).toEqual({
-      mutateOperations: [{
         adGroupOperation: {
           update: { resourceName: `customers/${CUSTOMER}/adGroups/220`, cpcBidMicros: "1500000" },
           updateMask: "cpc_bid_micros",
-        },
-      }],
-    });
-    expect(calls[3].body).toEqual({
-      mutateOperations: [{
-        campaignCriterionOperation: {
-          create: {
-            campaign: `customers/${CUSTOMER}/campaigns/111`,
-            negative: true,
-            keyword: { text: "free install", matchType: "PHRASE" },
-          },
-        },
-      }],
-    });
-    expect(calls[4].body).toEqual({
-      mutateOperations: [{
-        adGroupAdOperation: {
-          create: {
-            adGroup: `customers/${CUSTOMER}/adGroups/220`,
-            status: "PAUSED",
-            ad: {
-              responsiveSearchAd: {
-                headlines: [{ text: "Same-week visit" }],
-                descriptions: [{ text: "Book a tech." }],
-              },
-            },
-          },
-        },
-      }],
-    });
-    expect(calls[5].body).toEqual({
-      mutateOperations: [{
-        campaignCriterionOperation: {
-          create: {
-            campaign: `customers/${CUSTOMER}/campaigns/111`,
-            negative: true,
-            placement: { url: "example.com" },
-          },
         },
       }],
     });

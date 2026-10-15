@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { CapabilityFlags } from "@cerevex/contracts";
 import { resolveWorkspaceCapabilities } from "@cerevex/contracts";
-import { getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
+import { GOOGLE_PAUSE_OR_BID, getAdPlatformConnector, getDefaultSiteConnector } from "./connectors";
 import { attachMetaLiveCurrency } from "./connectors/meta";
 import { ApplyCallBudgetError, platformCallBudgetMs } from "./connectors/write-timeout";
 import { siteApplyBlockedReason } from "./lp-intelligence";
@@ -32,7 +32,7 @@ import {
 import { isM52WeeklyNarrativeMutation } from "./owner-weekly-narrative";
 import { isM52SeasonalityMutation } from "./seasonality-calendar";
 import { platformSyncLiveEnabled } from "./flags";
-import { metaLiveWriteBlock, applyBlockMessage } from "./apply-gate";
+import { googleLiveWriteBlock, metaLiveWriteBlock, applyBlockMessage } from "./apply-gate";
 import { isMockToken, realTokenLiveBlock } from "./live-or-loud";
 import { metaLiveConfirmRefusal, metaWriteInputRefusal } from "./meta-write-safety";
 import { isMutationFamilyEnabled, mutationFamilyForAction, mutationFamilySkipReason } from "./mutation-families";
@@ -45,7 +45,7 @@ import {
   type MutationOutcome,
   type OutcomeValue,
 } from "./mutate-types";
-import { adAccounts, adEntities } from "./schema";
+import { adAccounts, adEntities, workspaces } from "./schema";
 import type { ApplyMutation } from "./audit-schemas";
 import type { Platform, StoredOAuthTokens } from "./types";
 
@@ -279,6 +279,46 @@ async function brandSpendGuardOutcome(
   };
 }
 
+function refusedGoogleWrite(mutation: ApplyMutation, reason: string): MutationOutcome {
+  return {
+    action: mutation.action,
+    platform: "google",
+    target: mutation.target,
+    status: "failed",
+    mode: "live",
+    writes: false,
+    reason,
+  };
+}
+
+/** Fresh kill switch and apply.google. A snapshot from claim time is not enough. */
+async function googleWriteBlockedNow(adAccountId: string): Promise<string | null> {
+  const db = getDb();
+  const account = await db.query.adAccounts.findFirst({ where: eq(adAccounts.id, adAccountId) });
+  if (!account) return applyBlockMessage("workspace_not_found");
+  const workspace = await db.query.workspaces.findFirst({ where: eq(workspaces.id, account.workspaceId) });
+  if (!workspace) return applyBlockMessage("workspace_not_found");
+  if (workspace.applyKillSwitch) return applyBlockMessage("apply_kill_switch");
+  const blocked = googleLiveWriteBlock({
+    platform: "google",
+    mock: false,
+    capabilities: resolveWorkspaceCapabilities(workspace.settingsJson),
+  });
+  return blocked ? applyBlockMessage(blocked) : null;
+}
+
+async function googleWriteStillAllowed(input: {
+  platform: Platform;
+  tokens: StoredOAuthTokens;
+  mutation: ApplyMutation;
+  adAccountId?: string;
+}): Promise<MutationOutcome | null> {
+  if (input.platform !== "google" || input.tokens.mock || !input.adAccountId) return null;
+  const reason = await googleWriteBlockedNow(input.adAccountId);
+  if (!reason) return null;
+  return refusedGoogleWrite(input.mutation, reason);
+}
+
 /** Live apply/read always goes through the AdPlatform connector registry. */
 export async function applyViaConnector(input: {
   platform: Platform;
@@ -286,12 +326,19 @@ export async function applyViaConnector(input: {
   mutation: ApplyMutation;
   accountExternalId: string;
   deadlineAt?: number;
+  /** Set on the execute path so the write re-reads the kill switch and apply.google. */
+  adAccountId?: string;
 }): Promise<MutationOutcome> {
   const connector = getAdPlatformConnector(input.platform);
   if (input.platform === "meta") {
     const inputRefusal = metaWriteInputRefusal(input.mutation);
     if (inputRefusal) return inputRefusal;
   }
+  if (input.platform === "google" && input.mutation.action !== "pause" && input.mutation.action !== "update_bid") {
+    return refusedGoogleWrite(input.mutation, GOOGLE_PAUSE_OR_BID);
+  }
+  const closedBeforeRead = await googleWriteStillAllowed(input);
+  if (closedBeforeRead) return closedBeforeRead;
   const live = await connector
     .readLiveEntityState({
       tokens: input.tokens,
@@ -324,6 +371,8 @@ export async function applyViaConnector(input: {
       deadlineAt: input.deadlineAt,
     });
   }
+  const closedBeforeWrite = await googleWriteStillAllowed(input);
+  if (closedBeforeWrite) return closedBeforeWrite;
   const outcome = await connector.applyLive({
     tokens: input.tokens,
     mutation: input.mutation,
@@ -552,6 +601,17 @@ async function runExecuteMutation(input: {
       reason: applyBlockMessage(metaBlock),
     };
   }
+  const googleBlock = googleLiveWriteBlock({
+    platform: input.platform,
+    mock: false,
+    capabilities: flags,
+  });
+  if (googleBlock) {
+    return refusedGoogleWrite(input.mutation, applyBlockMessage(googleBlock));
+  }
+  if (input.platform === "google" && input.mutation.action !== "pause" && input.mutation.action !== "update_bid") {
+    return refusedGoogleWrite(input.mutation, GOOGLE_PAUSE_OR_BID);
+  }
   const block = realTokenLiveBlock({
     platform: input.platform,
     mock: tokens.mock,
@@ -599,6 +659,7 @@ async function runExecuteMutation(input: {
       mutation: input.mutation,
       accountExternalId: input.accountExternalId,
       deadlineAt: input.deadlineAt,
+      adAccountId: input.adAccountId,
     });
   } catch (error) {
     const failed =

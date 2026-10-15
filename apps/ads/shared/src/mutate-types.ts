@@ -43,6 +43,8 @@ export type LiveEntityState = {
   bidAmount?: number | null;
   /** Meta ad account id from the live re-check, without the act_ prefix. */
   accountId?: string | null;
+  /** Google ad group id that owns an ad. Required to pause that ad. */
+  parentExternalId?: string | null;
   /** Exact platform amount from the live read. Meta minor units or Google micros. */
   budgetNative?: string | null;
   bidNative?: string | null;

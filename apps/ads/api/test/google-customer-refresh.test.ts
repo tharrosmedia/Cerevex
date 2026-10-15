@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { connectionStatusLabel, defaultCapabilityFlags } from "@tharros/ads-shared";
+import { connectionStatusLabel, defaultCapabilityFlags, settingsJsonWithCapabilityOverrides } from "@tharros/ads-shared";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import {
@@ -20,7 +20,7 @@ import {
 import { loadTokens, storeTokens } from "@tharros/ads-shared/credentials";
 import { executeMutation } from "@tharros/ads-shared/mutate";
 import { runAdAccountSync } from "@tharros/ads-shared/sync";
-import { adAccounts, adEntities, auditLog } from "@tharros/ads-shared/schema";
+import { adAccounts, adEntities, auditLog, workspaces } from "@tharros/ads-shared/schema";
 import { toPublicAccount } from "../src/connect";
 import { app, ensureScopedUser, json, login } from "./helpers";
 
@@ -82,6 +82,8 @@ const pause = {
   target: { entityType: "campaign", externalId: "campaign-1", name: "HVAC" },
   payload: {},
 };
+
+const googleWriteFlags = { ...defaultCapabilityFlags(), "apply.google": "on" as const };
 
 describe("Google customer id and honest refresh", () => {
   const previous: Record<string, string | undefined> = {};
@@ -155,6 +157,33 @@ describe("Google customer id and honest refresh", () => {
       },
     });
     return account;
+  }
+
+  async function withGoogleApplyOpen(run: () => Promise<void>) {
+    const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+    const kill = workspace?.applyKillSwitch;
+    const settings = workspace?.settingsJson;
+    await getDb()
+      .update(workspaces)
+      .set({
+        applyKillSwitch: false,
+        settingsJson: settingsJsonWithCapabilityOverrides((settings ?? {}) as Record<string, unknown>, {
+          "apply.google": "on",
+          "sync.live": "on",
+        }),
+      })
+      .where(eq(workspaces.id, workspaceId));
+    try {
+      await run();
+    } finally {
+      await getDb()
+        .update(workspaces)
+        .set({
+          applyKillSwitch: kill ?? true,
+          ...(settings !== undefined ? { settingsJson: settings } : {}),
+        })
+        .where(eq(workspaces.id, workspaceId));
+    }
   }
 
   async function reconnectAudits(adAccountId: string) {
@@ -526,31 +555,33 @@ describe("Google customer id and honest refresh", () => {
       })
       .returning();
     try {
-      const outcome = await executeMutation({
-        adAccountId: account.id,
-        platform: "google",
-        accountExternalId: account.externalId,
-        mutation: {
+      await withGoogleApplyOpen(async () => {
+        const outcome = await executeMutation({
+          adAccountId: account.id,
           platform: "google",
-          action: "pause",
-          target: { entityType: "campaign", externalId: entity.externalId, name: entity.name },
-          payload: {},
-        },
-        capabilities: defaultCapabilityFlags(),
+          accountExternalId: account.externalId,
+          mutation: {
+            platform: "google",
+            action: "pause",
+            target: { entityType: "campaign", externalId: entity.externalId, name: entity.name },
+            payload: {},
+          },
+          capabilities: googleWriteFlags,
+        });
+        expect(outcome.status).toBe("applied");
+        expect(outcome.writes).toBe(true);
+        expect(calls[0]?.url).toContain("oauth2.googleapis.com/token");
+        expect(calls.slice(1).every((call) => call.headers.authorization === `Bearer ${NEXT_ACCESS}`)).toBe(true);
+        const stored = await loadTokens(account.id);
+        expect(stored?.accessToken).toBe(NEXT_ACCESS);
+        expect(stored?.refreshToken).toBe(REFRESH);
+        expect(stored?.loginCustomerId).toBe("111-222-3333");
+        expect(stored?.expiresAt).not.toBe(new Date(Date.now() - 60_000).toISOString());
+        const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+        expect(row?.connectionStatus).not.toBe("needs_reconnect");
+        assertNoSecrets(outcome);
+        assertNoSecrets(logs);
       });
-      expect(outcome.status).toBe("applied");
-      expect(outcome.writes).toBe(true);
-      expect(calls[0]?.url).toContain("oauth2.googleapis.com/token");
-      expect(calls.slice(1).every((call) => call.headers.authorization === `Bearer ${NEXT_ACCESS}`)).toBe(true);
-      const stored = await loadTokens(account.id);
-      expect(stored?.accessToken).toBe(NEXT_ACCESS);
-      expect(stored?.refreshToken).toBe(REFRESH);
-      expect(stored?.loginCustomerId).toBe("111-222-3333");
-      expect(stored?.expiresAt).not.toBe(new Date(Date.now() - 60_000).toISOString());
-      const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
-      expect(row?.connectionStatus).not.toBe("needs_reconnect");
-      assertNoSecrets(outcome);
-      assertNoSecrets(logs);
     } finally {
       await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
     }
@@ -582,7 +613,7 @@ describe("Google customer id and honest refresh", () => {
         platform: "google",
         accountExternalId: account.externalId,
         mutation,
-        capabilities: defaultCapabilityFlags(),
+        capabilities: googleWriteFlags,
       });
       expect(first.status).toBe("failed");
       expect(first.writes).toBe(false);
@@ -598,7 +629,7 @@ describe("Google customer id and honest refresh", () => {
         platform: "google",
         accountExternalId: account.externalId,
         mutation,
-        capabilities: defaultCapabilityFlags(),
+        capabilities: googleWriteFlags,
       });
       expect(second.reason).toBe(GOOGLE_REFRESH_REJECTED);
       expect(calls).toBe(1);
@@ -743,23 +774,25 @@ describe("Google customer id and honest refresh", () => {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     });
     try {
-      const outcome = await executeMutation({
-        adAccountId: account.id,
-        platform: "google",
-        accountExternalId: account.externalId,
-        mutation: pause,
-        capabilities: defaultCapabilityFlags(),
+      await withGoogleApplyOpen(async () => {
+        const outcome = await executeMutation({
+          adAccountId: account.id,
+          platform: "google",
+          accountExternalId: account.externalId,
+          mutation: pause,
+          capabilities: googleWriteFlags,
+        });
+        expect(searchCalls).toBe(1);
+        expect(mutateCalls).toBe(0);
+        expect(outcome.status).toBe("failed");
+        expect(outcome.writes).toBe(false);
+        expect(outcome.reason).toBe(status === 429 ? GOOGLE_RATE_LIMITED : "Google didn't answer. Cerevex will try again later.");
+        const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
+        expect(row?.connectionStatus).not.toBe("needs_reconnect");
+        expect(await reconnectAudits(account.id)).toHaveLength(0);
+        assertNoSecrets(outcome);
+        assertNoSecrets(logs);
       });
-      expect(searchCalls).toBe(1);
-      expect(mutateCalls).toBe(0);
-      expect(outcome.status).toBe("failed");
-      expect(outcome.writes).toBe(false);
-      expect(outcome.reason).toBe(status === 429 ? GOOGLE_RATE_LIMITED : "Google didn't answer. Cerevex will try again later.");
-      const row = await getDb().query.adAccounts.findFirst({ where: eq(adAccounts.id, account.id) });
-      expect(row?.connectionStatus).not.toBe("needs_reconnect");
-      expect(await reconnectAudits(account.id)).toHaveLength(0);
-      assertNoSecrets(outcome);
-      assertNoSecrets(logs);
     } finally {
       await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
     }
