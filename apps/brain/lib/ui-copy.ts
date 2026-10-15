@@ -37,6 +37,43 @@ export function loadProfileCta(name: string | null): string {
   return name ? `Load the ${name} profile` : 'Load a skills profile';
 }
 
+export const ADD_CLIENT = 'Add a client';
+export const CLIENT_NAME_LABEL = 'Client name';
+export const WHO_IS_THIS = 'Who is this for?';
+export const WHAT_KIND_OF_BUSINESS = 'What kind of business?';
+export const THEIR_WEBSITE = 'Their website.';
+export const CONTINUE_ADD = 'Continue';
+export const MAKE_NEW_CLIENT = 'Make a new client';
+export const SKILLS_PROFILE_FOUND = 'Skills profile found. It will link when you finish.';
+export const ADD_STORE_CONNECT_LATER = 'Add store, connect Shopify later';
+export const PASTE_ADMIN_TOKEN = 'Already have an Admin API token? Paste it here';
+export const ENTER_CLIENT_NAME = 'Enter a client name.';
+export const CLIENT_NAME_TOO_LONG = 'Client name is too long.';
+export const TYPE_A_DIFFERENT_NAME = 'Type a different name.';
+export const ENTER_STORE_ADDRESS = 'Enter your store address, like mystore.myshopify.com.';
+export const PASTE_ADMIN_TOKEN_REQUIRED = 'Paste the Admin API access token.';
+export const WORDPRESS_UNREACHABLE = "Couldn't reach that site. Check the address and that the plugin is active.";
+
+export function alreadyClientUse(name: string): string {
+  return `There's already a client called ${name}. Use that one?`;
+}
+
+export function useExistingClient(name: string): string {
+  return `Use ${name}`;
+}
+
+export function alreadyAClient(name: string): string {
+  return `There's already a client called ${name}.`;
+}
+
+export function storeAddressTaken(name: string): string {
+  return `That store address is already a client: ${name}.`;
+}
+
+export function siteAlreadyLinked(name: string): string {
+  return `That site is already linked to ${name}.`;
+}
+
 /** H1 sentence. The checklist test keeps this equal to META_RECONNECT_MESSAGE. */
 export const META_NEEDS_RECONNECT = 'Meta sign-in expired. Reconnect Meta for this site.';
 /** H1 sentence. The checklist test keeps this equal to META_PERMISSION_MESSAGE. */

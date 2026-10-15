@@ -26,9 +26,12 @@ export async function getStore(id: string) {
   return row;
 }
 
-export async function createStore({ name, shopify_domain, shopify_access_token, platform = 'shopify', connector_type, config }: { name: string; shopify_domain: string; shopify_access_token: string; platform?: string; connector_type?: string; config?: any }) {
+export async function createStore({ name, shopify_domain, shopify_access_token, platform = 'shopify', connector_type, config }: { name: string; shopify_domain: string; shopify_access_token: string | null; platform?: string; connector_type?: string; config?: any }) {
   const sql = neon(process.env.DATABASE_URL!);
-  const encryptedToken = encrypt(shopify_access_token, process.env.ENCRYPTION_KEY);
+  // A not-connected Shopify row stores SQL null. Do not encrypt a blank token.
+  const encryptedToken = shopify_access_token == null
+    ? null
+    : encrypt(shopify_access_token, process.env.ENCRYPTION_KEY);
   const safeConfig = toSafeJsonb(config, 'store.config');
   const connectorType = connector_type || platform || 'shopify';
   const result = await sql`INSERT INTO stores (name, shopify_domain, shopify_access_token, platform, connector_type, config) VALUES (${name}, ${shopify_domain}, ${encryptedToken}, ${platform}, ${connectorType}, ${safeConfig}) RETURNING id, name, shopify_domain, platform, connector_type, config, created_at`;

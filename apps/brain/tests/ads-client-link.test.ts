@@ -128,13 +128,14 @@ const shopify = storesPage.slice(
 );
 assert.ok(shopify.indexOf('createStore') < shopify.indexOf('nameAndLinkSiteClient'));
 assert.match(shopify, /nameAndLinkSiteClient\(store\.id, store\.name\)/);
-assert.match(shopify, /config: emptyClientWorkspaceConfig\(\)/);
+assert.match(shopify, /config: plan\.config/);
 const wordpress = storesPage.slice(
   storesPage.indexOf('async function addWordpressSite'),
   storesPage.indexOf('async function testConnection'),
 );
 assert.match(wordpress, /nameAndLinkSiteClient\(created\.id, created\.name\)/);
-assert.match(storesPage, /adoptedClientSentence\(params\.client\)/);
+assert.match(wordpress, /getActiveStoreId\(\)/);
+assert.match(wordpress, /wordpressWorkspaceSettingsFromStore\(active\)/);
 
 const editPage = readFileSync(join(here, '../app/stores/[id]/edit/page.tsx'), 'utf8');
 const updateFn = editPage.slice(editPage.indexOf('async function update'), editPage.indexOf('export default'));
