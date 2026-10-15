@@ -87,12 +87,25 @@ export function createDeniedIpLimiter(options: { limit: number; windowMs: number
     }
   }
 
+  function windowRetry(): number {
+    return Math.max(1, Math.ceil(options.windowMs / 1000));
+  }
+
+  /** A new address when the map is already full. An address already stored is not blocked here. */
+  function blockedBecauseMapFull(ip: string): number | null {
+    if (!hits.has(ip) && hits.size >= maxIps) return windowRetry();
+    return null;
+  }
+
   return {
+    mapFullRetryAfter(ip: string): number | null {
+      pruneAll();
+      return blockedBecauseMapFull(ip);
+    },
     retryAfterSeconds(ip: string): number | null {
       pruneAll();
-      if (!hits.has(ip) && hits.size >= maxIps) {
-        return Math.max(1, Math.ceil(options.windowMs / 1000));
-      }
+      const full = blockedBecauseMapFull(ip);
+      if (full != null) return full;
       const kept = hits.get(ip) ?? [];
       if (kept.length < options.limit) return null;
       const oldest = kept[0] ?? now();

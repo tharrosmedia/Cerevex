@@ -42,6 +42,8 @@ export function testApp(
     deniedMaxIps: overrides.deniedMaxIps,
     globalDenialCapacity: overrides.globalDenialCapacity,
     globalDenialRefillPerSecond: overrides.globalDenialRefillPerSecond,
+    globalBearerCapacity: overrides.globalBearerCapacity,
+    globalBearerRefillPerSecond: overrides.globalBearerRefillPerSecond,
     now: overrides.now,
     auditControl: overrides.auditControl,
   });
