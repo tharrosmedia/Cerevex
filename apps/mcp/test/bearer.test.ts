@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { KILL_SWITCH_CACHE_MS } from "../src/app";
 import { createBearerAuthenticator } from "../src/auth";
+import { AUDIT_BUCKET_METHODS } from "../src/audit-buffer";
 import { clientIpFromHeaders, createDeniedIpLimiter } from "../src/limiter";
 import { buildSecurityAuditEntry } from "../src/audit";
 import { MAX_MCP_BODY_BYTES, readLimitedText } from "../src/body";
@@ -357,7 +358,131 @@ describe("denied-request holds", () => {
     limiter.record("203.0.113.3");
     expect(limiter.retryAfterSeconds("203.0.113.1")).not.toBeNull();
     expect(limiter.retryAfterSeconds("203.0.113.2")).not.toBeNull();
-    expect(limiter.retryAfterSeconds("203.0.113.3")).toBeNull();
+    expect(limiter.retryAfterSeconds("203.0.113.3")).not.toBeNull();
+  });
+
+  it("returns 429 for an untracked address when the map is full", async () => {
+    let lookups = 0;
+    const authenticator = createBearerAuthenticator(async () => {
+      lookups += 1;
+      return null;
+    });
+    const { app } = testApp({ authenticator, deniedPerIp: 1, deniedMaxIps: 1, globalDenialCapacity: 30 });
+    const token = `cxm_${"e".repeat(43)}`;
+    const first = await app.request(
+      "/mcp",
+      request2026({ authorization: `Bearer ${token}`, extraHeaders: { "x-real-ip": "203.0.113.10" } }),
+    );
+    const second = await app.request(
+      "/mcp",
+      request2026({ authorization: `Bearer ${token}`, extraHeaders: { "x-real-ip": "203.0.113.11" } }),
+    );
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
+    expect(lookups).toBe(1);
+  });
+
+  it("keys IPv6 addresses by /64", async () => {
+    const { app } = testApp({ deniedPerIp: 1 });
+    const inside = ["2001:db8:1:2::1", "2001:db8:1:2::abcd"];
+    const statuses: number[] = [];
+    for (const address of inside) {
+      const res = await app.request("/mcp", request2026({ extraHeaders: { "x-real-ip": address } }));
+      statuses.push(res.status);
+    }
+    expect(statuses).toEqual([401, 429]);
+    const other = await app.request("/mcp", request2026({ extraHeaders: { "x-real-ip": "2001:db8:1:3::1" } }));
+    expect(other.status).toBe(401);
+    expect(clientIpFromHeaders(new Headers({ "x-real-ip": "2001:db8:1:2::1" }))).toBe("2001:db8:1:2::/64");
+    expect(clientIpFromHeaders(new Headers({ "x-real-ip": "2001:db8:1:2::abcd" }))).toBe("2001:db8:1:2::/64");
+  });
+
+  it("stops spoofed and rotating addresses at the global cap, before more token lookups", async () => {
+    let lookups = 0;
+    const authenticator = createBearerAuthenticator(async () => {
+      lookups += 1;
+      return null;
+    });
+    const auditControl = { flush: async () => {} };
+    const { app, guard } = testApp({
+      authenticator,
+      deniedPerIp: 30,
+      globalDenialCapacity: 2,
+      globalDenialRefillPerSecond: 0,
+      deniedFlushMs: 60_000,
+      auditControl,
+    });
+    const token = `cxm_${"f".repeat(43)}`;
+    const realStatuses: number[] = [];
+    for (let index = 1; index <= 4; index += 1) {
+      const res = await app.request(
+        "/mcp",
+        request2026({
+          authorization: `Bearer ${token}`,
+          extraHeaders: { "x-real-ip": `198.51.100.${index}`, "x-forwarded-for": `${index}.9.9.9, 203.0.113.5` },
+        }),
+      );
+      realStatuses.push(res.status);
+    }
+    expect(realStatuses).toEqual([401, 401, 429, 429]);
+    expect(lookups).toBe(2);
+
+    const forwarded: number[] = [];
+    const second = testApp({
+      authenticator: createBearerAuthenticator(async () => {
+        lookups += 1;
+        return null;
+      }),
+      deniedPerIp: 30,
+      globalDenialCapacity: 2,
+      globalDenialRefillPerSecond: 0,
+    });
+    const before = lookups;
+    for (let index = 1; index <= 4; index += 1) {
+      const res = await second.app.request(
+        "/mcp",
+        request2026({
+          authorization: `Bearer ${token}`,
+          extraHeaders: { "x-forwarded-for": `203.0.113.${index}` },
+        }),
+      );
+      forwarded.push(res.status);
+    }
+    expect(forwarded).toEqual([401, 401, 429, 429]);
+    expect(lookups - before).toBe(2);
+    expect(guard.calls.audits).toHaveLength(0);
+    await auditControl.flush();
+    expect(guard.calls.audits.length).toBeLessThan(4);
+    expect(guard.calls.audits.reduce((sum, entry) => sum + entry.count, 0)).toBe(4);
+  });
+
+  it("does not walk left when X-Real-IP or the rightmost XFF hop will not parse", () => {
+    expect(
+      clientIpFromHeaders(new Headers({ "x-real-ip": "not-an-ip", "x-forwarded-for": "1.1.1.1" })),
+    ).toBe("unknown");
+    expect(
+      clientIpFromHeaders(new Headers({ "x-real-ip": "not-an-ip", "x-forwarded-for": "1.1.1.1" }), "192.0.2.10"),
+    ).toBe("192.0.2.10");
+    expect(clientIpFromHeaders(new Headers({ "x-forwarded-for": "1.1.1.1, garbage" }))).toBe("unknown");
+    expect(clientIpFromHeaders(new Headers({ "x-forwarded-for": "1.1.1.1, garbage" }), "192.0.2.10")).toBe("192.0.2.10");
+    expect(clientIpFromHeaders(new Headers({ "x-forwarded-for": "8.8.8.8, 203.0.113.50" }))).toBe("203.0.113.50");
+  });
+
+  it("pins the aggregated method set and collapses every other method", async () => {
+    expect([...AUDIT_BUCKET_METHODS]).toEqual(["initialize", "tools/list", "tools/call", "resources/read", "prompts/get"]);
+    const auditControl = { flush: async () => {} };
+    const { app, guard } = testApp({ deniedPerIp: 10, deniedFlushMs: 60_000, auditControl });
+    const headers = { "x-real-ip": "203.0.113.40" };
+    expect((await app.request("/mcp", request2026({ method: "tools/list", extraHeaders: headers }))).status).toBe(401);
+    expect((await app.request("/mcp", request2026({ method: "tools/call", name: "ping", extraHeaders: headers }))).status).toBe(401);
+    expect((await app.request("/mcp", request2026({ method: "evilmethod", extraHeaders: headers }))).status).toBe(401);
+    expect((await app.request("/mcp", request2026({ method: "anotherjunk", extraHeaders: headers }))).status).toBe(401);
+    await auditControl.flush();
+    const methods = guard.calls.audits.map((entry) => entry.method).sort();
+    expect(methods).toEqual([null, "tools/call", "tools/list"]);
+    expect(guard.calls.audits.find((entry) => entry.method === null)?.count).toBe(2);
+    expect(JSON.stringify(guard.calls.audits)).not.toContain("evilmethod");
+    expect(JSON.stringify(guard.calls.audits)).not.toContain("anotherjunk");
   });
 
   it("does not count a successful call toward the denied limiter", async () => {

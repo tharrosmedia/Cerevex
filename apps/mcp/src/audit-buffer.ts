@@ -3,7 +3,8 @@ import type { SecurityAuditEntry } from "./audit";
 const MAX_COUNT = 100_000;
 
 /** Methods an aggregated row may keep. Anything else collapses to one bucket. */
-const BUCKET_METHODS = new Set(["initialize", "tools/list", "tools/call", "resources/read", "prompts/get"]);
+export const AUDIT_BUCKET_METHODS = ["initialize", "tools/list", "tools/call", "resources/read", "prompts/get"] as const;
+const BUCKET_METHODS = new Set<string>(AUDIT_BUCKET_METHODS);
 
 function forBucket(entry: SecurityAuditEntry): SecurityAuditEntry {
   const method = entry.method && BUCKET_METHODS.has(entry.method) ? entry.method : null;

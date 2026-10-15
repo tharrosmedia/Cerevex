@@ -39,6 +39,9 @@ export function testApp(
     deniedPerIp: overrides.deniedPerIp,
     deniedWindowMs: overrides.deniedWindowMs,
     deniedFlushMs: overrides.deniedFlushMs,
+    deniedMaxIps: overrides.deniedMaxIps,
+    globalDenialCapacity: overrides.globalDenialCapacity,
+    globalDenialRefillPerSecond: overrides.globalDenialRefillPerSecond,
     now: overrides.now,
     auditControl: overrides.auditControl,
   });
