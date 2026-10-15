@@ -209,9 +209,9 @@ function insideWindow(job: RevertSourceJob, now: Date): boolean {
   return age >= 0 && age <= REVERT_WINDOW_MS;
 }
 
+/** Google resume is not a live write, so a Google pause has no undo yet. */
 function googlePauseTargetBlocked(change: AppliedChange): boolean {
-  if (change.action !== "pause" || change.platform !== "google") return false;
-  return change.target.entityType.trim().toLowerCase() !== "campaign";
+  return change.action === "pause" && change.platform === "google";
 }
 
 function moneyCurrencyBlocked(change: AppliedChange): boolean {

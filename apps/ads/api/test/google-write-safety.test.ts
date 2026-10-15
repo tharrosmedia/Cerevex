@@ -8,7 +8,7 @@ import {
   settingsJsonWithCapabilityOverrides,
 } from "@tharros/ads-shared";
 import { loadEnv } from "@tharros/ads-shared/env";
-import { closeDb, getDb } from "@tharros/ads-shared/db";
+import { closeDb, getDb, getPool } from "@tharros/ads-shared/db";
 import { applyClaimHooks, runApplyJob } from "@tharros/ads-shared/apply";
 import { applyBlockMessage, evaluateApplyGate } from "@tharros/ads-shared/apply-gate";
 import { GOOGLE_RATE_LIMITED, GoogleRetryLater, googleAdPlatformConnector } from "@tharros/ads-shared/connectors";
@@ -547,6 +547,131 @@ describe("apply.google approve, owner, and write-time gate", () => {
         capabilities: googleOn(),
       });
       expect(direct).toMatchObject({ status: "failed", writes: false, reason: applyBlockMessage("apply_kill_switch") });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it("re-reads the kill switch between the live read and the write", async () => {
+    configureGoogle();
+    await openGoogleApply();
+    const { account } = await seedLiveAccount();
+    let searches = 0;
+    let mutates = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      const href = String(url);
+      if (href.includes("googleAds:search")) {
+        searches += 1;
+        await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+        return jsonResponse({
+          results: [{ campaign: { status: "ENABLED" }, customer: { currencyCode: "USD" } }],
+        });
+      }
+      if (href.includes("googleAds:mutate")) mutates += 1;
+      return jsonResponse({ mutateOperationResponses: [{}] });
+    });
+    try {
+      const { job } = await queueJob(account.id, [mutation("pause", {}, "campaign", "88001")]);
+      const ran = await runApplyJob(job.id);
+      expect(searches).toBe(1);
+      expect(mutates).toBe(0);
+      expect(ran.writes).toBe(false);
+      expect(ran.outcomes[0]).toMatchObject({
+        status: "failed",
+        writes: false,
+        reason: applyBlockMessage("apply_kill_switch"),
+      });
+    } finally {
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it("denies the re-read when the workspace row is gone", async () => {
+    configureGoogle();
+    await openGoogleApply();
+    const { account } = await seedLiveAccount();
+    const ghost = "22222222-2222-4222-8222-222222222222";
+    const read = vi.spyOn(googleAdPlatformConnector, "readLiveEntityState");
+    const apply = vi.spyOn(googleAdPlatformConnector, "applyLive").mockResolvedValue({
+      action: "pause",
+      platform: "google",
+      target: { entityType: "campaign", externalId: "88001", name: "HVAC" },
+      status: "applied",
+      mode: "live",
+      writes: true,
+    });
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("UPDATE os.ad_accounts SET workspace_id = $1 WHERE id = $2", [ghost, account.id]);
+      await client.query("COMMIT");
+      const outcome = await applyViaConnector({
+        platform: "google",
+        tokens: { accessToken: TOKEN, mock: false },
+        mutation: mutation("pause", {}, "campaign", "88001"),
+        accountExternalId: account.externalId,
+        adAccountId: account.id,
+      });
+      expect(outcome).toMatchObject({
+        status: "failed",
+        writes: false,
+        reason: applyBlockMessage("workspace_not_found"),
+      });
+      expect(read).not.toHaveBeenCalled();
+      expect(apply).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+      apply.mockRestore();
+      await client.query("BEGIN");
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("UPDATE os.ad_accounts SET workspace_id = $1 WHERE id = $2", [workspaceId, account.id]);
+      await client.query("COMMIT");
+      client.release();
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it("refuses a disallowed change in applyViaConnector before the live read", async () => {
+    configureGoogle();
+    await openGoogleApply();
+    const { account } = await seedLiveAccount();
+    const read = vi.spyOn(googleAdPlatformConnector, "readLiveEntityState");
+    const apply = vi.spyOn(googleAdPlatformConnector, "applyLive");
+    try {
+      const outcome = await applyViaConnector({
+        platform: "google",
+        tokens: { accessToken: TOKEN, mock: false },
+        mutation: mutation("update_budget", { amount: 40 }),
+        accountExternalId: account.externalId,
+        adAccountId: account.id,
+      });
+      expect(outcome).toMatchObject({ status: "failed", writes: false, reason: PAUSE_OR_BID });
+      expect(read).not.toHaveBeenCalled();
+      expect(apply).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+      apply.mockRestore();
+      await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
+    }
+  });
+
+  it("refuses a disallowed change in executeMutation before Google is called", async () => {
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+    const { account } = await seedLiveAccount();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const outcome = await executeMutation({
+        adAccountId: account.id,
+        platform: "google",
+        accountExternalId: account.externalId,
+        mutation: mutation("update_budget", { amount: 40 }),
+        capabilities: googleOn(),
+      });
+      expect(outcome).toMatchObject({ status: "failed", writes: false, reason: PAUSE_OR_BID });
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       await getDb().delete(adAccounts).where(eq(adAccounts.id, account.id));
