@@ -4,6 +4,7 @@ import { createAndPublishPage } from '../../shopify/pages';
 import { createAndPublishArticle } from '../../shopify/blogs';
 import { getStore } from '../../db/stores';
 import { setMetafields } from '../../shopify/metafields';
+import { hasShopifyAccessToken, logShopifySkip, shopifyNotConnectedSkip } from '../../shopify/not-connected';
 
 function getSourceValue(draft: any, source: string): any {
   if (source === 'bodyHtml') return draft.bodyHtml;
@@ -33,18 +34,23 @@ function resolveMfType(defs: any[], ns: string, key: string, valForHeuristic?: s
   return 'single_line_text_field';
 }
 
-export async function publishContent({ storeId, draft, type = 'collection', platform, brandVoice, products = [], preloaded, metafieldDefinitions = [], mode = 'create', shopifyId }: { storeId: string; draft: any; type?: string; platform?: string; brandVoice?: any; products?: any[]; preloaded?: { domain?: string; accessToken?: string; config?: any }; metafieldDefinitions?: any[]; mode?: string; shopifyId?: string; [k: string]: any }) {
+export async function publishContent({ storeId, draft, type = 'collection', platform, brandVoice, products = [], preloaded, metafieldDefinitions = [], mode = 'create', shopifyId, loadStore, createClient }: { storeId: string; draft: any; type?: string; platform?: string; brandVoice?: any; products?: any[]; preloaded?: { domain?: string; accessToken?: string; config?: any }; metafieldDefinitions?: any[]; mode?: string; shopifyId?: string; loadStore?: (id: string) => Promise<any>; createClient?: (domain: string, token: string) => any; [k: string]: any }) {
   console.time('[PUBLISH] total');
+  const readStore = loadStore ?? getStore;
+  const openClient = createClient ?? createAdminClient;
   let store: any;
-  if (preloaded && preloaded.accessToken) {
+  const preloadedToken = typeof preloaded?.accessToken === 'string' ? preloaded.accessToken.trim() : '';
+  if (preloaded && preloadedToken) {
     store = { shopify_domain: preloaded.domain, shopify_access_token: preloaded.accessToken, config: preloaded.config };
   } else {
-    store = await getStore(storeId);
+    store = await readStore(storeId);
   }
-  if (!store || !store.shopify_access_token) {
-    throw new Error(`No Shopify credentials configured for store ${storeId}`);
+  if (!hasShopifyAccessToken(store)) {
+    console.timeEnd('[PUBLISH] total');
+    logShopifySkip('seo-publish', storeId);
+    return shopifyNotConnectedSkip();
   }
-  const client = createAdminClient(store.shopify_domain, store.shopify_access_token);
+  const client = openClient(store.shopify_domain, store.shopify_access_token);
   const config = store.config || (store as any).config || {};
   const placement = config.placement?.[type] || config.placement?.default || null;
   let bodyForMain: string | undefined = draft.bodyHtml;

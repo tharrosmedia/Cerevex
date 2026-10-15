@@ -26,6 +26,7 @@ import { checkTopicGate } from '@brain/lib/agents/seo/topic-gate';
 import { gscApplyIsWritable, gscApplyWriteBlockedReason, isGscSourcedJob } from '@brain/lib/seo/gsc-flags';
 import { applyWordpressMutation } from '@brain/lib/wordpress/apply';
 import { isWordpressStore } from '@brain/lib/wordpress/store';
+import { isShopifyNotConnectedSkip } from '@brain/lib/shopify/not-connected';
 import * as Sentry from "@sentry/nextjs";
 
 export const seoJob = inngest.createFunction(
@@ -574,6 +575,28 @@ export const seoJob = inngest.createFunction(
         // If publish itself threw before creating the resource, we will fail below
         console.error('[PUBLISH] hard failure', pubErr);
         result = { error: pubErr?.message || String(pubErr) };
+      }
+
+      if (isShopifyNotConnectedSkip(result)) {
+        await step.invoke('update-job-skipped', {
+          function: updateJobStatusFn,
+          data: {
+            jobId: job.id,
+            status: 'skipped',
+            output: { skipped: result.skipped, message: result.message },
+          },
+        });
+        await step.invoke('log-publish-skipped', {
+          function: logEventFn,
+          data: {
+            storeId,
+            actor: 'system',
+            action: 'publish.skipped',
+            payload: { skipped: result.skipped, message: result.message },
+            jobId: job.id,
+          },
+        });
+        return { status: 'skipped', skipped: result.skipped, message: result.message };
       }
 
       if (type === 'collection' && result) {
