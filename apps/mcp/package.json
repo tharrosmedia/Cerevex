@@ -1,0 +1,24 @@
+{
+  "name": "@cerevex/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cerevex MCP connector. Streamable HTTP skeleton. No database client.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cerevex/contracts": "*",
+    "@hono/node-server": "^1.19.4",
+    "hono": "^4.9.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

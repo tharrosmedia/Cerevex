@@ -15,6 +15,7 @@ jobs:
     outputs:
       brain: ${{ steps.filter.outputs.brain }}
       ads: ${{ steps.filter.outputs.ads }}
+      mcp: ${{ steps.filter.outputs.mcp }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -38,6 +39,11 @@ jobs:
               - 'jobs/google/**'
               - 'packages/contracts/**'
               - 'packages/skills/**'
+            mcp:
+              - 'apps/mcp/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
 
   brain:
     name: apps/brain + jobs/seo
@@ -213,6 +219,29 @@ jobs:
       - name: Skip (no apps/ads / paid-job changes)
         if: needs.changes.outputs.ads != 'true'
         run: echo "Skipped — no apps/ads or paid-job changes. Brain + jobs/seo stay independently green."
+
+  mcp:
+    name: apps/mcp
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.mcp == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        if: needs.changes.outputs.mcp == 'true'
+        run: npm ci
+      - name: Typecheck and test MCP
+        if: needs.changes.outputs.mcp == 'true'
+        run: |
+          npm run typecheck --workspace=@cerevex/mcp
+          npm run test --workspace=@cerevex/mcp
+      - name: Skip (no MCP changes)
+        if: needs.changes.outputs.mcp != 'true'
+        run: echo "Skipped — no apps/mcp changes."
 
   ads-web:
     name: apps/ads web build
