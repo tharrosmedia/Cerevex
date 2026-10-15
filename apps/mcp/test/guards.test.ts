@@ -16,6 +16,7 @@ const entry: SecurityAuditEntry = {
   identityId: null,
   identityName: null,
   authType: "unauthenticated",
+  count: 1,
 };
 
 const KEY = "test-internal-key-value";
@@ -45,10 +46,10 @@ describe("ads API guard client", () => {
       return response(200, { killSwitch: false });
     };
     for (const client of [
-      createHttpGuardClient({ apiUrl: undefined, internalKey: KEY, fetchImpl }),
-      createHttpGuardClient({ apiUrl: "http://127.0.0.1:43180", internalKey: undefined, fetchImpl }),
-      createHttpGuardClient({ apiUrl: "http://127.0.0.1:43180", internalKey: ` ${KEY}`, fetchImpl }),
-      createHttpGuardClient({ apiUrl: "http://user:pass@127.0.0.1", internalKey: KEY, fetchImpl }),
+      createHttpGuardClient({ apiUrl: undefined, mcpKey: KEY, fetchImpl }),
+      createHttpGuardClient({ apiUrl: "http://127.0.0.1:43180", mcpKey: undefined, fetchImpl }),
+      createHttpGuardClient({ apiUrl: "http://127.0.0.1:43180", mcpKey: ` ${KEY}`, fetchImpl }),
+      createHttpGuardClient({ apiUrl: "http://user:pass@127.0.0.1", mcpKey: KEY, fetchImpl }),
     ]) {
       expect(await client.readKillSwitch()).toBe("unreachable");
     }
@@ -61,19 +62,20 @@ describe("ads API guard client", () => {
       seen.push({ url: String(url), init: init ?? {} });
       return response(200, { killSwitch: false, applyKillSwitch: true });
     };
-    const client = createHttpGuardClient({ apiUrl: "http://127.0.0.1:43180", internalKey: KEY, fetchImpl });
+    const client = createHttpGuardClient({ apiUrl: "http://127.0.0.1:43180", mcpKey: KEY, fetchImpl });
     expect(await client.readKillSwitch()).toBe("clear");
     expect(seen[0]?.url).toBe("http://127.0.0.1:43180/internal/mcp/connector");
     expect(seen[0]?.url).not.toContain(KEY);
     const headers = new Headers(seen[0]?.init.headers);
-    expect(headers.get("x-cerevex-internal-key")).toBe(KEY);
+    expect(headers.get("x-cerevex-mcp-key")).toBe(KEY);
+    expect(headers.get("x-cerevex-internal-key")).toBeNull();
     expect(seen[0]?.init.redirect).toBe("manual");
 
     const badBodies = [{ killSwitch: "false" }, { applyKillSwitch: false }, {}, null];
     for (const body of badBodies) {
       const next = createHttpGuardClient({
         apiUrl: "http://127.0.0.1:43180",
-        internalKey: KEY,
+        mcpKey: KEY,
         fetchImpl: async () => response(200, body),
       });
       expect(await next.readKillSwitch()).toBe("unreachable");
@@ -84,7 +86,7 @@ describe("ads API guard client", () => {
     let calls = 0;
     const redirecting = createHttpGuardClient({
       apiUrl: "https://ads.example",
-      internalKey: KEY,
+      mcpKey: KEY,
       fetchImpl: async () => {
         calls += 1;
         return new Response(null, { status: 302, headers: { location: "https://evil.example/steal" } });
@@ -95,7 +97,7 @@ describe("ads API guard client", () => {
 
     const failing = createHttpGuardClient({
       apiUrl: "https://ads.example",
-      internalKey: KEY,
+      mcpKey: KEY,
       fetchImpl: async () => response(500, `super-secret-from-api ${KEY}`),
     });
     await expect(failing.writeSecurityAudit(entry)).rejects.toThrow("mcp guard request failed");
@@ -107,7 +109,7 @@ describe("ads API guard client", () => {
     let url = "";
     const client = createHttpGuardClient({
       apiUrl: "http://127.0.0.1:43180",
-      internalKey: KEY,
+      mcpKey: KEY,
       fetchImpl: async (input, init) => {
         url = String(input);
         sent = String(init?.body ?? "");

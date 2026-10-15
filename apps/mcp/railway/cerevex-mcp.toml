@@ -14,7 +14,7 @@
 #   MCP_ALLOWED_ORIGINS
 #   MCP_CONNECTOR_KILL_SWITCH
 #   ADS_API_URL
-#   ADS_INTERNAL_KEY
+#   MCP_SERVICE_KEY       (header x-cerevex-mcp-key; not ADS_INTERNAL_KEY)
 
 [build]
 builder = "RAILPACK"

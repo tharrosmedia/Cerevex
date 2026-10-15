@@ -6,8 +6,8 @@ import { isProductionRuntime } from "@cerevex/contracts";
  */
 export function assertMcpRuntimeConfigured(env: Record<string, string | undefined>): void {
   if (!isProductionRuntime(env)) return;
-  if (!env.ADS_API_URL?.trim() || !env.ADS_INTERNAL_KEY?.trim()) {
-    throw new Error("ADS_API_URL and ADS_INTERNAL_KEY are required");
+  if (!env.ADS_API_URL?.trim() || !env.MCP_SERVICE_KEY?.trim()) {
+    throw new Error("ADS_API_URL and MCP_SERVICE_KEY are required");
   }
 }
 

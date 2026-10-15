@@ -354,6 +354,9 @@ export {
   parseWordpressExternalCatalogId,
   siteCmsPlainError,
 } from "./site-cms";
+export { MCP_SCOPES, isMcpScope } from "./mcp";
+export type { McpScope } from "./mcp";
+
 export type {
   StoreConnectorType,
   SiteCmsResourceType,

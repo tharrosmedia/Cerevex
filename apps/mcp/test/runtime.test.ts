@@ -8,17 +8,20 @@ describe("mcp runtime config", () => {
   });
 
   it("refuses a production boot when the ads API façade is missing", () => {
-    const production = { NODE_ENV: "production", ADS_API_URL: "https://ads.example", ADS_INTERNAL_KEY: "key" };
+    const production = { NODE_ENV: "production", ADS_API_URL: "https://ads.example", MCP_SERVICE_KEY: "key" };
     expect(() => assertMcpRuntimeConfigured(production)).not.toThrow();
     expect(() => assertMcpRuntimeConfigured({ NODE_ENV: "production" })).toThrow(
-      /ADS_API_URL and ADS_INTERNAL_KEY are required/,
+      /ADS_API_URL and MCP_SERVICE_KEY are required/,
     );
     expect(() =>
       assertMcpRuntimeConfigured({ RAILWAY_ENVIRONMENT_NAME: "staging", ADS_API_URL: "https://ads.example" }),
-    ).toThrow(/ADS_API_URL and ADS_INTERNAL_KEY are required/);
+    ).toThrow(/ADS_API_URL and MCP_SERVICE_KEY are required/);
     expect(() =>
-      assertMcpRuntimeConfigured({ NODE_ENV: "production", ADS_INTERNAL_KEY: "do-not-print-this-key" }),
-    ).toThrow(/ADS_API_URL and ADS_INTERNAL_KEY are required/);
+      assertMcpRuntimeConfigured({ NODE_ENV: "production", MCP_SERVICE_KEY: "do-not-print-this-key" }),
+    ).toThrow(/ADS_API_URL and MCP_SERVICE_KEY are required/);
+    expect(() =>
+      assertMcpRuntimeConfigured({ NODE_ENV: "production", ADS_API_URL: "https://ads.example", ADS_INTERNAL_KEY: "key" }),
+    ).toThrow(/ADS_API_URL and MCP_SERVICE_KEY are required/);
   });
 
   it("parses a listen port and rejects junk", () => {

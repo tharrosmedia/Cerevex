@@ -6,7 +6,9 @@ import { connectorKillSwitchTripped, MCP_CONNECTOR_KILL_SWITCH_KEY } from "../sr
 import { app, json, login } from "./helpers";
 
 const INTERNAL_KEY = "test-internal-service-key";
+const MCP_KEY = "test-mcp-service-key";
 const ORIGINAL_KEY = process.env.ADS_INTERNAL_KEY;
+const ORIGINAL_MCP_KEY = process.env.MCP_SERVICE_KEY;
 const ORIGINAL_WORKSPACE = process.env.ADS_INTERNAL_WORKSPACE_ID;
 
 const auditBody = {
@@ -23,6 +25,7 @@ const auditBody = {
   identityId: null,
   identityName: null,
   authType: "unauthenticated",
+  count: 1,
 };
 
 describe("mcp connector façade", () => {
@@ -32,6 +35,7 @@ describe("mcp connector façade", () => {
 
   beforeAll(async () => {
     process.env.ADS_INTERNAL_KEY = INTERNAL_KEY;
+    process.env.MCP_SERVICE_KEY = MCP_KEY;
     ownerToken = (
       await login(
         process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com",
@@ -54,14 +58,16 @@ describe("mcp connector façade", () => {
     }
     if (ORIGINAL_KEY === undefined) delete process.env.ADS_INTERNAL_KEY;
     else process.env.ADS_INTERNAL_KEY = ORIGINAL_KEY;
+    if (ORIGINAL_MCP_KEY === undefined) delete process.env.MCP_SERVICE_KEY;
+    else process.env.MCP_SERVICE_KEY = ORIGINAL_MCP_KEY;
     if (ORIGINAL_WORKSPACE === undefined) delete process.env.ADS_INTERNAL_WORKSPACE_ID;
     else process.env.ADS_INTERNAL_WORKSPACE_ID = ORIGINAL_WORKSPACE;
     await closeDb();
   });
 
-  function internalHeaders(jsonBody = false): Record<string, string> {
+  function mcpHeaders(jsonBody = false): Record<string, string> {
     return {
-      "x-cerevex-internal-key": INTERNAL_KEY,
+      "x-cerevex-mcp-key": MCP_KEY,
       ...(jsonBody ? { "content-type": "application/json" } : {}),
     };
   }
@@ -82,25 +88,31 @@ describe("mcp connector façade", () => {
     expect(connectorKillSwitchTripped({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: false })).toBe(false);
   });
 
-  it("requires the service key and does not accept it from the query string", async () => {
+  it("requires the MCP service key and does not accept the Brain service key or a query string", async () => {
     const missing = await app.request("/internal/mcp/connector");
     expect(missing.status).toBe(401);
+    const brain = await app.request("/internal/mcp/connector", {
+      headers: { "x-cerevex-internal-key": INTERNAL_KEY },
+    });
+    expect(brain.status).toBe(401);
     const wrong = await app.request("/internal/mcp/connector", {
-      headers: { "x-cerevex-internal-key": "wrong-internal-key" },
+      headers: { "x-cerevex-mcp-key": "wrong-mcp-key" },
     });
     expect(wrong.status).toBe(401);
-    const query = await app.request(`/internal/mcp/connector?x-cerevex-internal-key=${INTERNAL_KEY}`);
+    const query = await app.request(`/internal/mcp/connector?x-cerevex-mcp-key=${MCP_KEY}`);
     expect(query.status).toBe(401);
     const owner = await app.request("/internal/mcp/connector", {
       headers: { authorization: `Bearer ${ownerToken}` },
     });
-    expect(owner.status).toBe(403);
+    expect(owner.status).toBe(401);
+    const clients = await app.request("/clients", { headers: mcpHeaders() });
+    expect(clients.status).toBe(401);
   });
 
   it("reports the workspace flag and not the ads apply column", async () => {
     await getDb().update(workspaces).set({ applyKillSwitch: false }).where(eq(workspaces.id, workspaceId));
     await setSettings({ ...(originalSettings as Record<string, unknown>) });
-    const tripped = await app.request("/internal/mcp/connector", { headers: internalHeaders() });
+    const tripped = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
     expect(tripped.status).toBe(200);
     expect(await json(tripped)).toEqual({ killSwitch: true });
 
@@ -108,14 +120,14 @@ describe("mcp connector façade", () => {
       ...(originalSettings as Record<string, unknown>),
       [MCP_CONNECTOR_KILL_SWITCH_KEY]: "false",
     });
-    const stillTripped = await app.request("/internal/mcp/connector", { headers: internalHeaders() });
+    const stillTripped = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
     expect(await json(stillTripped)).toEqual({ killSwitch: true });
 
     await setSettings({
       ...(originalSettings as Record<string, unknown>),
       [MCP_CONNECTOR_KILL_SWITCH_KEY]: false,
     });
-    const clear = await app.request("/internal/mcp/connector", { headers: internalHeaders() });
+    const clear = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
     expect(await json(clear)).toEqual({ killSwitch: false });
     await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
   });
@@ -127,7 +139,7 @@ describe("mcp connector façade", () => {
       .where(eq(clientAuditLog.workspaceId, workspaceId));
     const posted = await app.request("/internal/mcp/security-audit", {
       method: "POST",
-      headers: internalHeaders(true),
+      headers: mcpHeaders(true),
       body: JSON.stringify(auditBody),
     });
     expect(posted.status).toBe(200);
@@ -138,7 +150,7 @@ describe("mcp connector façade", () => {
       .from(auditLog)
       .where(and(eq(auditLog.workspaceId, workspaceId), eq(auditLog.action, "mcp.call")));
     const row = rows.find((item) => (item.payloadJson as { requestId?: string }).requestId === auditBody.requestId);
-    expect(row?.actorType).toBe("service");
+    expect(row?.actorType).toBe("mcp");
     expect(row?.actorId).toBeNull();
     expect(row?.entityType).toBe("mcp_request");
     expect(row?.payloadJson).toEqual(auditBody);
@@ -154,12 +166,12 @@ describe("mcp connector façade", () => {
       headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
       body: JSON.stringify(auditBody),
     });
-    expect(owner.status).toBe(403);
+    expect(owner.status).toBe(401);
 
     const planted = "do-not-store-this-token";
     const extra = await app.request("/internal/mcp/security-audit", {
       method: "POST",
-      headers: internalHeaders(true),
+      headers: mcpHeaders(true),
       body: JSON.stringify({ ...auditBody, authorization: planted, requestId: "33333333-3333-4333-8333-333333333333" }),
     });
     expect(extra.status).toBe(400);

@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { loadEnv } from "@tharros/ads-shared/env";
 import { warnIfGoogleNotConfigured } from "@tharros/ads-shared/worker-health";
 import { assertServiceWorkspaceConfigured } from "./auth";
+import { assertMcpPrincipalConfigured } from "./mcp-principal";
 import { assertJwtSecretConfigured, warnIfJwtSecretUnset } from "./jwt-secret";
 import { createApp, VERSION } from "./app";
 import { logger } from "./logger";
@@ -17,6 +18,7 @@ warnIfJwtSecretUnset((message) => logger.warn({ msg: message }));
 
 try {
   assertServiceWorkspaceConfigured();
+  assertMcpPrincipalConfigured();
 } catch (error) {
   logger.error({
     msg: "api.boot_refused",
