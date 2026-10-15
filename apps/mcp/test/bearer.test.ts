@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { KILL_SWITCH_CACHE_MS } from "../src/app";
 import { createBearerAuthenticator } from "../src/auth";
 import { AUDIT_BUCKET_METHODS } from "../src/audit-buffer";
-import { clientIpFromHeaders, createDeniedIpLimiter } from "../src/limiter";
+import { clientIpFromHeaders, createDeniedIpLimiter, createTokenBucket } from "../src/limiter";
 import { buildSecurityAuditEntry } from "../src/audit";
 import { MAX_MCP_BODY_BYTES, readLimitedText } from "../src/body";
 import { createHttpGuardClient } from "../src/guards";
@@ -634,6 +634,194 @@ describe("audit tool filter", () => {
     expect(res.status).toBe(401);
     expect(guard.calls.audits[0]?.tool).toBeNull();
     expect(JSON.stringify(guard.calls.audits[0])).not.toContain("bad name");
+  });
+});
+
+describe("global denial bucket, each layer alone", () => {
+  const token = `cxm_${"a".repeat(43)}`;
+
+  it("blocks at the top check once the bucket is empty, before another kill-switch read", async () => {
+    let lookups = 0;
+    const { app, guard } = testApp({
+      deniedPerIp: 100,
+      globalDenialCapacity: 1,
+      globalDenialRefillPerSecond: 0,
+      authenticator: createBearerAuthenticator(async () => {
+        lookups += 1;
+        return null;
+      }),
+    });
+    const denied = await app.request(
+      "/mcp",
+      request2026({ authorization: `Bearer ${token}`, extraHeaders: { "x-real-ip": "203.0.113.60" } }),
+    );
+    expect(denied.status).toBe(401);
+    expect(lookups).toBe(1);
+    expect(guard.calls.kill).toBe(1);
+    const follow = await app.request("/mcp", {
+      method: "GET",
+      headers: { origin: ALLOWED_ORIGIN, "x-real-ip": "203.0.113.61" },
+    });
+    expect(follow.status).toBe(429);
+    expect(Number(follow.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    expect(lookups).toBe(1);
+    expect(guard.calls.kill).toBe(1);
+  });
+
+  it("does not look up a token when the lookup take fails", async () => {
+    let lookups = 0;
+    let entered = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { app } = testApp({
+      deniedPerIp: 100,
+      globalDenialCapacity: 1,
+      globalDenialRefillPerSecond: 0,
+      guards: {
+        async readKillSwitch() {
+          entered += 1;
+          if (entered === 3) release();
+          await gate;
+          return "clear";
+        },
+        async writeSecurityAudit() {},
+        async verifyToken() {
+          return null;
+        },
+      },
+      authenticator: createBearerAuthenticator(async () => {
+        lookups += 1;
+        return null;
+      }),
+    });
+    const responses = await Promise.all(
+      [1, 2, 3].map((index) =>
+        app.request(
+          "/mcp",
+          request2026({
+            authorization: `Bearer ${token}`,
+            extraHeaders: { "x-real-ip": `203.0.113.${70 + index}` },
+          }),
+        ),
+      ),
+    );
+    const statuses = (await Promise.all(responses.map(async (res) => res.status))).sort((a, b) => a - b);
+    expect(statuses).toEqual([401, 429, 429]);
+    expect(lookups).toBe(1);
+  });
+
+  it("does not refund a failed lookup, and does refund a successful one", async () => {
+    let lookups = 0;
+    const failing = testApp({
+      deniedPerIp: 100,
+      globalDenialCapacity: 1,
+      globalDenialRefillPerSecond: 0,
+      authenticator: createBearerAuthenticator(async () => {
+        lookups += 1;
+        return null;
+      }),
+    });
+    const first = await failing.app.request(
+      "/mcp",
+      request2026({ authorization: `Bearer ${token}`, extraHeaders: { "x-real-ip": "203.0.113.80" } }),
+    );
+    const second = await failing.app.request(
+      "/mcp",
+      request2026({ authorization: `Bearer ${token}`, extraHeaders: { "x-real-ip": "203.0.113.81" } }),
+    );
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
+    expect(lookups).toBe(1);
+
+    let accepted = 0;
+    const succeeding = testApp({
+      deniedPerIp: 100,
+      globalDenialCapacity: 1,
+      globalDenialRefillPerSecond: 0,
+      authenticator: createBearerAuthenticator(async () => {
+        accepted += 1;
+        return { id: IDENTITY_ID, name: "example-agent", scopes: ["cerevex.read"] };
+      }),
+    });
+    const ok = await succeeding.app.request(
+      "/mcp",
+      request2026({ method: "tools/call", name: "ping", authorization: `Bearer ${token}` }),
+    );
+    const again = await succeeding.app.request(
+      "/mcp",
+      request2026({ method: "tools/call", name: "ping", authorization: `Bearer ${token}` }),
+    );
+    expect(ok.status).toBe(200);
+    expect(again.status).toBe(200);
+    expect(accepted).toBe(2);
+  });
+
+  it("consumes a token in the denial path, with no bearer lookup", async () => {
+    let kills = 0;
+    const { app } = testApp({
+      deniedPerIp: 100,
+      globalDenialCapacity: 1,
+      globalDenialRefillPerSecond: 0,
+      guards: {
+        async readKillSwitch() {
+          kills += 1;
+          return "clear";
+        },
+        async writeSecurityAudit() {},
+        async verifyToken() {
+          return null;
+        },
+      },
+    });
+    const headers = { origin: ALLOWED_ORIGIN, "x-real-ip": "203.0.113.90" };
+    const first = await app.request("/mcp", { method: "GET", headers });
+    const second = await app.request("/mcp", { method: "GET", headers });
+    expect(first.status).toBe(405);
+    expect(second.status).toBe(429);
+    expect(Number(second.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    expect(kills).toBe(1);
+  });
+
+  it("refills one token per second and does not grow past capacity", () => {
+    let now = 0;
+    const refill = createTokenBucket({ capacity: 100, refillPerSecond: 1, now: () => now });
+    for (let index = 0; index < 100; index += 1) expect(refill.take()).toBe(true);
+    expect(refill.take()).toBe(false);
+    now += 1_000;
+    expect(refill.take()).toBe(true);
+    expect(refill.take()).toBe(false);
+
+    now = 0;
+    const capped = createTokenBucket({ capacity: 2, refillPerSecond: 5, now: () => now });
+    expect(capped.take()).toBe(true);
+    expect(capped.take()).toBe(true);
+    expect(capped.take()).toBe(false);
+    now += 10_000;
+    expect(capped.take()).toBe(true);
+    expect(capped.take()).toBe(true);
+    expect(capped.take()).toBe(false);
+  });
+
+  it("does not report retry-after 0 when the bucket is empty", () => {
+    const clock = () => 0;
+    const bucket = createTokenBucket({ capacity: 1, refillPerSecond: 1, now: clock });
+    expect(bucket.take()).toBe(true);
+    expect(bucket.retryAfterSeconds()).toBeGreaterThanOrEqual(1);
+    const stuck = createTokenBucket({ capacity: 1, refillPerSecond: 0, now: clock });
+    expect(stuck.take()).toBe(true);
+    expect(stuck.retryAfterSeconds()).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rejects an IPv6 zone id instead of using that prefix", () => {
+    const zoned = clientIpFromHeaders(new Headers({ "x-real-ip": "fe80::1%eth0" }));
+    const plain = clientIpFromHeaders(new Headers({ "x-real-ip": "fe80::1" }));
+    expect(zoned).toBe("unknown");
+    expect(plain).toBe("fe80:0:0:0::/64");
+    expect(zoned).not.toBe(plain);
+    expect(clientIpFromHeaders(new Headers({ "x-real-ip": "fe80::1%eth0" }), "192.0.2.9")).toBe("192.0.2.9");
+    expect(clientIpFromHeaders(new Headers({ "x-forwarded-for": "1.1.1.1, fe80::1%eth0" }))).toBe("unknown");
   });
 });
 
