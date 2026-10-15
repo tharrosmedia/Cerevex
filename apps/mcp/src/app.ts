@@ -116,7 +116,8 @@ export function createApp(deps: McpAppDeps) {
       headers?: Record<string, string>;
       recordIp?: boolean;
     }) => {
-      if (input.recordIp !== false && (input.status === 401 || input.status === 403)) limiter.record(ip);
+      const unauthenticatedOrDenied = !input.identity || input.status === 401 || input.status === 403;
+      if (input.recordIp !== false && unauthenticatedOrDenied && input.status !== 429) limiter.record(ip);
       await writeAudit({
         requestId,
         started,
@@ -185,7 +186,6 @@ export function createApp(deps: McpAppDeps) {
         id: null,
         reason: "method",
         result: "error",
-        recordIp: false,
         error: { code: JSON_RPC_CLOSED, message: "Method not allowed" },
         headers: { allow: "POST" },
       });
@@ -197,7 +197,6 @@ export function createApp(deps: McpAppDeps) {
         id: null,
         reason: "protocol",
         result: "error",
-        recordIp: false,
         error: { code: JSON_RPC_INVALID_REQUEST, message: "Invalid request" },
       });
     }
@@ -217,7 +216,6 @@ export function createApp(deps: McpAppDeps) {
         id: null,
         reason: "protocol",
         result: "error",
-        recordIp: false,
         error: { code: JSON_RPC_INVALID_REQUEST, message: "Invalid request" },
       });
     }
@@ -235,7 +233,6 @@ export function createApp(deps: McpAppDeps) {
           id: parsed.failure.id,
           reason: "headers",
           result: "error",
-          recordIp: false,
           protocolVersion: parsed.failure.requested === "invalid" ? null : parsed.failure.requested,
           error: {
             code: JSON_RPC_UNSUPPORTED_PROTOCOL,
@@ -253,7 +250,6 @@ export function createApp(deps: McpAppDeps) {
           id: parsed.failure.id,
           reason: "headers",
           result: "error",
-          recordIp: false,
           error: {
             code: JSON_RPC_HEADER_MISMATCH,
             message: `Header mismatch: ${parsed.failure.header}`,
@@ -265,7 +261,6 @@ export function createApp(deps: McpAppDeps) {
         id: parsed.failure.id,
         reason: "protocol",
         result: "error",
-        recordIp: false,
         error: { code: JSON_RPC_INVALID_REQUEST, message: "Invalid request" },
       });
     }
@@ -364,7 +359,8 @@ export function createApp(deps: McpAppDeps) {
       reason: input.reason,
       identity: input.identity,
     });
-    if (!input.immediate && (input.result === "denied" || input.result === "rate_limited")) {
+    const unauthenticatedOrDenied = !input.identity || input.result === "denied" || input.result === "rate_limited";
+    if (!input.immediate && unauthenticatedOrDenied) {
       deniedAudits.add(entry);
       return true;
     }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { KILL_SWITCH_CACHE_MS } from "../src/app";
 import { createBearerAuthenticator } from "../src/auth";
+import { clientIpFromHeaders, createDeniedIpLimiter } from "../src/limiter";
 import { buildSecurityAuditEntry } from "../src/audit";
 import { MAX_MCP_BODY_BYTES, readLimitedText } from "../src/body";
 import { createHttpGuardClient } from "../src/guards";
@@ -155,6 +156,52 @@ describe("scoped bearer", () => {
     expect(seen).toEqual([JSON.stringify({ tokenHash: hashMcpToken(readToken) })]);
     expect(seen[0]).not.toContain(readToken);
   });
+
+  it("treats a thrown token check as a denial", async () => {
+    const token = `cxm_${"b".repeat(43)}`;
+    const authenticator = createBearerAuthenticator(async () => {
+      throw new Error("verify down");
+    });
+    expect(await authenticator(`Bearer ${token}`)).toEqual({ ok: false });
+    const { app } = testApp({ authenticator });
+    const res = await app.request("/mcp", request2026({ method: "tools/call", name: "ping", authorization: `Bearer ${token}` }));
+    const text = await res.text();
+    expect(res.status).toBe(401);
+    expect(text).not.toContain("pong");
+    expect(text).not.toContain("verify down");
+  });
+
+  it("rejects a token that is not 43 characters and does not ask the verifier", async () => {
+    let calls = 0;
+    const authenticator = createBearerAuthenticator(async () => {
+      calls += 1;
+      return { id: IDENTITY_ID, name: "example-agent", scopes: ["cerevex.read"] };
+    });
+    for (const token of [`cxm_${"a".repeat(42)}`, `cxm_${"a".repeat(44)}`, "cxm_short"]) {
+      expect(await authenticator(`Bearer ${token}`)).toEqual({ ok: false });
+    }
+    expect(calls).toBe(0);
+    expect((await authenticator(`Bearer cxm_${"a".repeat(43)}`)).ok).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  it("rejects an identity that verified with no scopes", async () => {
+    const authenticator = createBearerAuthenticator(async () => ({
+      id: IDENTITY_ID,
+      name: "example-agent",
+      scopes: [],
+    }));
+    expect(await authenticator(`Bearer cxm_${"c".repeat(43)}`)).toEqual({ ok: false });
+    const { app } = testApp({
+      authenticator: () => ({
+        ok: true,
+        identity: { id: IDENTITY_ID, name: "example-agent", scopes: [] },
+      }),
+    });
+    const res = await app.request("/mcp", request2026({ method: "tools/call", name: "ping", authorization: `Bearer cxm_${"c".repeat(43)}` }));
+    expect(res.status).toBe(401);
+    expect(await res.text()).not.toContain("pong");
+  });
 });
 
 describe("denied-request holds", () => {
@@ -193,6 +240,124 @@ describe("denied-request holds", () => {
     clock += KILL_SWITCH_CACHE_MS;
     await app.request("/mcp", request2026({ extraHeaders: { "x-forwarded-for": "203.0.113.9" } }));
     expect(guard.calls.kill).toBe(2);
+  });
+
+  it("limits and aggregates GET, bad JSON, and bad protocol before auth", async () => {
+    const auditControl = { flush: async () => {} };
+    const { app, guard } = testApp({ deniedPerIp: 2, deniedFlushMs: 60_000, auditControl });
+    const headers = { origin: ALLOWED_ORIGIN, "x-real-ip": "203.0.113.20" };
+    const statuses: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const res = await app.request("/mcp", { method: "GET", headers });
+      statuses.push(res.status);
+    }
+    expect(statuses).toEqual([405, 405, 429]);
+    for (let index = 0; index < 3; index += 1) {
+      const res = await app.request("/mcp", {
+        method: "POST",
+        headers: { ...headers, "x-real-ip": "203.0.113.21", "content-type": "application/json" },
+        body: "not-json",
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses.slice(3)).toEqual([400, 400, 429]);
+    for (let index = 0; index < 3; index += 1) {
+      const res = await app.request("/mcp", {
+        method: "POST",
+        headers: { ...headers, "x-real-ip": "203.0.113.22", "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "nope" }),
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses.slice(6)).toEqual([400, 400, 429]);
+    expect(guard.calls.audits).toHaveLength(0);
+    await auditControl.flush();
+    expect(guard.calls.audits.length).toBeLessThan(9);
+    expect(guard.calls.audits.reduce((sum, entry) => sum + entry.count, 0)).toBe(9);
+    expect(guard.calls.audits.every((entry) => entry.tool === null)).toBe(true);
+  });
+
+  it("does not let a rotating X-Forwarded-For bypass the limiter", async () => {
+    const { app } = testApp({ deniedPerIp: 2 });
+    const real = "203.0.113.77";
+    const viaReal: number[] = [];
+    for (let index = 1; index <= 3; index += 1) {
+      const res = await app.request(
+        "/mcp",
+        request2026({
+          extraHeaders: { "x-real-ip": real, "x-forwarded-for": `${index}.1.1.1, 198.51.100.9` },
+        }),
+      );
+      viaReal.push(res.status);
+    }
+    expect(viaReal).toEqual([401, 401, 429]);
+
+    const viaRightHop: number[] = [];
+    for (let index = 1; index <= 3; index += 1) {
+      const res = await app.request(
+        "/mcp",
+        request2026({
+          extraHeaders: { "x-forwarded-for": `${index}.2.2.2, 203.0.113.88` },
+        }),
+      );
+      viaRightHop.push(res.status);
+    }
+    expect(viaRightHop).toEqual([401, 401, 429]);
+    expect(clientIpFromHeaders(new Headers({ "x-real-ip": real, "x-forwarded-for": "1.1.1.1, 9.9.9.9" }))).toBe(real);
+    expect(clientIpFromHeaders(new Headers({ "x-forwarded-for": "1.1.1.1, 203.0.113.88" }))).toBe("203.0.113.88");
+  });
+
+  it("collapses distinct unauthenticated tool names into one audit bucket", async () => {
+    const auditControl = { flush: async () => {} };
+    const { app, guard } = testApp({ deniedPerIp: 10, deniedFlushMs: 60_000, auditControl });
+    for (const name of ["alpha", "beta", "gamma"]) {
+      const res = await app.request(
+        "/mcp",
+        request2026({
+          method: "tools/call",
+          name,
+          extraHeaders: { "x-real-ip": "203.0.113.30" },
+        }),
+      );
+      expect(res.status).toBe(401);
+    }
+    expect(guard.calls.audits).toHaveLength(0);
+    await auditControl.flush();
+    expect(guard.calls.audits).toHaveLength(1);
+    expect(guard.calls.audits[0]).toMatchObject({ method: "tools/call", tool: null, count: 3 });
+  });
+
+  it("does not cache a failed kill-switch read as clear", async () => {
+    let calls = 0;
+    const { app } = testApp({
+      killSwitchTtlMs: 5_000,
+      now: () => 1_000,
+      guards: {
+        async readKillSwitch() {
+          calls += 1;
+          throw new Error("ads down");
+        },
+        async writeSecurityAudit() {},
+        async verifyToken() {
+          return null;
+        },
+      },
+    });
+    expect((await app.request("/mcp", request2026())).status).toBe(403);
+    expect((await app.request("/mcp", request2026())).status).toBe(403);
+    expect(calls).toBe(2);
+  });
+
+  it("does not evict a blocked address to make room for a new one", () => {
+    const limiter = createDeniedIpLimiter({ limit: 2, windowMs: 60_000, maxIps: 2, now: () => 5_000 });
+    limiter.record("203.0.113.1");
+    limiter.record("203.0.113.1");
+    limiter.record("203.0.113.2");
+    limiter.record("203.0.113.2");
+    limiter.record("203.0.113.3");
+    expect(limiter.retryAfterSeconds("203.0.113.1")).not.toBeNull();
+    expect(limiter.retryAfterSeconds("203.0.113.2")).not.toBeNull();
+    expect(limiter.retryAfterSeconds("203.0.113.3")).toBeNull();
   });
 
   it("does not count a successful call toward the denied limiter", async () => {

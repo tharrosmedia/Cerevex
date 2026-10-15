@@ -287,12 +287,28 @@ describe("mcp identity admin", () => {
       });
       expect(bogus.status).toBe(400);
 
+      const before = await getDb()
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(and(eq(auditLog.workspaceId, workspaceId), eq(auditLog.action, "mcp.connector.kill_switch")));
       const cleared = await app.request("/mcp/connector", {
         method: "PUT",
         headers: owner(true),
         body: JSON.stringify({ killSwitch: false }),
       });
       expect(await json(cleared)).toEqual({ killSwitch: false });
+      const written = await getDb()
+        .select()
+        .from(auditLog)
+        .where(and(eq(auditLog.workspaceId, workspaceId), eq(auditLog.action, "mcp.connector.kill_switch")));
+      const added = written.filter((row) => !before.some((prior) => prior.id === row.id));
+      expect(added).toHaveLength(1);
+      expect(added[0]).toMatchObject({
+        actorType: "user",
+        entityType: "mcp_connector",
+        entityId: null,
+        payloadJson: { killSwitch: false },
+      });
       const read = await app.request("/internal/mcp/connector", { headers: { "x-cerevex-mcp-key": MCP_KEY } });
       expect(await json(read)).toEqual({ killSwitch: false });
       const stored = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
@@ -317,6 +333,50 @@ describe("mcp identity admin", () => {
           .where(eq(workspaces.id, workspaceId));
       }
     }
+  });
+
+  it("does not verify a token that belongs to another workspace", async () => {
+    const token = `cxm_${"d".repeat(43)}`;
+    const [row] = await getDb()
+      .insert(mcpIdentities)
+      .values({
+        workspaceId: otherWorkspaceId,
+        name: "foreign-agent",
+        tokenHash: hashMcpToken(token),
+        scopes: ["cerevex.read"],
+      })
+      .returning({ id: mcpIdentities.id });
+    try {
+      const verified = await app.request("/internal/mcp/verify", {
+        method: "POST",
+        headers: { "x-cerevex-mcp-key": MCP_KEY, "content-type": "application/json" },
+        body: JSON.stringify({ tokenHash: hashMcpToken(token) }),
+      });
+      expect(await json(verified)).toEqual({ ok: false });
+    } finally {
+      if (row) await getDb().delete(mcpIdentities).where(eq(mcpIdentities.id, row.id));
+    }
+  });
+
+  it("refuses a grant of a client from another workspace", async () => {
+    const name = `grant-${Date.now().toString(36)}`.slice(0, 40);
+    const created = await app.request("/mcp/identities", {
+      method: "POST",
+      headers: owner(true),
+      body: JSON.stringify({ name, scopes: ["cerevex.read"], clientIds: [clientId] }),
+    });
+    expect(created.status).toBe(200);
+    const identity = (await json(created)).identity as { id: string };
+    const granted = await app.request(`/mcp/identities/${identity.id}/grants`, {
+      method: "PUT",
+      headers: owner(true),
+      body: JSON.stringify({ clientIds: [otherClientId] }),
+    });
+    expect(granted.status).toBe(400);
+    const listed = await app.request("/mcp/identities", { headers: owner() });
+    const body = (await json(listed)) as { identities: Array<{ id: string; clientIds: string[] }> };
+    expect(body.identities.find((row) => row.id === identity.id)?.clientIds).toEqual([clientId]);
+    await getDb().delete(mcpIdentities).where(eq(mcpIdentities.id, identity.id));
   });
 
   it("refuses the MCP routes when the MCP key is a copy of the Brain key", async () => {

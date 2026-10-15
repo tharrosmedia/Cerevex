@@ -104,6 +104,19 @@ describe("ads API guard client", () => {
     await expect(failing.writeSecurityAudit(entry)).rejects.toThrow(/^mcp guard request failed$/);
   });
 
+  it("treats ok:false from verify as no identity, even when a body is attached", async () => {
+    const client = createHttpGuardClient({
+      apiUrl: "http://127.0.0.1:43180",
+      mcpKey: KEY,
+      fetchImpl: async () =>
+        response(200, {
+          ok: false,
+          identity: { id: "11111111-1111-4111-8111-111111111111", name: "example-agent", scopes: ["cerevex.read"] },
+        }),
+    });
+    expect(await client.verifyToken("a".repeat(64))).toBeNull();
+  });
+
   it("posts the audit entry and nothing else", async () => {
     let sent = "";
     let url = "";

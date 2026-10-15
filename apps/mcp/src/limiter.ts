@@ -1,17 +1,22 @@
 const IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/;
 const IPV6 = /^[0-9a-f:.]{2,64}$/i;
 
+/**
+ * Railway's edge sets X-Real-IP to the client remote address
+ * (docs.railway.com public-networking specs). That value wins.
+ * X-Forwarded-For is only a fallback, and then only the rightmost hop,
+ * which a proxy appends. The left hops are client-controlled.
+ */
 export function clientIpFromHeaders(headers: Headers): string {
+  const real = normalizeIp(headers.get("x-real-ip")?.trim() ?? "");
+  if (real) return real;
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim() ?? "";
-    const ip = normalizeIp(first);
-    if (ip) return ip;
-  }
-  const real = headers.get("x-real-ip");
-  if (real) {
-    const ip = normalizeIp(real.trim());
-    if (ip) return ip;
+    const hops = forwarded.split(",").map((part) => part.trim()).filter(Boolean);
+    for (let index = hops.length - 1; index >= 0; index -= 1) {
+      const ip = normalizeIp(hops[index] ?? "");
+      if (ip) return ip;
+    }
   }
   return "unknown";
 }
@@ -39,6 +44,20 @@ export function createDeniedIpLimiter(options: { limit: number; windowMs: number
     return kept;
   }
 
+  function oldestUnblocked(): string | null {
+    let victim: string | null = null;
+    let expiry = Number.POSITIVE_INFINITY;
+    for (const [candidate, times] of hits) {
+      if (times.length >= options.limit) continue;
+      const candidateExpiry = (times[0] ?? 0) + options.windowMs;
+      if (candidateExpiry < expiry) {
+        victim = candidate;
+        expiry = candidateExpiry;
+      }
+    }
+    return victim;
+  }
+
   return {
     retryAfterSeconds(ip: string): number | null {
       const kept = prune(ip);
@@ -48,11 +67,17 @@ export function createDeniedIpLimiter(options: { limit: number; windowMs: number
     },
     record(ip: string) {
       const kept = prune(ip);
+      const alreadyTracked = hits.has(ip);
       kept.push(now());
       hits.set(ip, kept);
-      if (hits.size > maxIps) {
-        const oldestIp = hits.keys().next().value;
-        if (oldestIp) hits.delete(oldestIp);
+      while (hits.size > maxIps) {
+        const victim = oldestUnblocked();
+        if (victim) {
+          hits.delete(victim);
+          continue;
+        }
+        if (!alreadyTracked && kept.length < options.limit) hits.delete(ip);
+        break;
       }
     },
   };
