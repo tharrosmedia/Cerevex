@@ -45,6 +45,11 @@ export function testApp(
     globalBearerCapacity: overrides.globalBearerCapacity,
     globalBearerRefillPerSecond: overrides.globalBearerRefillPerSecond,
     failedLookupPerIp: overrides.failedLookupPerIp,
+    identityCallsPerMinute: overrides.identityCallsPerMinute,
+    identitySubmitsPerMinute: overrides.identitySubmitsPerMinute,
+    identityWindowMs: overrides.identityWindowMs,
+    protectedFirstVerifyPerIp: overrides.protectedFirstVerifyPerIp,
+    protectedFirstVerifyPerMinute: overrides.protectedFirstVerifyPerMinute,
     now: overrides.now,
     auditControl: overrides.auditControl,
   });
