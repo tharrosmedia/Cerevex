@@ -8,8 +8,8 @@ import type { GuardClient } from "./guards";
 import { asRemoteKillSwitch, connectorKilled, envForcesOff } from "./kill-switch";
 import { cacheRemoteKillSwitch } from "./kill-switch-cache";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { clientIpFromHeaders, createDeniedIpLimiter, createTokenBucket } from "./limiter";
-import { bearerToken } from "./token";
+import { clientIpFromHeaders, createDeniedIpLimiter, createTokenBucket, createVerifiedTokenSet } from "./limiter";
+import { bearerToken, hashMcpToken } from "./token";
 import { classifyOrigin, parseAllowedOrigins } from "./origin";
 import { PING_TOOL_NAME, pingCallResult, pingToolsList } from "./ping";
 import {
@@ -20,6 +20,7 @@ import {
   JSON_RPC_METHOD_NOT_FOUND,
   JSON_RPC_UNSUPPORTED_PROTOCOL,
   SUPPORTED_PROTOCOL_VERSIONS,
+  cleanHeaderValue,
   isJsonContentType,
   parseMcpRequest,
 } from "./protocol";
@@ -34,6 +35,10 @@ export const DENIED_AUDIT_FLUSH_MS = 5_000;
 /** Process-wide budget for calls that are not carrying a well-formed bearer. Not keyed by IP. */
 export const GLOBAL_DENIAL_CAPACITY = 60;
 export const GLOBAL_DENIAL_REFILL_PER_SECOND = 1;
+/** A hash that verified OK may skip the shared lookup bucket for this long. Verify still runs every call. */
+export const VERIFIED_BEARER_TTL_MS = 10 * 60_000;
+/** One slot per identity. Forged tokens never enter, and a full set drops the oldest expiry. */
+export const VERIFIED_BEARER_MAX = 256;
 
 export type AuditControl = {
   flush: () => Promise<void>;
@@ -55,6 +60,7 @@ export type McpAppDeps = {
   globalDenialRefillPerSecond?: number;
   globalBearerCapacity?: number;
   globalBearerRefillPerSecond?: number;
+  failedLookupPerIp?: number;
 };
 
 function peerAddress(c: { env: unknown }): string | null {
@@ -95,6 +101,16 @@ export function createApp(deps: McpAppDeps) {
   const bearerBucket = createTokenBucket({
     capacity: deps.globalBearerCapacity ?? denialCapacity,
     refillPerSecond: deps.globalBearerRefillPerSecond ?? denialRefill,
+    now,
+  });
+  const failedLookups = createDeniedIpLimiter({
+    limit: deps.failedLookupPerIp ?? DENIED_IP_LIMIT,
+    windowMs: deps.deniedWindowMs ?? DENIED_IP_WINDOW_MS,
+    now,
+  });
+  const verifiedBearers = createVerifiedTokenSet({
+    ttlMs: VERIFIED_BEARER_TTL_MS,
+    maxSize: VERIFIED_BEARER_MAX,
     now,
   });
   const deniedAudits = createDeniedAuditAggregator();
@@ -199,19 +215,29 @@ export function createApp(deps: McpAppDeps) {
       });
 
     // Admit before any await so a concurrent burst cannot all pass a peek and then fill the map.
-    // A well-formed bearer skips the denial bucket and the per-IP hit count. A GET flood from
-    // its address must not lock the token out. A new address still fails closed when the map is full.
+    // A POST with a supported protocol header and a well-formed bearer is a lookup. A hash that
+    // verified recently skips the shared lookup bucket. Every other bearer-shaped call, including
+    // a bad protocol header or a GET, uses the denial limiter.
     const presented = bearerToken(authorization);
+    const presentedHash = presented ? hashMcpToken(presented) : null;
+    const protocolHeader = cleanHeaderValue(c.req.header("mcp-protocol-version"));
+    const protocolSupported = protocolHeader != null && (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolHeader);
     const authenticating =
-      presented != null &&
+      presentedHash != null &&
       c.req.method === "POST" &&
       origin !== "rejected" &&
+      protocolSupported &&
       isJsonContentType(c.req.header("content-type"));
+    const knownBearer = authenticating && presentedHash != null && verifiedBearers.has(presentedHash);
     if (authenticating) {
       const saturated = limiter.mapFullRetryAfter(ip);
       if (saturated != null) return tooMany(saturated);
-      if (!bearerBucket.take()) return tooMany(bearerBucket.retryAfterSeconds());
-      bearerHeld = true;
+      if (!knownBearer) {
+        const failedRetry = failedLookups.retryAfterSeconds(ip);
+        if (failedRetry != null) return tooMany(failedRetry);
+        if (!bearerBucket.take()) return tooMany(bearerBucket.retryAfterSeconds());
+        bearerHeld = true;
+      }
     } else {
       const retryAfter = limiter.retryAfterSeconds(ip);
       if (retryAfter != null) return tooMany(retryAfter);
@@ -339,6 +365,10 @@ export function createApp(deps: McpAppDeps) {
     } catch {
       decision = { ok: false };
     }
+    if (!decision.ok && authenticating && presentedHash) {
+      verifiedBearers.forget(presentedHash);
+      failedLookups.record(ip);
+    }
     if (decision.ok) {
       if (bearerHeld) {
         bearerBucket.refund();
@@ -367,7 +397,14 @@ export function createApp(deps: McpAppDeps) {
     if (!decision.ok) return unauthenticated();
     const identity = decision.identity;
     const scopes = Array.isArray(identity.scopes) ? identity.scopes : [];
-    if (!identity.id || !identity.name || scopes.length === 0) return unauthenticated();
+    if (!identity.id || !identity.name || scopes.length === 0) {
+      if (authenticating && presentedHash) {
+        verifiedBearers.forget(presentedHash);
+        failedLookups.record(ip);
+      }
+      return unauthenticated();
+    }
+    if (authenticating && presentedHash) verifiedBearers.remember(presentedHash);
     const needed = requiredScope(request.method, request.tool);
     if (needed && !scopes.includes(needed)) {
       return reject({

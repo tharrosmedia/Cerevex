@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DENIED_IP_LIMIT, DENIED_IP_WINDOW_MS } from "../src/app";
+import { PROTOCOL_2026 } from "../src/protocol";
 import type { GuardClient } from "../src/guards";
 import { ALLOWED_ORIGIN, request2026, testApp } from "./helpers";
 
@@ -255,6 +256,112 @@ describe("limiter fairness", () => {
     expect(blocked.status).toBe(429);
     expect(Number(blocked.headers.get("retry-after"))).toBe(60);
     expect(lookups).toBe(0);
+  });
+
+  it("does not limit a valid token while one IP floods fake tokens", async () => {
+    let lookups = 0;
+    const good = token("v");
+    const bad = token("b");
+    const { app } = testApp({
+      deniedPerIp: 100,
+      failedLookupPerIp: 2,
+      globalDenialCapacity: 20,
+      globalBearerCapacity: 4,
+      globalBearerRefillPerSecond: 0,
+      authenticator: (header) => {
+        lookups += 1;
+        if (header === `Bearer ${good}`) return { ok: true, identity: IDENTITY };
+        return { ok: false };
+      },
+    });
+    const user = "198.51.100.8";
+    const attacker = "203.0.113.9";
+    expect((await app.request("/mcp", authed(user, good))).status).toBe(200);
+    expect(lookups).toBe(1);
+
+    const flood = [
+      await app.request("/mcp", authed(attacker, bad)),
+      await app.request("/mcp", authed(attacker, bad)),
+      await app.request("/mcp", authed(attacker, bad)),
+    ];
+    expect(flood.map((res) => res.status)).toEqual([401, 401, 429]);
+    expect(lookups).toBe(3);
+
+    expect((await app.request("/mcp", authed("203.0.113.10", bad))).status).toBe(401);
+    expect((await app.request("/mcp", authed("203.0.113.11", bad))).status).toBe(401);
+    expect((await app.request("/mcp", authed("203.0.113.12", bad))).status).toBe(429);
+    expect(lookups).toBe(5);
+
+    const again = await app.request("/mcp", authed(user, good));
+    const later = await app.request("/mcp", authed(user, good));
+    expect(again.status).toBe(200);
+    expect(later.status).toBe(200);
+    expect(again.headers.get("retry-after")).toBeNull();
+    expect(later.headers.get("retry-after")).toBeNull();
+    expect(lookups).toBe(7);
+    expect((await app.request("/mcp", authed(attacker, bad))).status).toBe(429);
+    expect(lookups).toBe(7);
+  });
+
+  it("counts a well-formed bearer with a bad protocol header toward the denial limiter", async () => {
+    let lookups = 0;
+    const { app } = testApp({
+      deniedPerIp: 2,
+      authenticator: () => {
+        lookups += 1;
+        return { ok: false };
+      },
+    });
+    const init = {
+      method: "POST" as const,
+      headers: {
+        origin: ALLOWED_ORIGIN,
+        "content-type": "application/json",
+        authorization: `Bearer ${token("b")}`,
+        "x-real-ip": "203.0.113.70",
+        "mcp-protocol-version": "1999-01-01",
+        "mcp-method": "tools/list",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/list",
+        params: { _meta: { "io.modelcontextprotocol/protocolVersion": "1999-01-01" } },
+      }),
+    };
+    const statuses = [
+      (await app.request("/mcp", init)).status,
+      (await app.request("/mcp", init)).status,
+      (await app.request("/mcp", init)).status,
+    ];
+    expect(statuses).toEqual([400, 400, 429]);
+    expect(lookups).toBe(0);
+  });
+
+  it("does not treat a GET that carries a bearer as authenticated", async () => {
+    let lookups = 0;
+    const { app } = testApp({
+      deniedPerIp: 1,
+      globalBearerCapacity: 1,
+      globalBearerRefillPerSecond: 0,
+      authenticator: () => {
+        lookups += 1;
+        return { ok: true, identity: IDENTITY };
+      },
+    });
+    const headers = {
+      origin: ALLOWED_ORIGIN,
+      "content-type": "application/json",
+      authorization: `Bearer ${token("v")}`,
+      "mcp-protocol-version": PROTOCOL_2026,
+      "x-real-ip": "203.0.113.80",
+    };
+    expect((await app.request("/mcp", { method: "GET", headers })).status).toBe(405);
+    expect((await app.request("/mcp", { method: "GET", headers })).status).toBe(429);
+    expect(lookups).toBe(0);
+    const post = await app.request("/mcp", authed("203.0.113.81"));
+    expect(post.status).toBe(200);
+    expect(lookups).toBe(1);
   });
 
   it("does not spend the bearer bucket while the kill switch is on", async () => {
