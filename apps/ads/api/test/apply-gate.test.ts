@@ -159,7 +159,7 @@ describe("authorize-to-apply gate", () => {
     expect(killed).toEqual({ allowed: false, blocked: "apply_kill_switch", writes: false });
   });
 
-  it("does not apply the Meta flag to mock tokens or Google", () => {
+  it("does not apply the Meta flag to mock tokens, and blocks a live Google write until apply.google is on", () => {
     const authorization = {
       workspaceId,
       revokedAt: null,
@@ -182,9 +182,41 @@ describe("authorize-to-apply gate", () => {
         authorization,
         platform: "google",
         capabilities: defaultCapabilityFlags(),
+        mock: true,
+      }),
+    ).toEqual({ allowed: true, blocked: null, writes: true });
+    const hidden = evaluateApplyGate({
+      expectedWorkspaceId: workspaceId,
+      workspace: { applyKillSwitch: false },
+      authorization,
+      platform: "google",
+      capabilities: defaultCapabilityFlags(),
+      mock: false,
+    });
+    expect(hidden).toEqual({ allowed: false, blocked: "apply_google_hidden", writes: false });
+    expect(applyBlockMessage(hidden.blocked)).toBe(
+      "Google live writes are off. The decision is saved. Nothing was written.",
+    );
+    expect(
+      evaluateApplyGate({
+        expectedWorkspaceId: workspaceId,
+        workspace: { applyKillSwitch: false },
+        authorization,
+        platform: "google",
+        capabilities: { ...defaultCapabilityFlags(), "apply.google": "on" },
         mock: false,
       }),
     ).toEqual({ allowed: true, blocked: null, writes: true });
+    expect(
+      evaluateApplyGate({
+        expectedWorkspaceId: workspaceId,
+        workspace: { applyKillSwitch: true },
+        authorization,
+        platform: "google",
+        capabilities: { ...defaultCapabilityFlags(), "apply.google": "on" },
+        mock: false,
+      }),
+    ).toEqual({ allowed: false, blocked: "apply_kill_switch", writes: false });
   });
 
   it("allows apply when every gate passes", () => {

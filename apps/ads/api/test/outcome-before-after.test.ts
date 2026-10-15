@@ -102,6 +102,7 @@ describe("R1 live before and after", () => {
         applyKillSwitch: false,
         settingsJson: settingsJsonWithCapabilityOverrides(settingsSnapshot, {
           "apply.meta": "on",
+          "apply.google": "on",
           "sync.live": "on",
           "apply.budget": "on",
           "apply.bid": "on",
@@ -324,7 +325,6 @@ describe("R1 live before and after", () => {
     ["meta", "update_budget", { unit: "minor", before: { amount: "5000" }, after: { amount: "4000" } }],
     ["meta", "update_bid", { unit: "minor", before: { amount: "250" }, after: { amount: "150" } }],
     ["google", "pause", { unit: "status", before: { status: "enabled" }, after: { status: "paused" } }],
-    ["google", "update_budget", { unit: "micros", before: { amount: "50000000" }, after: { amount: "40000000" } }],
     ["google", "update_bid", { unit: "micros", before: { amount: "2500000" }, after: { amount: "1500000" } }],
   ] as const)("records live %s %s before and after in platform units", async (platform, action, expected) => {
     const entityType = action === "update_bid" ? (platform === "meta" ? "adset" : "ad_group") : "campaign";

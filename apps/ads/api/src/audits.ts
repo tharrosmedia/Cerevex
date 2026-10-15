@@ -33,6 +33,7 @@ import {
 import {
   adsPlatformMutationRefusal,
   evaluateApplyGate,
+  googleLiveWriteBlock,
   metaLiveWriteBlock,
   NotAdAccountScopedError,
 } from "@tharros/ads-shared/apply-gate";
@@ -143,6 +144,29 @@ async function metaDecisionOnlyBlock(input: {
     : null;
   const tokens = account ? await loadTokens(account.id) : null;
   const blocked = metaLiveWriteBlock({
+    platform: account?.platform,
+    mock: Boolean(tokens?.mock),
+    capabilities: resolveWorkspaceCapabilities(workspace?.settingsJson),
+  });
+  if (!blocked) return null;
+  return { reason: blocked, note: applyBlockMessage(blocked) };
+}
+
+/** Hidden or recommend-only apply.google records the approval and queues no live write. */
+async function googleDecisionOnlyBlock(input: {
+  workspaceId: string;
+  adAccountId: string | null;
+  scope: string | null | undefined;
+}): Promise<{ reason: "apply_google_hidden" | "apply_google_recommend_only"; note: string } | null> {
+  const db = getDb();
+  const workspace = await db.query.workspaces.findFirst({
+    where: eq(workspaces.id, input.workspaceId),
+  });
+  const account = input.adAccountId
+    ? await db.query.adAccounts.findFirst({ where: eq(adAccounts.id, input.adAccountId) })
+    : null;
+  const tokens = account ? await loadTokens(account.id) : null;
+  const blocked = googleLiveWriteBlock({
     platform: account?.platform,
     mock: Boolean(tokens?.mock),
     capabilities: resolveWorkspaceCapabilities(workspace?.settingsJson),
@@ -573,6 +597,31 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         writes: false,
         reason: metaDecision.reason,
         note: metaDecision.note,
+      });
+    }
+
+    const googleDecision = await googleDecisionOnlyBlock({
+      workspaceId: client.workspaceId,
+      adAccountId: row.adAccountId,
+      scope: row.scope,
+    });
+    if (googleDecision) {
+      childLogger(c.get("requestId")).info({
+        msg: "recommendations.decided",
+        recommendationId: row.id,
+        action,
+        applied: false,
+        writes: false,
+        clientId: client.id,
+        reason: googleDecision.reason,
+      });
+      return c.json({
+        ...result,
+        applyJob: null,
+        applied: false,
+        writes: false,
+        reason: googleDecision.reason,
+        note: googleDecision.note,
       });
     }
 
@@ -1102,6 +1151,19 @@ export function registerAuditRoutes(app: Hono<AppEnv>, requireAuth: MiddlewareHa
         entityType: "workspace",
         entityId: workspaceId,
         payload: { capability: "apply.meta", from: metaFrom, to: metaTo },
+      });
+    }
+
+    const googleFrom = resolveWorkspaceCapabilities(saved.workspace.settingsJson)["apply.google"];
+    const googleTo = resolveWorkspaceCapabilities(saved.updated.settingsJson)["apply.google"];
+    if (googleFrom !== googleTo && (googleTo === "on" || googleFrom === "on")) {
+      await writeAuditEvent({
+        workspaceId,
+        ...auditActor(auth),
+        action: googleTo === "on" ? "apply.google_enabled" : "apply.google_disabled",
+        entityType: "workspace",
+        entityId: workspaceId,
+        payload: { capability: "apply.google", from: googleFrom, to: googleTo },
       });
     }
 

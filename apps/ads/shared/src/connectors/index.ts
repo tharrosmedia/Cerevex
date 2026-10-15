@@ -16,7 +16,7 @@ import { clarityAnalyticsConnector } from "./clarity";
 import { housecallProConnector } from "./crm";
 import { wordPressSiteConnector } from "./site";
 
-export { googleAdsHeaders, listGoogleAccessibleAccounts } from "./google";
+export { GOOGLE_PAUSE_OR_BID, googleAdsHeaders, listGoogleAccessibleAccounts } from "./google";
 import type {
   AdPlatformConnector,
   AnalyticsConnector,

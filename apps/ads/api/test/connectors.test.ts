@@ -258,8 +258,13 @@ describe("connector interfaces", () => {
     await expect(
       googleAdPlatformConnector.applyLive({
         tokens: { accessToken: "tok", mock: false },
-        mutation: { ...mutation, platform: "google" },
-        live: null,
+        mutation: {
+          platform: "google",
+          action: "pause",
+          target: { entityType: "campaign", externalId: "111", name: "HVAC" },
+          payload: {},
+        },
+        live: { externalId: "111", entityType: "campaign", status: "active" },
         accountExternalId: "customers/1",
       }),
     ).rejects.toMatchObject({ name: "UnconfirmedPlatformWriteError" });

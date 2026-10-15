@@ -1721,8 +1721,13 @@ describe("service actor, authorization revoke, and decide/apply oracle", () => {
     const googleError = await googleAdPlatformConnector
       .applyLive({
         tokens: { accessToken: "tok", mock: false },
-        mutation: { ...mutation, platform: "google" },
-        live: null,
+        mutation: {
+          platform: "google",
+          action: "pause",
+          target: { entityType: "campaign", externalId: "111", name: "test" },
+          payload: {},
+        },
+        live: { externalId: "111", entityType: "campaign", status: "active" },
         accountExternalId: "customers/1",
       })
       .catch((error: unknown) => error);

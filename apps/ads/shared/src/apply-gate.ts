@@ -5,7 +5,8 @@ import type { CapabilityFlags } from "@cerevex/contracts";
  *
  * Apply requires a valid authorization, workspace kill switch OFF,
  * and the target ad account not frozen. Deny/Snooze never reach this gate.
- * A Meta live write also needs apply.meta on. Mock tokens are not live writes.
+ * A Meta live write also needs apply.meta on. A Google live write also needs apply.google on.
+ * Mock tokens are not live writes.
  */
 
 export const NOT_AD_ACCOUNT_SCOPED = "not_ad_account_scoped" as const;
@@ -20,6 +21,8 @@ export const APPLY_BLOCK_REASONS = [
   "authorization_expired",
   "apply_meta_hidden",
   "apply_meta_recommend_only",
+  "apply_google_hidden",
+  "apply_google_recommend_only",
 ] as const;
 
 export type ApplyBlockReason = (typeof APPLY_BLOCK_REASONS)[number];
@@ -38,7 +41,7 @@ export type ApplyGateInput = {
   account?: { frozen: boolean } | null;
   /** When set and not ad_account, ads apply is refused before the kill switch. */
   recommendationScope?: string | null;
-  /** Ad account platform. Meta live writes also need apply.meta on. */
+  /** Ad account platform. Meta live writes need apply.meta on. Google live writes need apply.google on. */
   platform?: string | null;
   capabilities?: CapabilityFlags | null;
   /** True only for a mock token. Omitted or false is a live Meta write when platform is meta. */
@@ -57,6 +60,19 @@ export function metaLiveWriteBlock(input: {
   if (state === "on") return null;
   if (state === "recommend_only") return "apply_meta_recommend_only";
   return "apply_meta_hidden";
+}
+
+/** Hidden and recommend_only record the decision elsewhere and write nothing. */
+export function googleLiveWriteBlock(input: {
+  platform?: string | null;
+  mock?: boolean;
+  capabilities?: CapabilityFlags | null;
+}): "apply_google_hidden" | "apply_google_recommend_only" | null {
+  if (input.platform !== "google" || input.mock === true) return null;
+  const state = input.capabilities?.["apply.google"];
+  if (state === "on") return null;
+  if (state === "recommend_only") return "apply_google_recommend_only";
+  return "apply_google_hidden";
 }
 
 export class NotAdAccountScopedError extends Error {
@@ -116,6 +132,12 @@ export function evaluateApplyGate(input: ApplyGateInput): ApplyGateResult {
     capabilities: input.capabilities,
   });
   if (metaBlock) return { allowed: false, blocked: metaBlock, writes: false };
+  const googleBlock = googleLiveWriteBlock({
+    platform: input.platform,
+    mock: input.mock,
+    capabilities: input.capabilities,
+  });
+  if (googleBlock) return { allowed: false, blocked: googleBlock, writes: false };
   return { allowed: true, blocked: null, writes: true };
 }
 
@@ -139,6 +161,10 @@ export function applyBlockMessage(reason: ApplyBlockReason | null | undefined): 
       return "Meta live writes are off. The decision is saved. Nothing was written.";
     case "apply_meta_recommend_only":
       return "Meta live writes are recommend-only. The decision is saved. Nothing was written.";
+    case "apply_google_hidden":
+      return "Google live writes are off. The decision is saved. Nothing was written.";
+    case "apply_google_recommend_only":
+      return "Google live writes are recommend-only. The decision is saved. Nothing was written.";
     default:
       return "Apply is blocked.";
   }

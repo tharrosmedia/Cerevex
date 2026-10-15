@@ -61,6 +61,7 @@ describe("capability registry", () => {
     expect(flags.audits).toBe("on");
     expect(flags["apply.create_entity"]).toBe("hidden");
     expect(flags["apply.meta"]).toBe("hidden");
+    expect(flags["apply.google"]).toBe("hidden");
     expect(flags["apply.revert"]).toBe("hidden");
     expect(flags["sync.live"]).toBe("on");
     expect(flags["shell.legacy_ads_web"]).toBe("hidden");

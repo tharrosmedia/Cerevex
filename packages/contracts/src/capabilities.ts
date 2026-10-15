@@ -30,6 +30,7 @@ export const CAPABILITY_IDS = [
   "apply.budget",
   "apply.create_entity",
   "apply.meta",
+  "apply.google",
   "apply.revert",
   "sync.live",
   "shell.legacy_ads_web",
@@ -156,6 +157,15 @@ export const CAPABILITY_CATALOG: Record<CapabilityId, CapabilityCatalogEntry> = 
     defaultState: "hidden",
     unfinished: false,
     group: "apply",
+  },
+  "apply.google": {
+    id: "apply.google",
+    label: "Google live writes",
+    help: "Google live writes under Approve. Hidden or recommend-only records the decision and writes nothing. Only the workspace owner can turn this on. The kill switch and account freeze still apply. The first live write is a pause or a bid.",
+    defaultState: "hidden",
+    unfinished: false,
+    group: "apply",
+    gatesApply: true,
   },
   "apply.revert": {
     id: "apply.revert",
