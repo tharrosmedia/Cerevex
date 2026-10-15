@@ -5,8 +5,11 @@ import {
   IDENTITY_WINDOW_MS,
   PROTECTED_FIRST_VERIFY_MAX,
   PROTECTED_FIRST_VERIFY_PER_IP,
+  WAITING_BEARER_MAX,
+  WAITING_BEARER_TTL_MS,
+  createApp,
 } from "../src/app";
-import { request2026, testApp } from "./helpers";
+import { ALLOWED_ORIGIN, request2026, spyGuard, testApp } from "./helpers";
 
 const AGENT_A = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -56,6 +59,8 @@ describe("per-identity rate limit", () => {
     expect(IDENTITY_WINDOW_MS).toBe(60_000);
     expect(PROTECTED_FIRST_VERIFY_PER_IP).toBe(1);
     expect(PROTECTED_FIRST_VERIFY_MAX).toBe(60);
+    expect(WAITING_BEARER_MAX).toBe(4096);
+    expect(WAITING_BEARER_TTL_MS).toBe(60_000);
   });
 
   it("caps a leaked token at 60 lookups in the window and leaves the other identity alone", async () => {
@@ -387,5 +392,128 @@ describe("per-identity rate limit", () => {
     expect(pairs.filter((status) => status === 401).length).toBe(2);
     expect(lookups).toBe(1 + 2);
     expect(pairs.filter((status) => status === 429).length).toBe(pairs.length - 2);
+  });
+
+  it("drops the oldest waiting hash once the set reaches its cap", async () => {
+    let lookups = 0;
+    const { app } = testApp({
+      now: () => 11_000_000,
+      globalBearerCapacity: 0,
+      globalBearerRefillPerSecond: 0,
+      globalDenialCapacity: 10,
+      failedLookupPerIp: 5,
+      authenticator: () => {
+        lookups += 1;
+        return { ok: false };
+      },
+    });
+    const ipFor = (n: number) => `10.${(n >> 16) & 255}.${(n >> 8) & 255}.${n & 255}`;
+    const bearerFor = (n: number) => `cxm_${n.toString(36).padStart(43, "0")}`;
+    for (let n = 0; n < WAITING_BEARER_MAX; n += 1) {
+      expect((await call(app, ipFor(n), bearerFor(n))).status).toBe(429);
+    }
+    expect((await call(app, ipFor(WAITING_BEARER_MAX), bearerFor(WAITING_BEARER_MAX))).status).toBe(429);
+    expect(lookups).toBe(0);
+
+    const evicted = await call(app, ipFor(0), bearerFor(0));
+    expect(evicted.status).toBe(429);
+    expect(lookups).toBe(0);
+
+    const kept = await call(app, ipFor(WAITING_BEARER_MAX), bearerFor(WAITING_BEARER_MAX));
+    expect(kept.status).toBe(401);
+    expect(lookups).toBe(1);
+  }, 30_000);
+
+  it("stops treating a hash as waiting after the 60s expiry", async () => {
+    let now = 12_000_000;
+    let lookups = 0;
+    const { app } = testApp({
+      now: () => now,
+      globalBearerCapacity: 0,
+      globalBearerRefillPerSecond: 0,
+      globalDenialCapacity: 10,
+      failedLookupPerIp: 5,
+      authenticator: () => {
+        lookups += 1;
+        return { ok: false };
+      },
+    });
+    const older = token("olda");
+    const newer = token("newa");
+    expect((await call(app, "198.51.100.1", older)).status).toBe(429);
+    expect((await call(app, "198.51.100.2", newer)).status).toBe(429);
+    expect(lookups).toBe(0);
+
+    now += WAITING_BEARER_TTL_MS - 1;
+    expect((await call(app, "198.51.100.2", newer)).status).toBe(401);
+    expect(lookups).toBe(1);
+
+    now += 1;
+    const expired = await call(app, "198.51.100.1", older);
+    expect(expired.status).toBe(429);
+    expect(lookups).toBe(1);
+  });
+
+  it("forgets a waiting entry after its protected verify", async () => {
+    let now = 13_000_000;
+    let lookups = 0;
+    const bearer = token("once");
+    const { app } = testApp({
+      now: () => now,
+      globalBearerCapacity: 0,
+      globalBearerRefillPerSecond: 0,
+      globalDenialCapacity: 10,
+      failedLookupPerIp: 10,
+      deniedWindowMs: 1_000,
+      identityWindowMs: 1_000,
+      authenticator: () => {
+        lookups += 1;
+        return { ok: false };
+      },
+    });
+    const ip = "198.51.100.77";
+    expect((await call(app, ip, bearer)).status).toBe(429);
+    expect((await call(app, ip, bearer)).status).toBe(401);
+    expect(lookups).toBe(1);
+
+    now += 1_000;
+    expect((await call(app, ip, bearer)).status).toBe(429);
+    expect(lookups).toBe(1);
+  });
+
+  it("does not charge an identity while the env kill switch is on", async () => {
+    let now = 14_000_000;
+    let lookups = 0;
+    const kill = { value: undefined as string | undefined };
+    const guard = spyGuard();
+    const app = createApp({
+      allowedOrigins: ALLOWED_ORIGIN,
+      get killSwitchEnv() {
+        return kill.value;
+      },
+      guards: guard.client,
+      now: () => now,
+      globalBearerCapacity: 10,
+      globalDenialCapacity: 100,
+      authenticator: () => {
+        lookups += 1;
+        return { ok: true, identity: AGENT_A };
+      },
+    });
+    const bearer = token("kill");
+    for (let n = 0; n < IDENTITY_CALLS_PER_MINUTE - 1; n += 1) {
+      expect((await call(app, "198.51.100.90", bearer)).status).toBe(200);
+    }
+    expect(lookups).toBe(IDENTITY_CALLS_PER_MINUTE - 1);
+
+    kill.value = "on";
+    const blocked = await call(app, "198.51.100.90", bearer);
+    expect(blocked.status).toBe(403);
+    expect(lookups).toBe(IDENTITY_CALLS_PER_MINUTE - 1);
+
+    kill.value = undefined;
+    const after = await call(app, "198.51.100.90", bearer);
+    expect(after.status).toBe(200);
+    expect(lookups).toBe(IDENTITY_CALLS_PER_MINUTE);
   });
 });
