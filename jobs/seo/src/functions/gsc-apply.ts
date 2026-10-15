@@ -6,6 +6,7 @@ import { publishContent } from '@brain/lib/agents/seo/publisher';
 import { applyWordpressMutation } from '@brain/lib/wordpress/apply';
 import { isWordpressStore } from '@brain/lib/wordpress/store';
 import { gscApplyIsWritable, gscApplyWriteBlockedReason, isGscSourcedJob } from '@brain/lib/seo/gsc-flags';
+import { isShopifyNotConnectedSkip } from '@brain/lib/shopify/not-connected';
 
 export const gscApplyFn = inngest.createFunction(
   { id: 'seo-gsc-apply', retries: 1, triggers: [{ event: 'seo/gsc.apply.requested' }] },
@@ -53,6 +54,20 @@ export const gscApplyFn = inngest.createFunction(
           mode: data.mode || 'improve',
           shopifyId: data.shopifyId,
         });
+        if (isShopifyNotConnectedSkip(result)) {
+          try {
+            await logEvent(storeId, data.actor || 'system', 'gsc.apply.skipped', {
+              jobId,
+              writes: false,
+              skipped: result.skipped,
+              message: result.message,
+            }, jobId);
+          } catch {
+            console.warn('[seo-gsc-apply] skip was not recorded');
+          }
+          if (jobId) await updateJobStatus(jobId, 'skipped', { skipped: result.skipped, message: result.message, writes: false });
+          return { ok: true, writes: false, skipped: result.skipped, message: result.message };
+        }
         await logEvent(storeId, data.actor || 'human', 'gsc.apply.succeeded', { jobId, writes: true }, jobId);
         if (jobId) await updateJobStatus(jobId, 'completed', result);
         return { ok: true, writes: true, result };

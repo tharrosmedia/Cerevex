@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getActiveStoreId, getStore } from '@/src/lib/db/stores';
 import { listCatalogResources } from '@/src/lib/db/catalog';
 import { catalogSyncSummary, recordCatalogSync, syncCatalogForStore } from '@/src/lib/shopify/sync';
+import { SHOPIFY_NOT_CONNECTED, SHOPIFY_NOT_CONNECTED_MESSAGE } from '@/src/lib/shopify/not-connected';
 import { revalidatePath } from 'next/cache';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
@@ -28,15 +29,23 @@ async function syncNow() {
     }
     redirect(`/seo/live?sync=wordpress&count=${result.synced}`);
   }
+  let skippedMessage: string | null = null;
   try {
     const result = await syncCatalogForStore(storeId);
-    await recordCatalogSync(storeId, result);
+    if (result.skipped === SHOPIFY_NOT_CONNECTED) {
+      skippedMessage = result.message || SHOPIFY_NOT_CONNECTED_MESSAGE;
+    } else {
+      await recordCatalogSync(storeId, result);
+    }
   } catch (e: any) {
     revalidatePath('/seo/live');
     redirect(`/seo/live?sync=error&message=${encodeURIComponent(e?.message || 'Catalog sync failed.')}`);
   }
   revalidatePath('/seo/live');
   revalidatePath('/settings');
+  if (skippedMessage) {
+    redirect(`/seo/live?sync=skipped&message=${encodeURIComponent(skippedMessage)}`);
+  }
   redirect('/seo/live?sync=done');
 }
 
@@ -94,6 +103,9 @@ export default async function SeoLive({
       ) : null}
       {params.sync === 'wordpress' ? (
         <p className="cx-banner" role="status">Synced {params.count || '0'} WordPress posts and pages.</p>
+      ) : null}
+      {params.sync === 'skipped' ? (
+        <p className="cx-banner" role="status">{params.message || SHOPIFY_NOT_CONNECTED_MESSAGE}</p>
       ) : null}
       {params.sync === 'error' ? (
         <p className="cx-banner cx-banner-warn" role="status">Sync failed: {params.message || 'try again.'}</p>

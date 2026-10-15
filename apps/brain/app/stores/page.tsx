@@ -17,6 +17,7 @@ import {
   normalizeShopDomain,
   verifyShopifyConnection,
 } from '@/src/lib/shopify/verify';
+import { hasShopifyAccessToken, SHOPIFY_NOT_CONNECTED_MESSAGE } from '@/src/lib/shopify/not-connected';
 import {
   connectWordpressStore,
   decryptWordpressPluginKey,
@@ -151,8 +152,8 @@ async function testConnection(formData: FormData) {
       ? storesUrl({ test: 'success', msg: `${store.name} is connected.` })
       : storesUrl({ test: 'error', msg: `${store.name}: ${tested.reason || 'could not reach the site.'}` }));
   }
-  if (!store.shopify_access_token) {
-    redirect(storesUrl({ test: 'error', msg: `${store.name} has no access token. Edit the store and paste one.` }));
+  if (!hasShopifyAccessToken(store)) {
+    redirect(storesUrl({ test: 'error', msg: SHOPIFY_NOT_CONNECTED_MESSAGE }));
   }
   const verified = await verifyShopifyConnection(store.shopify_domain, store.shopify_access_token);
   if (!verified.ok) redirect(storesUrl({ test: 'error', msg: `${store.name}: ${verified.error}` }));
