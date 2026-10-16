@@ -2,7 +2,22 @@ import { clientInfoFrom } from "./audit";
 
 export const PROTOCOL_2026 = "2026-07-28";
 export const PROTOCOL_2025 = "2025-11-25";
-export const SUPPORTED_PROTOCOL_VERSIONS = [PROTOCOL_2026, PROTOCOL_2025] as const;
+export const PROTOCOL_2025_06 = "2025-06-18";
+export const PROTOCOL_2025_03 = "2025-03-26";
+/** Latest supported revision. Returned when initialize asks for a version we do not speak. */
+export const PREFERRED_PROTOCOL_VERSION = PROTOCOL_2026;
+/**
+ * Streamable HTTP: a request after initialize that omits MCP-Protocol-Version
+ * is treated as this revision.
+ */
+export const DEFAULT_PROTOCOL_VERSION = PROTOCOL_2025_03;
+export const MCP_SERVER_VERSION = "0.1.0";
+export const SUPPORTED_PROTOCOL_VERSIONS = [
+  PROTOCOL_2026,
+  PROTOCOL_2025,
+  PROTOCOL_2025_06,
+  PROTOCOL_2025_03,
+] as const;
 export type SupportedProtocol = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const JSON_RPC_INVALID_REQUEST = -32600;
@@ -87,6 +102,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+export function isSupportedProtocol(value: string | null | undefined): value is SupportedProtocol {
+  return value != null && (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(value);
+}
+
+/** Spec negotiation: echo a supported request, otherwise the server's preferred revision. */
+export function negotiateProtocolVersion(requested: string | null | undefined): SupportedProtocol {
+  if (isSupportedProtocol(requested)) return requested;
+  return PREFERRED_PROTOCOL_VERSION;
+}
+
+export function initializeResult(protocolVersion: string, serverName: string): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    protocolVersion,
+    capabilities: { tools: {} },
+    serverInfo: { name: serverName, version: MCP_SERVER_VERSION },
+  };
+  if (protocolVersion === PROTOCOL_2026) {
+    result._meta = { "io.modelcontextprotocol/protocolVersion": protocolVersion };
+  }
+  return result;
+}
+
 function callArguments(params: Record<string, unknown> | null): unknown {
   if (!params || !Object.prototype.hasOwnProperty.call(params, "arguments")) return null;
   return params.arguments;
@@ -96,6 +133,14 @@ function bodyName(params: Record<string, unknown>, method: string): string | nul
   const key = method === "resources/read" ? "uri" : "name";
   const value = params[key];
   return typeof value === "string" ? value : null;
+}
+
+function initializeClient(params: Record<string, unknown> | null): { name: string | null; version: string | null } {
+  const fromParams = clientInfoFrom(params ? params.clientInfo : null);
+  if (fromParams.name || fromParams.version) return fromParams;
+  const meta = params && isRecord(params._meta) ? params._meta : null;
+  if (!meta) return fromParams;
+  return clientInfoFrom(meta["io.modelcontextprotocol/clientInfo"]);
 }
 
 function namesMatch(header: string | null, body: string | null): boolean {
@@ -123,18 +168,45 @@ export function parseMcpRequest(input: {
   const method = input.body.method;
   const params = isRecord(input.body.params) ? input.body.params : null;
   const protocolHeader = cleanHeaderValue(input.protocolHeader);
-  if (!protocolHeader) {
-    return { ok: false, failure: { kind: "header_mismatch", id, header: "MCP-Protocol-Version" } };
+  const methodHeader = cleanHeaderValue(input.methodHeader);
+  const nameHeader = cleanHeaderValue(input.nameHeader);
+
+  if (method === "initialize") {
+    if (protocolHeader && !isSupportedProtocol(protocolHeader)) {
+      return {
+        ok: false,
+        failure: { kind: "unsupported_version", id, requested: requestedVersionLabel(protocolHeader) },
+      };
+    }
+    if (methodHeader && methodHeader !== method) {
+      return { ok: false, failure: { kind: "header_mismatch", id, header: "Mcp-Method" } };
+    }
+    const requested = params && typeof params.protocolVersion === "string" ? params.protocolVersion : null;
+    const fromHeader = isSupportedProtocol(protocolHeader) ? protocolHeader : null;
+    const protocolVersion = negotiateProtocolVersion(requested ?? fromHeader);
+    const client = initializeClient(params);
+    return {
+      ok: true,
+      request: {
+        protocolVersion,
+        id,
+        method,
+        tool: null,
+        arguments: null,
+        clientName: client.name,
+        clientVersion: client.version,
+      },
+    };
   }
-  if (!(SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolHeader)) {
+
+  const resolvedHeader = protocolHeader ?? DEFAULT_PROTOCOL_VERSION;
+  if (!isSupportedProtocol(resolvedHeader)) {
     return {
       ok: false,
       failure: { kind: "unsupported_version", id, requested: requestedVersionLabel(protocolHeader) },
     };
   }
-  const protocolVersion = protocolHeader as SupportedProtocol;
-  const methodHeader = cleanHeaderValue(input.methodHeader);
-  const nameHeader = cleanHeaderValue(input.nameHeader);
+  const protocolVersion = resolvedHeader;
 
   if (protocolVersion === PROTOCOL_2026) {
     const meta = params && isRecord(params._meta) ? params._meta : null;
@@ -170,9 +242,6 @@ export function parseMcpRequest(input: {
 
   if (methodHeader && methodHeader !== method) {
     return { ok: false, failure: { kind: "header_mismatch", id, header: "Mcp-Method" } };
-  }
-  if (method === "initialize" && params && typeof params.protocolVersion === "string" && params.protocolVersion !== protocolVersion) {
-    return { ok: false, failure: { kind: "header_mismatch", id, header: "MCP-Protocol-Version" } };
   }
   let tool: string | null = null;
   if (NAMED_METHODS.has(method)) {

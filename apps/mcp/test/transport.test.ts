@@ -6,25 +6,29 @@ import { readJson, request2025Initialize, request2026, testApp } from "./helpers
 describe("streamable HTTP checks", () => {
   it("rejects an unsupported protocol version with the supported list", async () => {
     const { app } = testApp();
-    const res = await app.request("/mcp", request2026({ protocolHeader: "2025-03-26" }));
+    const res = await app.request("/mcp", request2026({ protocolHeader: "2024-11-05" }));
     expect(res.status).toBe(400);
     expect(await readJson(res)).toMatchObject({
       id: 1,
       error: {
         code: -32022,
         message: "Unsupported protocol version",
-        data: { supported: ["2026-07-28", "2025-11-25"], requested: "2025-03-26" },
+        data: {
+          supported: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
+          requested: "2024-11-05",
+        },
       },
     });
   });
 
-  it("rejects a missing protocol header and a header that does not match the 2026 body", async () => {
-    const { app } = testApp();
+  it("defaults a missing protocol header to 2025-03-26 and still rejects a 2026 body that disagrees with its header", async () => {
+    const { app, guard } = testApp();
     const missing = await app.request("/mcp", request2026({ protocolHeader: null }));
-    expect(missing.status).toBe(400);
+    expect(missing.status).toBe(401);
     expect(await readJson(missing)).toMatchObject({
-      error: { code: -32020, message: "Header mismatch: MCP-Protocol-Version" },
+      error: { code: -32000, message: "Authentication required" },
     });
+    expect(guard.calls.audits[0]).toMatchObject({ protocolVersion: "2025-03-26", method: "tools/list" });
     const mismatched = await app.request(
       "/mcp",
       request2026({
