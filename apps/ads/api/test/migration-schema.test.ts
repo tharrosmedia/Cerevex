@@ -655,6 +655,66 @@ describe("migration journal schema", () => {
       await client.end();
     }
   }, 60_000);
+
+  it("rejects format characters in display_name and accepts letters beyond ASCII", async () => {
+    const databaseUrl = await createDatabase(`cerevex_schema_test_${process.pid}_chars`);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await applySqlFiles(
+        client,
+        journal().map((entry) => entry.tag),
+      );
+      const workspace = await client.query<{ id: string }>(
+        `INSERT INTO os.workspaces (name) VALUES ('display-name-chars') RETURNING id`,
+      );
+      const workspaceId = workspace.rows[0]!.id;
+      let n = 0;
+      async function insert(slug: string, displayName: string) {
+        n += 1;
+        const tokenHash = n.toString(16).padStart(2, "0").repeat(32).slice(0, 64);
+        return client.query(
+          `INSERT INTO os.mcp_identities (workspace_id, name, display_name, token_hash, scopes)
+           VALUES ($1, $2, $3, $4, '["cerevex.read"]'::jsonb)`,
+          [workspaceId, slug, displayName, tokenHash],
+        );
+      }
+
+      const banned = [
+        ["ban-zwsp", "a\u200Bb"],
+        ["ban-rlo", "a\u202Eb"],
+        ["ban-shy", "a\u00ADb"],
+        ["ban-bom", "a\uFEFFb"],
+        ["ban-wj", "a\u2060b"],
+        ["ban-tag", `a${String.fromCodePoint(0xe0001)}b`],
+      ] as const;
+      for (const [slug, displayName] of banned) {
+        await expect(insert(slug, displayName), slug).rejects.toThrow(/mcp_identities_display_name_check/);
+      }
+
+      const accepted = [
+        ["ok-cafe", "Café"],
+        ["ok-emoji", "😀"],
+        ["ok-cjk", "漢字"],
+        ["ok-mark", "e\u0301"],
+      ] as const;
+      for (const [slug, displayName] of accepted) {
+        await insert(slug, displayName);
+      }
+      const stored = await client.query<{ name: string; display_name: string }>(
+        `SELECT name, display_name FROM os.mcp_identities WHERE workspace_id = $1 AND name LIKE 'ok-%' ORDER BY name`,
+        [workspaceId],
+      );
+      expect(stored.rows).toEqual([
+        { name: "ok-cafe", display_name: "Café" },
+        { name: "ok-cjk", display_name: "漢字" },
+        { name: "ok-emoji", display_name: "😀" },
+        { name: "ok-mark", display_name: "e\u0301" },
+      ]);
+    } finally {
+      await client.end();
+    }
+  }, 60_000);
 });
 
 async function seedLegacyRecommendations(client: pg.Client, pid: number) {

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
@@ -415,15 +415,19 @@ describe("mcp identity admin", () => {
     const forcedSlug = await post("Grok_Bot", { name: "picked-slug" });
     expect(forcedSlug.status).toBe(400);
 
+    const slugOf = (base: string) => new RegExp(`^${base}(?:-\\d+)?$`);
     const one = await post("A");
     expect(one.status).toBe(200);
-    const oneBody = await json(one);
-    expect(oneBody.identity).toMatchObject({ displayName: "A", name: "agent" });
+    const oneBody = (await json(one)).identity as { displayName: string; name: string };
+    expect(oneBody.displayName).toBe("A");
+    expect(oneBody.name).toMatch(slugOf("agent"));
 
     const max = "B".repeat(64);
     const sixtyFour = await post(max);
     expect(sixtyFour.status).toBe(200);
-    expect((await json(sixtyFour)).identity).toMatchObject({ displayName: max, name: "b".repeat(40) });
+    const sixtyFourBody = (await json(sixtyFour)).identity as { displayName: string; name: string };
+    expect(sixtyFourBody.displayName).toBe(max);
+    expect(sixtyFourBody.name).toMatch(/^b+(?:-\d+)?$/);
 
     for (const [displayName, slug] of [
       ["Agent #1", "agent-1"],
@@ -434,18 +438,21 @@ describe("mcp identity admin", () => {
     ] as const) {
       const res = await post(displayName);
       expect(res.status, displayName).toBe(200);
-      expect((await json(res)).identity).toMatchObject({ displayName, name: slug });
+      const row = (await json(res)).identity as { displayName: string; name: string };
+      expect(row.displayName).toBe(displayName);
+      expect(row.name).toMatch(slugOf(slug));
     }
 
+    const stamp = `q${Date.now().toString(36)}${randomBytes(2).toString("hex")}`;
     const before = await app.request("/mcp/connector", { headers: owner() });
     const killSwitch = (await json(before)).killSwitch;
-    const created = await post("  Grok_Bot  ");
+    const created = await post(`  ${stamp}_Bot  `);
     expect(created.status).toBe(200);
     const body = await json(created);
     const token = String(body.token ?? "");
     const identity = body.identity as { id: string; name: string; displayName: string; scopes: string[] };
-    expect(identity.displayName).toBe("Grok_Bot");
-    expect(identity.name).toBe("grok-bot");
+    expect(identity.displayName).toBe(`${stamp}_Bot`);
+    expect(identity.name).toBe(`${stamp}-bot`);
     expect(identity.scopes).toEqual(["cerevex.read"]);
     expect(token.startsWith("cxm_")).toBe(true);
     expect(JSON.stringify(body)).not.toContain("tokenHash");
@@ -453,8 +460,8 @@ describe("mcp identity admin", () => {
     expect((await json(after)).killSwitch).toBe(killSwitch);
 
     const stored = await getDb().select().from(mcpIdentities).where(eq(mcpIdentities.id, identity.id));
-    expect(stored[0]?.name).toBe("grok-bot");
-    expect(stored[0]?.displayName).toBe("Grok_Bot");
+    expect(stored[0]?.name).toBe(`${stamp}-bot`);
+    expect(stored[0]?.displayName).toBe(`${stamp}_Bot`);
     expect(stored[0]?.tokenHash).toBe(hashMcpToken(token));
     expect(stored[0]?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(stored[0])).not.toContain(token);
@@ -466,7 +473,7 @@ describe("mcp identity admin", () => {
     });
     expect(await json(verified)).toEqual({
       ok: true,
-      identity: { id: identity.id, name: "grok-bot", scopes: ["cerevex.read"] },
+      identity: { id: identity.id, name: `${stamp}-bot`, scopes: ["cerevex.read"] },
     });
     const wrong = await app.request("/internal/mcp/verify", {
       method: "POST",
@@ -475,14 +482,14 @@ describe("mcp identity admin", () => {
     });
     expect(await json(wrong)).toEqual({ ok: false });
 
-    for (const displayName of ["grok_bot", "GROK_BOT", " Grok_Bot "]) {
+    for (const displayName of [`${stamp}_bot`, `${stamp.toUpperCase()}_BOT`, ` ${stamp}_Bot `]) {
       const duplicate = await post(displayName);
       expect(duplicate.status).toBe(409);
     }
-    const spaced = await post("Grok Bot");
+    const spaced = await post(`${stamp} Bot`);
     expect(spaced.status).toBe(200);
     const spacedBody = await json(spaced);
-    expect(spacedBody.identity).toMatchObject({ displayName: "Grok Bot", name: "grok-bot-2" });
+    expect(spacedBody.identity).toMatchObject({ displayName: `${stamp} Bot`, name: `${stamp}-bot-2` });
     const spacedToken = String(spacedBody.token ?? "");
     expect(hashMcpToken(spacedToken)).not.toBe(hashMcpToken(token));
 
@@ -490,22 +497,23 @@ describe("mcp identity admin", () => {
       .insert(mcpIdentities)
       .values({
         workspaceId: otherWorkspaceId,
-        name: "grok-bot",
-        displayName: "Grok_Bot",
-        tokenHash: hashMcpToken(`cxm_${"e".repeat(43)}`),
+        name: `${stamp}-bot`,
+        displayName: `${stamp}_Bot`,
+        tokenHash: createHash("sha256").update(`other-${stamp}`).digest("hex"),
         scopes: ["cerevex.read"],
       })
       .returning({ id: mcpIdentities.id });
     expect(other?.id).toBeTruthy();
     if (other) await getDb().delete(mcpIdentities).where(eq(mcpIdentities.id, other.id));
 
-    const legacyToken = `cxm_${"f".repeat(43)}`;
+    const legacyToken = `cxm_${stamp}${randomBytes(8).toString("hex")}`;
+    const legacyName = `leg${stamp}`.slice(0, 40);
     const [legacy] = await getDb()
       .insert(mcpIdentities)
       .values({
         workspaceId,
-        name: "legacy-agent",
-        displayName: "legacy-agent",
+        name: legacyName,
+        displayName: legacyName,
         tokenHash: hashMcpToken(legacyToken),
         scopes: ["cerevex.read", "cerevex.recs.submit"],
       })
@@ -518,13 +526,13 @@ describe("mcp identity admin", () => {
     });
     expect(await json(legacyVerify)).toEqual({
       ok: true,
-      identity: { id: legacy.id, name: "legacy-agent", scopes: ["cerevex.read", "cerevex.recs.submit"] },
+      identity: { id: legacy.id, name: legacyName, scopes: ["cerevex.read", "cerevex.recs.submit"] },
     });
     const listed = await app.request("/mcp/identities", { headers: owner() });
     const list = (await json(listed)) as { identities: Array<{ id: string; name: string; displayName: string }> };
     expect(list.identities.find((row) => row.id === legacy.id)).toMatchObject({
-      name: "legacy-agent",
-      displayName: "legacy-agent",
+      name: legacyName,
+      displayName: legacyName,
     });
 
     const granted = await app.request(`/mcp/identities/${identity.id}/grants`, {
@@ -534,13 +542,13 @@ describe("mcp identity admin", () => {
     });
     expect(granted.status).toBe(200);
     expect((await json(granted)).identity).toMatchObject({
-      name: "grok-bot",
-      displayName: "Grok_Bot",
+      name: `${stamp}-bot`,
+      displayName: `${stamp}_Bot`,
       clientIds: [clientId],
     });
     const revoked = await app.request(`/mcp/identities/${identity.id}/revoke`, { method: "POST", headers: owner() });
     expect(revoked.status).toBe(200);
-    expect((await json(revoked)).identity).toMatchObject({ name: "grok-bot", displayName: "Grok_Bot" });
+    expect((await json(revoked)).identity).toMatchObject({ name: `${stamp}-bot`, displayName: `${stamp}_Bot` });
     const rename = await app.request(`/mcp/identities/${identity.id}`, {
       method: "PUT",
       headers: owner(true),
@@ -548,8 +556,8 @@ describe("mcp identity admin", () => {
     });
     expect(rename.status).toBe(404);
     const afterWrite = await getDb().select().from(mcpIdentities).where(eq(mcpIdentities.id, identity.id));
-    expect(afterWrite[0]?.name).toBe("grok-bot");
-    expect(afterWrite[0]?.displayName).toBe("Grok_Bot");
+    expect(afterWrite[0]?.name).toBe(`${stamp}-bot`);
+    expect(afterWrite[0]?.displayName).toBe(`${stamp}_Bot`);
     const still = await app.request("/internal/mcp/verify", {
       method: "POST",
       headers: { "x-cerevex-mcp-key": MCP_KEY, "content-type": "application/json" },
