@@ -29,7 +29,7 @@ export async function createMcpIdentityAction(formData: FormData): Promise<Conne
   const result = await adsApi<{ identity: McpIdentityView; token: string }>(
     '/mcp/identities',
     { method: 'POST', body: JSON.stringify(parsed.body) },
-    { asOwner: true },
+    { asOwner: true, ownerAssertion: true },
   );
   if (!result.ok) return { ok: false, message: result.message };
   const token = result.data.token;
@@ -44,7 +44,7 @@ export async function revokeMcpIdentityAction(id: string): Promise<ConnectorActi
   const refused = await authorized();
   if (refused) return refused;
   if (!UUID.test(id)) return { ok: false, message: 'Identity not found' };
-  const result = await adsApi(`/mcp/identities/${id}/revoke`, { method: 'POST' }, { asOwner: true });
+  const result = await adsApi(`/mcp/identities/${id}/revoke`, { method: 'POST' }, { asOwner: true, ownerAssertion: true });
   if (!result.ok) return { ok: false, message: result.message };
   revalidatePath('/settings');
   return { ok: true, message: 'Identity revoked. The token stops working on the next call.' };
@@ -59,7 +59,7 @@ export async function grantMcpClientsAction(id: string, formData: FormData): Pro
   const result = await adsApi(
     `/mcp/identities/${id}/grants`,
     { method: 'PUT', body: JSON.stringify({ clientIds }) },
-    { asOwner: true },
+    { asOwner: true, ownerAssertion: true },
   );
   if (!result.ok) return { ok: false, message: result.message };
   revalidatePath('/settings');
@@ -73,7 +73,7 @@ export async function setConnectorKillSwitchAction(formData: FormData): Promise<
   const result = await adsApi<{ killSwitch: boolean }>(
     '/mcp/connector',
     { method: 'PUT', body: JSON.stringify({ killSwitch }) },
-    { asOwner: true },
+    { asOwner: true, ownerAssertion: true },
   );
   if (!result.ok) return { ok: false, message: result.message };
   revalidatePath('/settings');
