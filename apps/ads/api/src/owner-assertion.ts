@@ -8,7 +8,7 @@ import {
   type OwnerAssertionRejectReason,
 } from "@cerevex/contracts/owner-assertion";
 import { getDb } from "@tharros/ads-shared/db";
-import { users } from "@tharros/ads-shared/schema";
+import { clients, users } from "@tharros/ads-shared/schema";
 import { loadAuthContext } from "./auth";
 import { childLogger } from "./logger";
 import { requireOwnerWorkspace } from "./mcp-identities";
@@ -200,7 +200,15 @@ export async function authenticateOwnerAssertion(c: Context<AppEnv>): Promise<bo
     throw new HTTPException(403, { message: OWNER_ONLY });
   }
 
+  const wid = result.claims.wid;
+  const inWorkspace = await getDb().select({ id: clients.id }).from(clients).where(eq(clients.workspaceId, wid));
+  const allowedClientIds = new Set(inWorkspace.map((row) => row.id));
   log.info({ msg: "owner_assertion.accepted" });
-  c.set("auth", auth);
+  c.set("auth", {
+    principal: "user",
+    user: auth.user,
+    memberships: [{ workspaceId: wid, role: "owner" }],
+    clientMemberships: auth.clientMemberships.filter((row) => allowedClientIds.has(row.clientId)),
+  });
   return true;
 }

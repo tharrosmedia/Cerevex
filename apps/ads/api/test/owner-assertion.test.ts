@@ -5,7 +5,7 @@ import { hash } from "bcryptjs";
 import { and, eq, like } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
-import { auditLog, clients, mcpIdentities, memberships, users, workspaces } from "@tharros/ads-shared/schema";
+import { auditLog, clientMemberships, clients, mcpIdentities, memberships, users, workspaces } from "@tharros/ads-shared/schema";
 import {
   ownerAssertionKeyBytes,
   signOwnerAssertion,
@@ -364,6 +364,58 @@ describe("owner assertion verification", () => {
     delete process.env.OWNER_ASSERTION_ENABLED;
     const internalWhileOff = await app.request("/mcp/identities", { headers: { "x-cerevex-internal-key": INTERNAL_KEY } });
     expect(internalWhileOff.status).toBe(403);
+  });
+
+  it("binds an owner assertion to wid and does not carry the user's other memberships", async () => {
+    const db = getDb();
+    const email = "owner.assertion.bound@tharrosmedia.com";
+    const passwordHash = await hash("owner-assertion-bound", 10);
+    const userId = await ensureUser(email, "Owner assertion bound", passwordHash);
+    const [workspaceW] = await db.insert(workspaces).values({ name: `Bound W ${Date.now()}` }).returning();
+    const [workspaceX] = await db.insert(workspaces).values({ name: `Bound X ${Date.now()}` }).returning();
+    if (!workspaceW || !workspaceX) throw new Error("bound workspaces missing");
+    const wName = `Bound W client ${Date.now()}`;
+    const xName = `Bound X client ${Date.now()}`;
+    const [clientW] = await db
+      .insert(clients)
+      .values({ workspaceId: workspaceW.id, name: wName, status: "active" })
+      .returning();
+    const [clientX] = await db
+      .insert(clients)
+      .values({ workspaceId: workspaceX.id, name: xName, status: "active" })
+      .returning();
+    if (!clientW || !clientX) throw new Error("bound clients missing");
+    await db.insert(memberships).values([
+      { userId, workspaceId: workspaceW.id, role: "owner" },
+      { userId, workspaceId: workspaceX.id, role: "operator" },
+    ]);
+    await db.insert(clientMemberships).values({ userId, clientId: clientX.id, role: "operator" });
+
+    try {
+      const listed = await call("/clients", mint({ sub: email, wid: workspaceW.id, htm: "GET", htu: "/clients" }));
+      expect(listed.status).toBe(200);
+      const body = await json(listed);
+      const rows = body.clients as Array<{ id: string; workspaceId: string }>;
+      expect(rows.map((row) => row.id)).toContain(clientW.id);
+      expect(rows.map((row) => row.id)).not.toContain(clientX.id);
+      expect(rows.every((row) => row.workspaceId === workspaceW.id)).toBe(true);
+
+      const path = `/clients/${clientX.id}`;
+      const renamed = await call(path, mint({ sub: email, wid: workspaceW.id, htm: "PATCH", htu: path }), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Renamed from workspace W" }),
+      });
+      expect([403, 404]).toContain(renamed.status);
+      const [row] = await db.select().from(clients).where(eq(clients.id, clientX.id));
+      expect(row?.name).toBe(xName);
+    } finally {
+      await db.delete(clientMemberships).where(eq(clientMemberships.userId, userId));
+      await db.delete(memberships).where(eq(memberships.userId, userId));
+      await db.delete(clients).where(eq(clients.id, clientW.id));
+      await db.delete(clients).where(eq(clients.id, clientX.id));
+      await db.delete(users).where(eq(users.id, userId));
+    }
   });
 
   it("rejects an internal key sent together with an assertion", async () => {
