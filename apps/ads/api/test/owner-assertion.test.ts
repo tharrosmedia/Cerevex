@@ -246,6 +246,15 @@ describe("owner assertion verification", () => {
     expect(JSON.stringify(events("owner_assertion.rejected"))).not.toContain(ownerEmail);
   });
 
+  it("binds htu to the path and the query string", async () => {
+    const htu = "/mcp/identities?x=1";
+    const accepted = await call(htu, mint({ htu }));
+    expect(accepted.status).toBe(200);
+    const otherQuery = await call("/mcp/identities?x=2", mint({ htu }));
+    expect(otherQuery.status).toBe(401);
+    expect(events("owner_assertion.rejected").at(-1)?.event.reason).toBe("wrong_htm_htu");
+  });
+
   it("rejects an expired token, a future iat, a bad signature, and a replayed jti", async () => {
     const now = Math.floor(Date.now() / 1000);
     const expired = await call("/mcp/identities", mint({ now: now - 120 }));
@@ -442,6 +451,20 @@ describe("owner assertion verification", () => {
     expect(() => assertOwnerAssertionSecretsDistinct()).not.toThrow();
   });
 
+  it("rejects a request when the assertion secret copies another credential", async () => {
+    process.env.JWT_SECRET = CURRENT;
+    process.env.CEREVEX_OWNER_ASSERTION_SECRET = CURRENT;
+    try {
+      const copied = await call("/mcp/identities", mint());
+      expect(copied.status).toBe(401);
+      expect(await copied.json()).toEqual({ error: "Sign in required", requestId: REQUEST_ID });
+      expect(events("owner_assertion.rejected").at(-1)?.event.reason).toBe("missing_secret");
+      expect(events("owner_assertion.accepted")).toEqual([]);
+    } finally {
+      restoreEnv("JWT_SECRET");
+    }
+  });
+
   it("warns at boot when more than one replica is configured", () => {
     expect(ownerAssertionReplicaWarning({})).toBeNull();
     expect(ownerAssertionReplicaWarning({ RAILWAY_REPLICA_ID: "8f3c2a10-1b9e-4a6d-9c11-0aa11bb22cc3" })).toBeNull();
@@ -483,6 +506,14 @@ describe("owner assertion verification", () => {
     expect(rememberOwnerAssertionJti("jti-0", 1)).toBe(false);
     expect(rememberOwnerAssertionJti("jti-overflow", 1)).toBe(true);
     expect(rememberOwnerAssertionJti("jti-0", 1)).toBe(true);
+  });
+
+  it("treats a jti as replayed until 90s and accepts it once that ttl has passed", () => {
+    const seenAt = 1_000;
+    expect(rememberOwnerAssertionJti("ttl-boundary", seenAt)).toBe(true);
+    expect(rememberOwnerAssertionJti("ttl-boundary", seenAt + 60_000)).toBe(false);
+    expect(rememberOwnerAssertionJti("ttl-boundary", seenAt + 89_999)).toBe(false);
+    expect(rememberOwnerAssertionJti("ttl-boundary", seenAt + 90_000)).toBe(true);
   });
 });
 
