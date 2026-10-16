@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { MCP_RECOMMENDATION_TYPES } from "@cerevex/contracts";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { RECOMMENDATION_TYPES } from "@tharros/ads-shared";
@@ -113,6 +113,17 @@ describe("mcp submit façade", () => {
       await db.delete(mcpIdentities).where(eq(mcpIdentities.workspaceId, workspaceId));
     }
     if (foreignIdentityId) await db.delete(mcpIdentities).where(eq(mcpIdentities.id, foreignIdentityId));
+    const createdClients = [clientId, ungrantedClientId, otherClientId].filter((id) => id.length > 0);
+    if (createdClients.length > 0) {
+      // The rec audit is append-only. This test removes only the rows it wrote, then turns the trigger back on.
+      await db.execute(sql`ALTER TABLE "os"."client_audit_log" DISABLE TRIGGER "client_audit_log_no_delete"`);
+      try {
+        await db.delete(clientAuditLog).where(inArray(clientAuditLog.clientId, createdClients));
+      } finally {
+        await db.execute(sql`ALTER TABLE "os"."client_audit_log" ENABLE TRIGGER "client_audit_log_no_delete"`);
+      }
+      await db.delete(clients).where(inArray(clients.id, createdClients));
+    }
     if (original.key === undefined) delete process.env.ADS_INTERNAL_KEY;
     else process.env.ADS_INTERNAL_KEY = original.key;
     if (original.mcp === undefined) delete process.env.MCP_SERVICE_KEY;
