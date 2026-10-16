@@ -92,7 +92,7 @@ export type McpIdentityPublic = {
   createdAt: string;
 };
 
-function requireOwnerWorkspace(auth: AuthContext): { workspaceId: string; userId: string } {
+export function requireOwnerWorkspace(auth: AuthContext): { workspaceId: string; userId: string } {
   if (isServicePrincipal(auth) || !auth.user) {
     throw new HTTPException(403, { message: OWNER_ONLY });
   }
