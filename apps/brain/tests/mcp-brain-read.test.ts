@@ -182,6 +182,7 @@ try {
   assert.match(sqlCalls[0] ?? '', /os\.mcp_identity_grants/);
   assert.match(sqlCalls[0] ?? '', /i\.id =/);
   assert.match(sqlCalls[0] ?? '', /c\.workspace_id = i\.workspace_id/);
+  assert.match(sqlCalls[0] ?? '', /i\.revoked_at IS NULL/);
   assert.deepEqual(sqlValues[0], [IDENTITY, WORKSPACE]);
   const deniedSql: Sql = async () => [{ scopes: ['cerevex.read'], workspaceId: WORKSPACE, workspaceSettings: {}, clientId: null, siteId: null }];
   assert.deepEqual(await loadMcpReadGrant(deniedSql, IDENTITY, CLIENT, WORKSPACE), { ok: false });
@@ -212,8 +213,10 @@ try {
   assert.deepEqual(hiddenPage.pages, []);
 
   const findingSql: string[] = [];
-  const findingReader: Sql = async (strings) => {
+  const findingValues: unknown[][] = [];
+  const findingReader: Sql = async (strings, ...values) => {
     findingSql.push(strings.join(' '));
+    findingValues.push(values);
     return [];
   };
   await loadMcpReadPage(findingReader, {
@@ -226,6 +229,11 @@ try {
   });
   assert.match(findingSql[0] ?? '', /kind <> 'gsc_u'/);
   assert.equal((findingSql[0] ?? '').includes('detail'), false);
+  assert.ok(findingValues.length >= 1);
+  for (const values of findingValues) {
+    assert.equal(values.includes(false), true);
+    assert.equal(values.includes(true), false);
+  }
 
   const logs: McpReadLogEvent[] = [];
   let grants = 0;
@@ -270,10 +278,14 @@ try {
   assert.equal(grants, 0);
   const wrongKey = await call(base, { 'x-cerevex-internal-key': 'nope' });
   assert.equal(wrongKey.status, 401);
+  const wrongKeyWithCaller = await call(base, { 'x-cerevex-internal-key': 'nope', 'x-cerevex-caller': 'ads-mcp-read' });
+  assert.equal(wrongKeyWithCaller.status, 401);
   const queryKey = await call(`${base}&x-cerevex-internal-key=${KEY}`);
   assert.equal(queryKey.status, 401);
   const cookie = await call(base, { cookie: 'auth=console-secret' });
   assert.equal(cookie.status, 401);
+  const cookieWithCaller = await call(base, { cookie: 'auth=console-secret', 'x-cerevex-caller': 'ads-mcp-read' });
+  assert.equal(cookieWithCaller.status, 401);
   const noCaller = await call(base, { 'x-cerevex-internal-key': KEY });
   assert.equal(noCaller.status, 401);
   const wrongCaller = await call(base, { 'x-cerevex-internal-key': KEY, 'x-cerevex-caller': 'browser' });
@@ -285,8 +297,10 @@ try {
     { 'x-cerevex-internal-key': KEY, 'x-cerevex-caller': 'ads-mcp-read' },
   );
   assert.equal(keyInUrl.status, 401);
+  const extraKey = await call(`${base}&apply=1`, { 'x-cerevex-internal-key': KEY, 'x-cerevex-caller': 'ads-mcp-read' });
+  assert.equal(extraKey.status, 400);
   assert.equal(grants, 0);
-  for (const response of [noKey, wrongKey, queryKey, cookie, noCaller, wrongCaller, posted, keyInUrl]) {
+  for (const response of [noKey, wrongKey, wrongKeyWithCaller, queryKey, cookie, cookieWithCaller, noCaller, wrongCaller, posted, keyInUrl, extraKey]) {
     const text = await response.text();
     assert.equal(text, JSON.stringify({ ok: false }));
     assert.equal(text.includes(KEY), false);
