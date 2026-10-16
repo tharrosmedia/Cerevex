@@ -40,7 +40,7 @@ import { isProductionRuntime } from '@/lib/runtime-env';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-cookie';
 import { authorizeApproveSession } from '@/lib/sensitive-auth';
 import { loadSkillsProfileAction } from '@/lib/skills-profile-action';
-import { SKILL_PROFILE_SLUGS } from '@/lib/skills-profile-slugs';
+import { defaultSkillProfileSlug, SKILL_PROFILE_SLUGS } from '@/lib/skills-profile-slugs';
 import { nameAndLinkSiteClient } from '@/lib/ads-client-link';
 import { safeSetupNext } from '@/lib/client-setup-checklist';
 import { loadSetupProgress } from '@/lib/client-setup-data';
@@ -397,7 +397,8 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
                     {ownerSession ? (
                       <form action={loadSkillsProfileAction}>
                         <input type="hidden" name="storeId" value={store.id} />
-                        <select name="slug" aria-label={`Skills profile for ${store.name}`} defaultValue="hvac-usa">
+                        <select name="slug" aria-label={`Skills profile for ${store.name}`} defaultValue={defaultSkillProfileSlug(store.name)}>
+                          <option value="" disabled>Choose a profile…</option>
                           {SKILL_PROFILE_SLUGS.map((slug) => (
                             <option key={slug} value={slug}>{slug}</option>
                           ))}
