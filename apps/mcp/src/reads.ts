@@ -4,7 +4,9 @@ import {
   isMcpReadTool,
   mcpDefaultGscRange,
   mcpInclusiveDays,
+  mcpReadCursor,
   mcpReadLimit,
+  projectMcpBrainRead,
   type McpReadTool,
 } from "@cerevex/contracts";
 import type { AuditReason, AuditResult } from "./audit";
@@ -14,13 +16,6 @@ import { PROTOCOL_2026 } from "./protocol";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CURSOR = /^[A-Za-z0-9_-]{1,80}$/;
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
-const PHONE = /\+?\d[\d\s().-]{7,}\d/;
-const KIND = /^[a-z0-9_]{1,32}$/;
-const HANDLE = /^[A-Za-z0-9._-]{1,80}$/;
-const FINDING_STATUS = new Set(["open", "queued", "dismissed", "snoozed", "denied"]);
-const SEVERITY = new Set(["high", "med", "low", "info"]);
-
 const GSC_KEYS = new Set(["clientId", "dateStart", "dateEnd", "limit", "cursor", "view"]);
 const FINDING_KEYS = new Set(["clientId", "limit", "cursor", "status"]);
 const CATALOG_KEYS = new Set(["clientId", "limit", "cursor"]);
@@ -89,143 +84,21 @@ function statusOf(value: unknown): "open" | "all" | null {
   return null;
 }
 
-function unsafeText(value: string): boolean {
-  return EMAIL.test(value) || PHONE.test(value);
-}
-
-function plain(value: unknown, max: number): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > max || unsafeText(trimmed)) return null;
-  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
-  return trimmed;
-}
-
-function pageUrl(value: unknown): string | null {
-  const text = plain(value, 300);
-  if (!text || !/^https:\/\/[^\s]+$/.test(text)) return null;
-  return text;
-}
-
-function whole(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 1_000_000_000) return null;
-  return value;
-}
-
-function metric(value: unknown, max: number): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > max) return null;
-  return Math.round(value * 1000) / 1000;
-}
-
-function gscRow(value: unknown, field: "query" | "page"): Record<string, unknown> | null {
-  if (!isRecord(value)) return null;
-  const label = field === "query" ? plain(value.query, 200) : pageUrl(value.page);
-  if (!label) return null;
-  const clicks = whole(value.clicks);
-  const impressions = whole(value.impressions);
-  const ctr = metric(value.ctr, 1);
-  const position = metric(value.position, 1000);
-  if (clicks == null || impressions == null || ctr == null || position == null) return null;
-  return { [field]: label, clicks, impressions, ctr, position };
-}
-
-function findingRow(value: unknown): Record<string, unknown> | null {
-  if (!isRecord(value)) return null;
-  const id = clientIdOf(value.id);
-  const kind = typeof value.kind === "string" && KIND.test(value.kind) ? value.kind : null;
-  const severity = typeof value.severity === "string" && SEVERITY.has(value.severity) ? value.severity : null;
-  const title = plain(value.title, 200);
-  const status = typeof value.status === "string" && FINDING_STATUS.has(value.status) ? value.status : null;
-  const handle = value.handle == null ? null : typeof value.handle === "string" && HANDLE.test(value.handle) ? value.handle : undefined;
-  if (!id || !kind || !severity || !title || !status || handle === undefined) return null;
-  return { id, kind, severity, title, status, handle };
-}
-
-function catalogRow(value: unknown): Record<string, unknown> | null {
-  if (!isRecord(value)) return null;
-  const handle = typeof value.handle === "string" && HANDLE.test(value.handle) ? value.handle : null;
-  const title = plain(value.title, 200);
-  if (!handle || !title) return null;
-  return { handle, title };
-}
-
-function takeBudget<T>(value: unknown, budget: { left: number }, project: (row: unknown) => T | null): T[] | null {
-  if (!Array.isArray(value) || value.length > MCP_READ_MAX_LIMIT) return null;
-  const rows: T[] = [];
-  for (const row of value) {
-    if (budget.left <= 0) break;
-    const projected = project(row);
-    if (!projected) continue;
-    rows.push(projected);
-    budget.left -= 1;
-  }
-  return rows;
-}
-
-function storeIdOf(value: unknown): string | null {
-  if (value == null) return null;
-  return typeof value === "string" && UUID.test(value) ? value : null;
-}
-
-/**
- * Copy only the fields a read may return. Client id must be the one we asked
- * for. Search text that looks like an email or phone is dropped.
- */
+/** Brain already stripped the row. Project again so a stub or an extra field cannot pass through. */
 function projectRead(tool: McpReadTool, read: Record<string, unknown>, request: ParsedRead): Record<string, unknown> | null {
-  if (read.clientId !== request.clientId) return null;
-  if (read.sourceSystem !== "stub" || read.availability !== "not_synced") return null;
-  if (read.limit !== request.limit) return null;
-  const storeId = storeIdOf(read.storeId);
-  if (read.storeId != null && storeId == null) return null;
-  const nextCursor = read.nextCursor == null ? null : typeof read.nextCursor === "string" && CURSOR.test(read.nextCursor) ? read.nextCursor : undefined;
-  if (nextCursor === undefined) return null;
-
-  const payload: Record<string, unknown> = {
-    clientId: request.clientId,
-    storeId,
-    lastSyncedAt: null,
-    sourceSystem: "stub",
-    availability: "not_synced",
-    limit: request.limit,
-    nextCursor: null,
-  };
-
-  const budget = { left: request.limit };
-  if (tool === "get_gsc_performance") {
-    const view = request.view ?? "both";
-    const queries = view === "pages" ? [] : takeBudget(read.queries, budget, (row) => gscRow(row, "query"));
-    const pages = view === "queries" ? [] : takeBudget(read.pages, budget, (row) => gscRow(row, "page"));
-    if (!queries || !pages) return null;
-    const returned = queries.length + pages.length;
-    payload.dateStart = request.dateStart;
-    payload.dateEnd = request.dateEnd;
-    payload.view = view;
-    if (view !== "pages") payload.queries = queries;
-    if (view !== "queries") payload.pages = pages;
-    payload.returned = returned;
-    payload.nextCursor = returned >= request.limit ? nextCursor : null;
-    return payload;
-  }
-
-  if (tool === "get_seo_findings") {
-    const findings = takeBudget(read.findings, budget, findingRow);
-    if (!findings) return null;
-    payload.status = request.status ?? "open";
-    payload.findings = findings;
-    payload.returned = findings.length;
-    payload.nextCursor = findings.length >= request.limit ? nextCursor : null;
-    return payload;
-  }
-
-  const products = takeBudget(read.products, budget, catalogRow);
-  const collections = takeBudget(read.collections, budget, catalogRow);
-  if (!products || !collections) return null;
-  const returned = products.length + collections.length;
-  payload.products = products;
-  payload.collections = collections;
-  payload.returned = returned;
-  payload.nextCursor = returned >= request.limit ? nextCursor : null;
-  return payload;
+  const projected = projectMcpBrainRead(
+    {
+      tool,
+      clientId: request.clientId,
+      limit: request.limit,
+      dateStart: request.dateStart,
+      dateEnd: request.dateEnd,
+      view: request.view,
+      status: request.status,
+    },
+    read,
+  );
+  return projected ? { ...projected } : null;
 }
 
 function toolResult(protocolVersion: string, payload: Record<string, unknown>): Record<string, unknown> {
@@ -321,18 +194,28 @@ function parseReadArgs(tool: McpReadTool, args: unknown, nowMs: number): ParsedR
     const dateEnd = args.dateEnd === undefined ? defaults.dateEnd : args.dateEnd;
     if (typeof dateStart !== "string" || typeof dateEnd !== "string") return null;
     if (mcpInclusiveDays(dateStart, dateEnd) == null) return null;
+    if (!cursorFits(tool, cursor, view)) return null;
     return { tool, clientId, limit, cursor, dateStart, dateEnd, view };
   }
 
   if (tool === "get_seo_findings") {
     if (!keysAllowed(args, FINDING_KEYS)) return null;
     const status = statusOf(args.status);
-    if (!status) return null;
+    if (!status || !cursorFits(tool, cursor)) return null;
     return { tool, clientId, limit, cursor, status };
   }
 
-  if (!keysAllowed(args, CATALOG_KEYS)) return null;
+  if (!keysAllowed(args, CATALOG_KEYS) || !cursorFits(tool, cursor)) return null;
   return { tool, clientId, limit, cursor };
+}
+
+function cursorFits(tool: McpReadTool, cursor: string | null, view?: "queries" | "pages" | "both"): boolean {
+  const parsed = mcpReadCursor(tool, cursor);
+  if (!parsed) return false;
+  if (cursor == null || tool !== "get_gsc_performance" || parsed.tool !== "get_gsc_performance") return true;
+  if (view === "queries") return parsed.side === "queries";
+  if (view === "pages") return parsed.side === "pages";
+  return true;
 }
 
 export async function callReadTool(input: {

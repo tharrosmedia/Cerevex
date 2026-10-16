@@ -6,11 +6,14 @@ import {
   MCP_READ_TOOLS,
   isMcpScope,
   mcpInclusiveDays,
-  type McpReadTool,
+  mcpReadCursor,
+  mcpReadLogEvent,
   type McpScope,
 } from "@cerevex/contracts";
 import { getDb } from "@tharros/ads-shared/db";
 import { clients, mcpIdentities, mcpIdentityGrants } from "@tharros/ads-shared/schema";
+import { fetchBrainMcpRead } from "./mcp-brain-client";
+import { logger } from "./logger";
 import type { AppEnv } from "./types";
 
 const CURSOR = /^[A-Za-z0-9_-]{1,80}$/;
@@ -42,6 +45,12 @@ function readScopes(value: unknown): McpScope[] {
 }
 
 function argumentsMatch(body: ReadBody): boolean {
+  const cursor = mcpReadCursor(body.tool, body.cursor);
+  if (!cursor) return false;
+  if (body.tool === "get_gsc_performance" && body.cursor && cursor.tool === "get_gsc_performance") {
+    if (body.view === "queries" && cursor.side !== "queries") return false;
+    if (body.view === "pages" && cursor.side !== "pages") return false;
+  }
   if (body.tool === "get_gsc_performance") {
     if (!body.dateStart || !body.dateEnd || !body.view || body.status) return false;
     return mcpInclusiveDays(body.dateStart, body.dateEnd) != null;
@@ -52,46 +61,10 @@ function argumentsMatch(body: ReadBody): boolean {
   return !body.dateStart && !body.dateEnd && !body.view && !body.status;
 }
 
-function publicStoreId(value: string | null): string | null {
-  if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return null;
-  return value;
-}
-
-/**
- * Empty on purpose. GSC, findings, and catalog rows live in the Brain public
- * schema. This route stays in os and does not call a platform.
- */
-function stubRead(tool: McpReadTool, clientId: string, storeId: string | null, body: ReadBody): Record<string, unknown> {
-  const read: Record<string, unknown> = {
-    clientId,
-    storeId,
-    lastSyncedAt: null,
-    sourceSystem: "stub",
-    availability: "not_synced",
-    limit: body.limit,
-    nextCursor: null,
-  };
-  if (tool === "get_gsc_performance") {
-    read.dateStart = body.dateStart;
-    read.dateEnd = body.dateEnd;
-    read.view = body.view;
-    if (body.view !== "pages") read.queries = [];
-    if (body.view !== "queries") read.pages = [];
-    return read;
-  }
-  if (tool === "get_seo_findings") {
-    read.status = body.status;
-    read.findings = [];
-    return read;
-  }
-  read.products = [];
-  read.collections = [];
-  return read;
-}
-
 /**
  * cerevex-mcp principal only. A missing grant and a missing client are the same 404.
  * Shape is checked before the grant so a bad limit is not a tenant oracle.
+ * Rows come from Brain's read-only route. This handler does not copy them into os.
  */
 export function registerMcpReadRoute(
   app: Hono<AppEnv>,
@@ -121,7 +94,7 @@ export function registerMcpReadRoute(
     }
 
     const [row] = await db
-      .select({ clientId: clients.id, siteId: clients.siteId })
+      .select({ clientId: clients.id })
       .from(mcpIdentityGrants)
       .innerJoin(clients, eq(mcpIdentityGrants.clientId, clients.id))
       .where(
@@ -133,9 +106,15 @@ export function registerMcpReadRoute(
       )
       .limit(1);
     if (!row) return c.json({ ok: false }, 404);
-    return c.json({
-      ok: true,
-      read: stubRead(parsed.data.tool, row.clientId, publicStoreId(row.siteId), parsed.data),
-    });
+    const remote = await fetchBrainMcpRead(parsed.data);
+    const rows = remote.ok ? remote.read.returned : 0;
+    logger.info(mcpReadLogEvent({
+      identityId: parsed.data.identityId,
+      clientId: parsed.data.clientId,
+      tool: parsed.data.tool,
+      rows,
+    }));
+    if (!remote.ok) return c.json({ ok: false }, remote.status);
+    return c.json({ ok: true, read: remote.read });
   });
 }

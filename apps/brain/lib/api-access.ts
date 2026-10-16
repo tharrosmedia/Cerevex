@@ -185,6 +185,15 @@ export const API_ROUTE_INVENTORY: readonly ApiInventoryEntry[] = [
   },
   {
     surface: 'brain',
+    path: '/api/internal/mcp/read',
+    methods: ['GET'],
+    auth: 'session',
+    currentAuth: 'none',
+    intendedAuth:
+      'GET only. Header x-cerevex-internal-key must match ADS_INTERNAL_KEY and x-cerevex-caller must be ads-mcp-read. A console session is not enough. Brain reads os.mcp_identity_grants for that identity and returns 403 when the grant scope is missing or empty. No write or apply path.',
+  },
+  {
+    surface: 'brain',
     path: '/api/health',
     methods: ['GET'],
     auth: 'public',

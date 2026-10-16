@@ -135,6 +135,7 @@ jobs:
           not_500 GET /terms-of-service
           not_500 GET /data-deletion
           expect GET /api/health 200
+          expect GET /api/internal/mcp/read 401
           expect GET /api/wordpress/plugin 401
           expect GET /api/wordpress/install-note 401
           expect GET /api/ads/connect 401

@@ -43,8 +43,8 @@ function synced(request: McpReadRequest, extra: Record<string, unknown>): McpRea
       clientId: request.clientId,
       storeId: STORE_ID,
       lastSyncedAt: "2026-10-16T12:00:00.000Z",
-      sourceSystem: "stub",
-      availability: "not_synced",
+      sourceSystem: "brain",
+      availability: "ready",
       limit: request.limit,
       nextCursor: "next-page",
       token: "platform-token",
@@ -257,7 +257,7 @@ describe("phase-1 read tools", () => {
     expect(text).not.toContain("not_synced");
   });
 
-  it("returns a bounded Search Console stub for a granted client", async () => {
+  it("returns a bounded Search Console read for a granted client", async () => {
     const { guards, reads, audits } = guardFor((request) =>
       synced(request, {
         queries: [
@@ -283,9 +283,9 @@ describe("phase-1 read tools", () => {
     expect(payload).toMatchObject({
       clientId: CLIENT_ID,
       storeId: STORE_ID,
-      lastSyncedAt: null,
-      sourceSystem: "stub",
-      availability: "not_synced",
+      lastSyncedAt: "2026-10-16T12:00:00.000Z",
+      sourceSystem: "brain",
+      availability: "ready",
       limit: 1,
       returned: 1,
       dateStart: "2026-09-19",
@@ -302,7 +302,7 @@ describe("phase-1 read tools", () => {
     expect(audits.at(-1)).toMatchObject({ result: "ok", reason: "call", tool: "get_gsc_performance", httpStatus: 200 });
   });
 
-  it("returns a bounded SEO findings stub for a granted client", async () => {
+  it("returns bounded SEO findings for a granted client", async () => {
     const findingId = "55555555-5555-4555-8555-555555555555";
     const { guards } = guardFor((request) =>
       synced(request, {
@@ -327,8 +327,8 @@ describe("phase-1 read tools", () => {
     const payload = textOf(await readJson(res));
     expect(payload).toMatchObject({
       clientId: CLIENT_ID,
-      availability: "not_synced",
-      sourceSystem: "stub",
+      availability: "ready",
+      sourceSystem: "brain",
       status: "open",
       limit: 1,
       returned: 1,
@@ -363,8 +363,8 @@ describe("phase-1 read tools", () => {
     const payload = textOf(await readJson(res));
     expect(payload).toMatchObject({
       clientId: CLIENT_ID,
-      availability: "not_synced",
-      sourceSystem: "stub",
+      availability: "ready",
+      sourceSystem: "brain",
       limit: 1,
       returned: 1,
       products: [{ handle: "mini-split", title: "Mini split" }],
@@ -373,6 +373,39 @@ describe("phase-1 read tools", () => {
     expect(JSON.stringify(payload)).not.toContain("bodyHtml");
     expect(JSON.stringify(payload)).not.toContain("secret");
     expect(JSON.stringify(payload)).not.toContain("thermostat");
+  });
+
+  it("drops a stub payload instead of returning it", async () => {
+    const { guards } = guardFor((request) => ({
+      ok: true,
+      read: {
+        clientId: request.clientId,
+        storeId: STORE_ID,
+        lastSyncedAt: null,
+        sourceSystem: "stub",
+        availability: "not_synced",
+        limit: request.limit,
+        nextCursor: null,
+        products: [{ handle: "mini-split", title: "Mini split" }],
+        collections: [],
+      },
+    }));
+    const { app } = testApp({ guards, authenticator: authenticator(["cerevex.read"]) });
+    const res = await app.request(
+      "/mcp",
+      request2026({
+        method: "tools/call",
+        name: "get_store_catalog",
+        arguments: { clientId: CLIENT_ID },
+        authorization: "Bearer cxm_read",
+      }),
+    );
+    const text = await res.text();
+    expect(res.status).toBe(500);
+    expect(text).toContain("Read unavailable");
+    expect(text).not.toContain("not_synced");
+    expect(text).not.toContain("mini-split");
+    expect(text).not.toContain('"isError":false');
   });
 
   it("does not register a GA4 tool", async () => {

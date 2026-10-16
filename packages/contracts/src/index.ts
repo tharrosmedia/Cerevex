@@ -368,6 +368,28 @@ export {
   mcpReadLimit,
 } from "./mcp";
 export type { McpScope, McpReadTool } from "./mcp";
+export {
+  MCP_BRAIN_READ_PATH,
+  MCP_BRAIN_READ_CALLER,
+  MCP_BRAIN_READ_CALLER_HEADER,
+  decideMcpReadAccess,
+  mcpGscReadVisible,
+  mcpReadCursor,
+  mcpReadCursorToken,
+  mcpReadLogEvent,
+  projectMcpBrainRead,
+} from "./mcp-read";
+export type {
+  McpBrainRead,
+  McpBrainReadRequest,
+  McpCatalogReadRow,
+  McpFindingReadRow,
+  McpGrantClient,
+  McpGscPageRow,
+  McpGscQueryRow,
+  McpReadCursor,
+  McpReadLogEvent,
+} from "./mcp-read";
 
 export type {
   StoreConnectorType,
