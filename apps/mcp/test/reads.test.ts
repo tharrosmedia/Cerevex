@@ -167,6 +167,94 @@ describe("phase-1 read tools", () => {
     );
     expect(wide.status).toBe(400);
     expect(reads).toBe(0);
+    const capped = await app.request(
+      "/mcp",
+      request2026({
+        method: "tools/call",
+        id: 3,
+        name: "get_store_catalog",
+        arguments: { clientId: CLIENT_ID, limit: MCP_READ_MAX_LIMIT + 1 },
+        authorization: "Bearer cxm_read",
+      }),
+    );
+    expect(capped.status).toBe(400);
+    expect(await readJson(capped)).toMatchObject({ error: { message: "Invalid arguments" } });
+    expect(reads).toBe(0);
+  });
+
+  it("fails closed when the read throws or the façade is unavailable", async () => {
+    const thrown = guardFor(() => {
+      throw new Error("ads down secret");
+    });
+    const { app } = testApp({ guards: thrown.guards, authenticator: authenticator(["cerevex.read"]) });
+    const res = await app.request(
+      "/mcp",
+      request2026({
+        method: "tools/call",
+        name: "get_store_catalog",
+        arguments: { clientId: CLIENT_ID },
+        authorization: "Bearer cxm_read",
+      }),
+    );
+    const text = await res.text();
+    expect(res.status).toBe(500);
+    expect(text).toContain("Read unavailable");
+    expect(text).not.toContain("not_synced");
+    expect(text).not.toContain("ads down secret");
+    expect(text).not.toContain('"isError":false');
+    expect(thrown.audits.at(-1)).toMatchObject({ result: "error", httpStatus: 500, tool: "get_store_catalog" });
+
+    const down = guardFor(() => ({ ok: false, status: 500 }));
+    const { app: unavailable } = testApp({ guards: down.guards, authenticator: authenticator(["cerevex.read"]) });
+    const again = await unavailable.request(
+      "/mcp",
+      request2026({
+        method: "tools/call",
+        name: "get_store_catalog",
+        arguments: { clientId: CLIENT_ID },
+        authorization: "Bearer cxm_read",
+      }),
+    );
+    const againText = await again.text();
+    expect(again.status).toBe(500);
+    expect(againText).toContain("Read unavailable");
+    expect(againText).not.toContain("not_synced");
+    expect(againText).not.toContain('"isError":false');
+  });
+
+  it("refuses a façade body whose client id is not the one requested", async () => {
+    const foreignStore = "55555555-5555-4555-8555-555555555555";
+    const { guards } = guardFor(() => ({
+      ok: true,
+      read: {
+        clientId: OTHER_CLIENT_ID,
+        storeId: foreignStore,
+        lastSyncedAt: null,
+        sourceSystem: "stub",
+        availability: "not_synced",
+        limit: 1,
+        nextCursor: null,
+        queries: [{ query: "other-tenant-query", clicks: 1, impressions: 2, ctr: 0.5, position: 3 }],
+        pages: [],
+      },
+    }));
+    const { app } = testApp({ guards, authenticator: authenticator(["cerevex.read"]) });
+    const res = await app.request(
+      "/mcp",
+      request2026({
+        method: "tools/call",
+        name: "get_gsc_performance",
+        arguments: { clientId: CLIENT_ID, limit: 1 },
+        authorization: "Bearer cxm_read",
+      }),
+    );
+    const text = await res.text();
+    expect(res.status).toBe(500);
+    expect(text).toContain("Read unavailable");
+    expect(text).not.toContain(OTHER_CLIENT_ID);
+    expect(text).not.toContain(foreignStore);
+    expect(text).not.toContain("other-tenant-query");
+    expect(text).not.toContain("not_synced");
   });
 
   it("returns a bounded Search Console stub for a granted client", async () => {

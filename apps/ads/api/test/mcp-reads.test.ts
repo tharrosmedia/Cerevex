@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { MCP_READ_MAX_LIMIT } from "@cerevex/contracts";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
-import { clients, mcpIdentities, workspaces } from "@tharros/ads-shared/schema";
+import { clients, mcpIdentities, mcpIdentityGrants, workspaces } from "@tharros/ads-shared/schema";
 import { app, json, login } from "./helpers";
 
 const INTERNAL_KEY = "read-internal-key";
@@ -18,6 +18,8 @@ describe("mcp read façade", () => {
   let otherClientId = "";
   let storeId = "";
   let readIdentityId = "";
+  let peerIdentityId = "";
+  let foreignIdentityId = "";
   let submitIdentityId = "";
   let revokedIdentityId = "";
   const clientName = `Read grant ${Date.now().toString(36)}`;
@@ -58,8 +60,24 @@ describe("mcp read façade", () => {
     otherClientId = otherClient.id;
 
     readIdentityId = await createIdentity("cerevex.read", clientId);
+    peerIdentityId = await createIdentity("cerevex.read", ungrantedClientId);
     submitIdentityId = await createIdentity("cerevex.recs.submit", clientId);
     revokedIdentityId = await createIdentity("cerevex.read", clientId);
+    const [foreign] = await db
+      .insert(mcpIdentities)
+      .values({
+        workspaceId: otherWorkspace!.id,
+        name: `f${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+        tokenHash: createHash("sha256").update(randomUUID()).digest("hex"),
+        scopes: ["cerevex.read"],
+      })
+      .returning();
+    if (!foreign) throw new Error("foreign identity missing");
+    foreignIdentityId = foreign.id;
+    await db.insert(mcpIdentityGrants).values([
+      { identityId: readIdentityId, clientId: otherClientId },
+      { identityId: foreignIdentityId, clientId },
+    ]);
     const revoked = await app.request(`/mcp/identities/${revokedIdentityId}/revoke`, {
       method: "POST",
       headers: owner(),
@@ -69,6 +87,7 @@ describe("mcp read façade", () => {
 
   afterAll(async () => {
     const db = getDb();
+    if (foreignIdentityId) await db.delete(mcpIdentities).where(eq(mcpIdentities.id, foreignIdentityId));
     if (workspaceId) await db.delete(mcpIdentities).where(eq(mcpIdentities.workspaceId, workspaceId));
     for (const id of [clientId, ungrantedClientId]) {
       if (id) await db.delete(clients).where(eq(clients.id, id));
@@ -152,6 +171,36 @@ describe("mcp read façade", () => {
     expect(texts[0]).toBe(JSON.stringify({ ok: false }));
     expect(texts[0]).not.toContain(clientName);
     expect(texts[0]).not.toContain(clientId);
+  });
+
+  it("does not let one identity read a client granted only to another", async () => {
+    const stolen = await postRead(readBody("get_store_catalog", peerIdentityId, clientId));
+    const own = await postRead(readBody("get_store_catalog", peerIdentityId, ungrantedClientId));
+    const holder = await postRead(readBody("get_store_catalog", readIdentityId, clientId));
+    expect(stolen.status).toBe(404);
+    expect(await stolen.text()).toBe(JSON.stringify({ ok: false }));
+    expect(own.status).toBe(200);
+    expect((await json(own)).read).toMatchObject({ clientId: ungrantedClientId });
+    expect(holder.status).toBe(200);
+    expect((await json(holder)).read).toMatchObject({ clientId });
+  });
+
+  it("does not honor a grant whose client sits in another workspace", async () => {
+    const res = await postRead(readBody("get_store_catalog", readIdentityId, otherClientId));
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe(JSON.stringify({ ok: false }));
+  });
+
+  it("does not accept an identity that belongs to another workspace", async () => {
+    const res = await postRead(readBody("get_store_catalog", foreignIdentityId, clientId));
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe(JSON.stringify({ ok: false }));
+  });
+
+  it("rejects an extra field on an otherwise valid read", async () => {
+    const res = await postRead(readBody("get_store_catalog", readIdentityId, clientId, { apply: true }));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe(JSON.stringify({ ok: false }));
   });
 
   it("returns 403 for a submit-only identity without naming the client", async () => {
