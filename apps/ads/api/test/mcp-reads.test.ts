@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { MCP_READ_MAX_LIMIT } from "@cerevex/contracts";
+import { MCP_BRAIN_READ_CALLER, MCP_READ_MAX_LIMIT } from "@cerevex/contracts";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { clients, mcpIdentities, mcpIdentityGrants, workspaces } from "@tharros/ads-shared/schema";
 import { app, json, login } from "./helpers";
@@ -27,11 +28,32 @@ describe("mcp read façade", () => {
     key: process.env.ADS_INTERNAL_KEY,
     mcp: process.env.MCP_SERVICE_KEY,
     workspace: process.env.ADS_INTERNAL_WORKSPACE_ID,
+    console: process.env.CONSOLE_ORIGIN,
+    fetch: globalThis.fetch,
   };
+  let brainMode: "ok" | "deny" = "ok";
+  const brainCalls: string[] = [];
 
   beforeAll(async () => {
     process.env.ADS_INTERNAL_KEY = INTERNAL_KEY;
     process.env.MCP_SERVICE_KEY = MCP_KEY;
+    process.env.CONSOLE_ORIGIN = "http://brain.test";
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const href = String(input);
+      brainCalls.push(href);
+      expect(init?.method).toBe("GET");
+      expect(href).not.toContain(INTERNAL_KEY);
+      expect(href).not.toContain(MCP_KEY);
+      const headers = new Headers(init?.headers);
+      expect(headers.get("x-cerevex-internal-key")).toBe(INTERNAL_KEY);
+      expect(headers.get("x-cerevex-caller")).toBe(MCP_BRAIN_READ_CALLER);
+      if (brainMode === "deny") return new Response(JSON.stringify({ ok: false }), { status: 403 });
+      const url = new URL(href);
+      return new Response(JSON.stringify({ ok: true, read: brainPayload(url) }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
     ownerToken = (
       await login(process.env.SEED_OWNER_EMAIL ?? "adam@tharrosmedia.com", process.env.SEED_OWNER_PASSWORD ?? "local-dev-only")
     ).token;
@@ -99,8 +121,45 @@ describe("mcp read façade", () => {
     else process.env.MCP_SERVICE_KEY = original.mcp;
     if (original.workspace === undefined) delete process.env.ADS_INTERNAL_WORKSPACE_ID;
     else process.env.ADS_INTERNAL_WORKSPACE_ID = original.workspace;
+    if (original.console === undefined) delete process.env.CONSOLE_ORIGIN;
+    else process.env.CONSOLE_ORIGIN = original.console;
+    globalThis.fetch = original.fetch;
     await closeDb();
   });
+
+  function brainPayload(url: URL): Record<string, unknown> {
+    const tool = url.searchParams.get("tool");
+    const read: Record<string, unknown> = {
+      clientId: url.searchParams.get("clientId"),
+      storeId,
+      lastSyncedAt: null,
+      sourceSystem: "brain",
+      availability: "ready",
+      limit: Number(url.searchParams.get("limit")),
+      nextCursor: null,
+      token: INTERNAL_KEY,
+      bodyHtml: "<p>secret</p>",
+    };
+    if (tool === "get_gsc_performance") {
+      read.dateStart = url.searchParams.get("dateStart");
+      read.dateEnd = url.searchParams.get("dateEnd");
+      read.view = url.searchParams.get("view");
+      read.queries = [
+        { query: "person@example.com", clicks: 1, impressions: 2, ctr: 0.5, position: 1 },
+        { query: "heat pump", clicks: 3, impressions: 30, ctr: 0.1, position: 4 },
+      ];
+      read.pages = [{ page: "https://example.com/heat", clicks: 1, impressions: 4, ctr: 0.25, position: 2 }];
+      return read;
+    }
+    if (tool === "get_seo_findings") {
+      read.status = url.searchParams.get("status");
+      read.findings = [];
+      return read;
+    }
+    read.products = [];
+    read.collections = [];
+    return read;
+  }
 
   function owner(jsonBody = false): Record<string, string> {
     return {
@@ -155,6 +214,7 @@ describe("mcp read façade", () => {
   });
 
   it("uses one denial for an ungranted client, a missing client, a foreign client, and a revoked identity", async () => {
+    const before = brainCalls.length;
     const cases = [
       readBody("get_store_catalog", readIdentityId, ungrantedClientId),
       readBody("get_store_catalog", readIdentityId, MISSING_CLIENT_ID),
@@ -171,6 +231,7 @@ describe("mcp read façade", () => {
     expect(texts[0]).toBe(JSON.stringify({ ok: false }));
     expect(texts[0]).not.toContain(clientName);
     expect(texts[0]).not.toContain(clientId);
+    expect(brainCalls.length).toBe(before);
   });
 
   it("does not let one identity read a client granted only to another", async () => {
@@ -233,7 +294,7 @@ describe("mcp read façade", () => {
     expect(await over.text()).toBe(await wide.text());
   });
 
-  it("returns a not-synced stub for each granted read", async () => {
+  it("returns a Brain read for each granted tool and drops source PII", async () => {
     const calls: Array<{ tool: string; extra: Record<string, unknown>; rows: string[] }> = [
       {
         tool: "get_gsc_performance",
@@ -244,24 +305,57 @@ describe("mcp read façade", () => {
       { tool: "get_store_catalog", extra: {}, rows: ["products", "collections"] },
     ];
     for (const call of calls) {
+      const before = brainCalls.length;
       const res = await postRead(readBody(call.tool, readIdentityId, clientId, { limit: MCP_READ_MAX_LIMIT, ...call.extra }));
       expect(res.status, call.tool).toBe(200);
+      expect(brainCalls.length).toBe(before + 1);
+      expect(brainCalls.at(-1)).toContain("http://brain.test/api/internal/mcp/read");
       const body = await json(res);
       const read = body.read as Record<string, unknown>;
       expect(read).toMatchObject({
         clientId,
         storeId,
         lastSyncedAt: null,
-        sourceSystem: "stub",
-        availability: "not_synced",
+        sourceSystem: "brain",
+        availability: "ready",
         limit: MCP_READ_MAX_LIMIT,
         nextCursor: null,
       });
-      for (const key of call.rows) expect(read[key]).toEqual([]);
+      if (call.tool === "get_gsc_performance") {
+        expect(read.queries).toEqual([{ query: "heat pump", clicks: 3, impressions: 30, ctr: 0.1, position: 4 }]);
+        expect(read.pages).toEqual([{ page: "https://example.com/heat", clicks: 1, impressions: 4, ctr: 0.25, position: 2 }]);
+      } else {
+        for (const key of call.rows) expect(read[key]).toEqual([]);
+      }
       const text = JSON.stringify(body);
       expect(text).not.toContain(clientName);
       expect(text).not.toContain("bodyHtml");
+      expect(text).not.toContain("person@example.com");
+      expect(text).not.toContain(INTERNAL_KEY);
+      expect(text).not.toContain("not_synced");
       expect(text).not.toContain("ga4");
     }
+  });
+
+  it("returns 403 when Brain says the client is out of scope", async () => {
+    brainMode = "deny";
+    try {
+      const res = await postRead(readBody("get_store_catalog", readIdentityId, clientId));
+      const text = await res.text();
+      expect(res.status).toBe(403);
+      expect(text).toBe(JSON.stringify({ ok: false }));
+      expect(text).not.toContain(clientId);
+      expect(text).not.toContain(INTERNAL_KEY);
+      expect(text).not.toContain("stub");
+    } finally {
+      brainMode = "ok";
+    }
+  });
+
+  it("has no stub read left on the façade", () => {
+    const source = readFileSync(new URL("../src/mcp-reads.ts", import.meta.url), "utf8");
+    expect(source).not.toContain("not_synced");
+    expect(source).not.toContain("sourceSystem: \"stub\"");
+    expect(source).toContain("fetchBrainMcpRead");
   });
 });
