@@ -201,6 +201,52 @@ try {
   assert.equal(created.ok, true);
   assert.equal(verifyOwnerAssertion(assertionOf(seen.at(-1)!), { current: SECRET, htm: "POST", htu: "/mcp/identities" }).ok, true);
 
+  const forged = "forged-caller-assertion";
+  env.OWNER_ASSERTION_ENABLED = "1";
+  env.CEREVEX_OWNER_ASSERTION_SECRET = SECRET;
+  env.ADS_INTERNAL_WORKSPACE_ID = WID;
+  delete env.CONSOLE_OPERATOR_EMAIL;
+  delete env.APPROVE_OPERATOR_EMAILS;
+  installFetch();
+  const replaced = await adsApi(
+    "/mcp/identities",
+    { headers: { "x-cerevex-owner-assertion": forged } },
+    { asOwner: true, ownerAssertion: true, assertionCreds: SESSION },
+  );
+  assert.equal(replaced.ok, true);
+  const mintedOverForged = assertionOf(seen[0]!);
+  assert.notEqual(mintedOverForged, forged);
+  assert.equal(verifyOwnerAssertion(mintedOverForged, { current: SECRET, htm: "GET", htu: "/mcp/identities" }).ok, true);
+
+  installFetch(401, { error: "Sign in required" });
+  const strippedOn = await adsApi(
+    "/mcp/identities",
+    { headers: { "x-cerevex-owner-assertion": forged } },
+    { asOwner: true, ownerAssertion: true, assertionCreds: { cookie: null, internalKey: null } },
+  );
+  assert.equal(strippedOn.ok, false);
+  assert.equal(assertionOf(seen[0]!), "");
+  assert.equal(seen[0]!.headers.get("authorization"), null);
+
+  delete env.OWNER_ASSERTION_ENABLED;
+  installFetch();
+  const strippedOff = await adsApi(
+    "/clients",
+    { headers: { "x-cerevex-owner-assertion": forged } },
+    { asOwner: true, ownerAssertion: true, assertionCreds: SESSION },
+  );
+  assert.equal(strippedOff.ok, true);
+  assert.equal(assertionOf(seen[0]!), "");
+  assert.equal(seen[0]!.headers.get("authorization"), "Bearer static-owner-token");
+
+  env.OWNER_ASSERTION_ENABLED = "1";
+  installFetch();
+  const anonymous = await adsApi("/clients", {}, { anonymous: true, ownerAssertion: true, assertionCreds: SESSION });
+  assert.equal(anonymous.ok, true);
+  assert.equal(assertionOf(seen[0]!), "");
+  assert.equal(seen[0]!.headers.get("authorization"), null);
+  assert.equal(seen[0]!.headers.get("x-cerevex-internal-key"), null);
+
   console.log("owner-assertion: ok");
 } finally {
   restore();
