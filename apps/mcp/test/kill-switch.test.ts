@@ -79,6 +79,9 @@ describe("POST /mcp kill switch", () => {
         async verifyToken() {
           return null;
         },
+        async readGranted() {
+          return { ok: false, status: 404 };
+        },
       },
     });
     const res = await app.request("/mcp", request2026());
@@ -104,6 +107,9 @@ describe("POST /mcp kill switch", () => {
         async writeSecurityAudit() {},
         async verifyToken() {
           return null;
+        },
+        async readGranted() {
+          return { ok: false, status: 404 };
         },
       },
     });

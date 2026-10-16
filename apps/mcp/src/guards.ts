@@ -1,3 +1,4 @@
+import type { McpReadTool } from "@cerevex/contracts";
 import { remoteFromApiBody, type RemoteKillSwitch } from "./kill-switch";
 import type { SecurityAuditEntry } from "./audit";
 
@@ -11,15 +12,36 @@ export type VerifiedAgent = {
   scopes: string[];
 };
 
+export type McpReadRequest = {
+  tool: McpReadTool;
+  identityId: string;
+  clientId: string;
+  limit: number;
+  cursor: string | null;
+  dateStart?: string;
+  dateEnd?: string;
+  view?: "queries" | "pages" | "both";
+  status?: "open" | "all";
+};
+
+export type McpReadResponse =
+  | { ok: true; read: Record<string, unknown> }
+  | { ok: false; status: 400 | 403 | 404 | 500 };
+
 export type GuardClient = {
   readKillSwitch(): Promise<RemoteKillSwitch>;
   writeSecurityAudit(entry: SecurityAuditEntry): Promise<void>;
   verifyToken(tokenHash: string): Promise<VerifiedAgent | null>;
+  readGranted(request: McpReadRequest): Promise<McpReadResponse>;
 };
+
+/** Fail closed when a test double has not wired reads. */
+export const unreadGranted: GuardClient["readGranted"] = async () => ({ ok: false, status: 404 });
 
 const CONNECTOR_PATH = "/internal/mcp/connector";
 const AUDIT_PATH = "/internal/mcp/security-audit";
 const VERIFY_PATH = "/internal/mcp/verify";
+const READ_PATH = "/internal/mcp/read";
 const TOKEN_HASH = /^[0-9a-f]{64}$/;
 
 export function guardEndpoint(base: string, path: string): string | null {
@@ -103,7 +125,29 @@ export function createHttpGuardClient(options: {
         return null;
       }
     },
+    async readGranted(request) {
+      const response = await call(READ_PATH, "POST", JSON.stringify(request));
+      if (!response) return { ok: false, status: 500 };
+      if (response.status === 404) return { ok: false, status: 404 };
+      if (response.status === 403) return { ok: false, status: 403 };
+      if (response.status === 400) return { ok: false, status: 400 };
+      if (response.status < 200 || response.status >= 300) return { ok: false, status: 500 };
+      try {
+        return readFromBody(await response.json());
+      } catch {
+        return { ok: false, status: 500 };
+      }
+    },
   };
+}
+
+function readFromBody(body: unknown): McpReadResponse {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { ok: false, status: 500 };
+  const record = body as Record<string, unknown>;
+  if (record.ok !== true || record.read === null || typeof record.read !== "object" || Array.isArray(record.read)) {
+    return { ok: false, status: 500 };
+  }
+  return { ok: true, read: record.read as Record<string, unknown> };
 }
 
 function agentFromBody(body: unknown): VerifiedAgent | null {

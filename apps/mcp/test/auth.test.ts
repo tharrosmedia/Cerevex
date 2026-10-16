@@ -236,8 +236,14 @@ describe("POST /mcp stays 401 until scoped bearer auth exists", () => {
     expect(listed.status).toBe(200);
     const listBody = await readJson(listed);
     const tools = (listBody.result as { tools: Array<{ name: string; annotations: { readOnlyHint: boolean } }> }).tools;
-    expect(tools.map((tool) => tool.name)).toEqual(["ping"]);
-    expect(tools[0]?.annotations.readOnlyHint).toBe(true);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "ping",
+      "get_gsc_performance",
+      "get_seo_findings",
+      "get_store_catalog",
+    ]);
+    expect(tools.every((tool) => tool.annotations.readOnlyHint)).toBe(true);
+    expect(tools.map((tool) => tool.name)).not.toContain("get_ga4_report");
 
     const pong = await app.request(
       "/mcp",
