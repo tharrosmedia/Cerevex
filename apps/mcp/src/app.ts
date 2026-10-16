@@ -273,14 +273,17 @@ export function createApp(deps: McpAppDeps) {
       });
 
     // Admit before any await so a concurrent burst cannot all pass a peek and then fill the map.
-    // A POST with a supported protocol header and a well-formed bearer is a lookup. A hash that
-    // verified recently is limited per identity and skips the shared lookup bucket. An unknown
-    // hash that already waited once may verify without that bucket. Every other bearer-shaped
-    // call, including a bad protocol header or a GET, uses the denial limiter.
+    // A POST with a well-formed bearer and a supported protocol version is a lookup. A missing
+    // MCP-Protocol-Version header resolves to 2025-03-26 (or the negotiated initialize version),
+    // which is supported, so it uses the same identity window and verified-token cache. A hash
+    // that verified recently is limited per identity and skips the shared lookup bucket. An
+    // unknown hash that already waited once may verify without that bucket. Every other
+    // bearer-shaped call, including an unsupported protocol header or a GET, uses the denial limiter.
     const presented = bearerToken(authorization);
     const presentedHash = presented ? hashMcpToken(presented) : null;
     const protocolHeader = cleanHeaderValue(c.req.header("mcp-protocol-version"));
-    const protocolSupported = protocolHeader != null && (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolHeader);
+    const protocolSupported =
+      protocolHeader == null || (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolHeader);
     const authenticating =
       presentedHash != null &&
       c.req.method === "POST" &&
