@@ -235,6 +235,21 @@ describe("mcp submit façade", () => {
     expect(await recommendationIds(clientId)).toEqual(before);
   });
 
+  it("does not write when the env override is set, even if the workspace flag is on", async () => {
+    const previous = process.env.MCP_CONNECTOR_KILL_SWITCH;
+    process.env.MCP_CONNECTOR_KILL_SWITCH = "off";
+    const before = await recommendationIds(clientId);
+    try {
+      const res = await postSubmit(bodyFor(submitIdentityId, clientId, { idempotencyKey: "retry-key-env-override1" }));
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe(JSON.stringify({ ok: false, error: "kill_switch" }));
+      expect(await recommendationIds(clientId)).toEqual(before);
+    } finally {
+      if (previous === undefined) delete process.env.MCP_CONNECTOR_KILL_SWITCH;
+      else process.env.MCP_CONNECTOR_KILL_SWITCH = previous;
+    }
+  });
+
   it("does not write when the kill switch is tripped", async () => {
     const db = getDb();
     const before = await recommendationIds(clientId);

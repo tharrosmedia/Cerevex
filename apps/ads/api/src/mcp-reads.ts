@@ -11,7 +11,8 @@ import {
   type McpScope,
 } from "@cerevex/contracts";
 import { getDb } from "@tharros/ads-shared/db";
-import { clients, mcpIdentities, mcpIdentityGrants } from "@tharros/ads-shared/schema";
+import { clients, mcpIdentities, mcpIdentityGrants, workspaces } from "@tharros/ads-shared/schema";
+import { connectorEffectivelyOff, connectorEnvValue } from "./mcp-connector";
 import { fetchBrainMcpRead } from "./mcp-brain-client";
 import { logger } from "./logger";
 import type { AppEnv } from "./types";
@@ -76,6 +77,10 @@ export function registerMcpReadRoute(
     if (!parsed.success || !argumentsMatch(parsed.data)) return c.json({ ok: false }, 400);
 
     const db = getDb();
+    const workspace = await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+    if (!workspace || connectorEffectivelyOff(workspace.settingsJson, connectorEnvValue())) {
+      return c.json({ ok: false, error: "kill_switch" }, 403);
+    }
     const [identity] = await db
       .select({ scopes: mcpIdentities.scopes })
       .from(mcpIdentities)

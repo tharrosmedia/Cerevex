@@ -296,7 +296,7 @@ describe("mcp identity admin", () => {
         headers: owner(true),
         body: JSON.stringify({ killSwitch: false }),
       });
-      expect(await json(cleared)).toEqual({ killSwitch: false });
+      expect(await json(cleared)).toEqual({ killSwitch: false, envForcedOff: false });
       const written = await getDb()
         .select()
         .from(auditLog)
@@ -318,7 +318,7 @@ describe("mcp identity admin", () => {
         headers: owner(true),
         body: JSON.stringify({ killSwitch: true }),
       });
-      expect(await json(tripped)).toEqual({ killSwitch: true });
+      expect(await json(tripped)).toEqual({ killSwitch: true, envForcedOff: false });
       const audits = await getDb()
         .select()
         .from(auditLog)

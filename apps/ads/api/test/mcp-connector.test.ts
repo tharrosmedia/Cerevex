@@ -2,8 +2,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { auditLog, clientAuditLog, workspaces } from "@tharros/ads-shared/schema";
-import { connectorKillSwitchTripped, MCP_CONNECTOR_KILL_SWITCH_KEY } from "../src/mcp-connector";
-import { app, json, login } from "./helpers";
+import {
+  connectorEffectivelyOff,
+  connectorEnvValue,
+  connectorKillSwitchTripped,
+  connectorOwnerView,
+  connectorServiceView,
+  envForcesConnectorOff,
+  MCP_CONNECTOR_KILL_SWITCH_ENV,
+  MCP_CONNECTOR_KILL_SWITCH_KEY,
+} from "../src/mcp-connector";
+import { app, ensureScopedUser, json, login } from "./helpers";
 
 const INTERNAL_KEY = "test-internal-service-key";
 const MCP_KEY = "test-mcp-service-key";
@@ -30,6 +39,7 @@ const auditBody = {
 
 describe("mcp connector façade", () => {
   let ownerToken = "";
+  let readonlyToken = "";
   let workspaceId = "";
   let originalSettings: unknown;
 
@@ -42,6 +52,8 @@ describe("mcp connector façade", () => {
         process.env.SEED_OWNER_PASSWORD ?? "local-dev-only",
       )
     ).token;
+    await ensureScopedUser();
+    readonlyToken = (await login("pilot.readonly@tharrosmedia.com", "readonly-local-only")).token;
     const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.name, "Tharros Media") });
     if (!workspace) throw new Error("Seed workspace missing");
     workspaceId = workspace.id;
@@ -88,6 +100,33 @@ describe("mcp connector façade", () => {
     expect(connectorKillSwitchTripped({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: false })).toBe(false);
   });
 
+  it("treats any non-empty env as a hard off, and leaves a blank env to the flag", () => {
+    for (const envValue of ["on", "ON", " on ", "off", "false", "0", "no"]) {
+      expect(envForcesConnectorOff(envValue)).toBe(true);
+      expect(connectorEffectivelyOff({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: false }, envValue)).toBe(true);
+      expect(connectorEffectivelyOff({}, envValue)).toBe(true);
+    }
+    for (const envValue of [undefined, "", "   "]) {
+      expect(envForcesConnectorOff(envValue)).toBe(false);
+      expect(connectorEffectivelyOff({}, envValue)).toBe(true);
+      expect(connectorEffectivelyOff({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: false }, envValue)).toBe(false);
+      expect(connectorEffectivelyOff({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: true }, envValue)).toBe(true);
+    }
+    expect(connectorOwnerView({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: false }, {})).toEqual({
+      killSwitch: false,
+      envForcedOff: false,
+    });
+    expect(connectorOwnerView({}, { [MCP_CONNECTOR_KILL_SWITCH_ENV]: "off" })).toEqual({
+      killSwitch: true,
+      envForcedOff: true,
+    });
+    expect(connectorServiceView({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: false }, { [MCP_CONNECTOR_KILL_SWITCH_ENV]: "0" })).toEqual({
+      killSwitch: true,
+    });
+    expect(connectorServiceView({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: false }, {})).toEqual({ killSwitch: false });
+    expect(connectorEnvValue({})).toBeUndefined();
+  });
+
   it("requires the MCP service key and does not accept the Brain service key or a query string", async () => {
     const missing = await app.request("/internal/mcp/connector");
     expect(missing.status).toBe(401);
@@ -130,6 +169,77 @@ describe("mcp connector façade", () => {
     const clear = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
     expect(await json(clear)).toEqual({ killSwitch: false });
     await getDb().update(workspaces).set({ applyKillSwitch: true }).where(eq(workspaces.id, workspaceId));
+  });
+
+  it("lets only an owner change the switch, and the env override wins over a saved on", async () => {
+    const previousEnv = process.env.MCP_CONNECTOR_KILL_SWITCH;
+    const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+    const previousApply = workspace?.applyKillSwitch;
+    delete process.env.MCP_CONNECTOR_KILL_SWITCH;
+    try {
+      await setSettings({ vertical: "hvac" });
+      const defaults = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
+      expect(await json(defaults)).toEqual({ killSwitch: true });
+      const ownerDefault = await app.request("/mcp/connector", { headers: { authorization: `Bearer ${ownerToken}` } });
+      expect(await json(ownerDefault)).toEqual({ killSwitch: true, envForcedOff: false });
+
+      const readerGet = await app.request("/mcp/connector", {
+        headers: { authorization: `Bearer ${readonlyToken}` },
+      });
+      expect(readerGet.status).toBe(403);
+      const reader = await app.request("/mcp/connector", {
+        method: "PUT",
+        headers: { authorization: `Bearer ${readonlyToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ killSwitch: false }),
+      });
+      expect(reader.status).toBe(403);
+      const untouched = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+      expect(untouched?.settingsJson).toEqual({ vertical: "hvac" });
+      expect(untouched?.applyKillSwitch).toBe(previousApply);
+
+      const enabled = await app.request("/mcp/connector", {
+        method: "PUT",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ killSwitch: false }),
+      });
+      expect(await json(enabled)).toEqual({ killSwitch: false, envForcedOff: false });
+      const clear = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
+      expect(await json(clear)).toEqual({ killSwitch: false });
+      const storedOn = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+      expect((storedOn?.settingsJson as { vertical?: string; mcpConnectorKillSwitch?: boolean }).vertical).toBe("hvac");
+      expect((storedOn?.settingsJson as { mcpConnectorKillSwitch?: boolean }).mcpConnectorKillSwitch).toBe(false);
+
+      for (const envValue of ["on", "off", "false", "0"]) {
+        process.env.MCP_CONNECTOR_KILL_SWITCH = envValue;
+        const forced = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
+        expect(await json(forced), envValue).toEqual({ killSwitch: true });
+        const ownerView = await app.request("/mcp/connector", { headers: { authorization: `Bearer ${ownerToken}` } });
+        expect(await json(ownerView), envValue).toEqual({ killSwitch: false, envForcedOff: true });
+      }
+
+      process.env.MCP_CONNECTOR_KILL_SWITCH = "   ";
+      const blank = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
+      expect(await json(blank)).toEqual({ killSwitch: false });
+
+      delete process.env.MCP_CONNECTOR_KILL_SWITCH;
+      const disabled = await app.request("/mcp/connector", {
+        method: "PUT",
+        headers: { authorization: `Bearer ${ownerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ killSwitch: true }),
+      });
+      expect(await json(disabled)).toEqual({ killSwitch: true, envForcedOff: false });
+      const tripped = await app.request("/internal/mcp/connector", { headers: mcpHeaders() });
+      expect(await json(tripped)).toEqual({ killSwitch: true });
+    } finally {
+      if (previousEnv === undefined) delete process.env.MCP_CONNECTOR_KILL_SWITCH;
+      else process.env.MCP_CONNECTOR_KILL_SWITCH = previousEnv;
+      if (workspaceId) {
+        await getDb()
+          .update(workspaces)
+          .set({ settingsJson: originalSettings ?? {}, applyKillSwitch: previousApply ?? true })
+          .where(eq(workspaces.id, workspaceId));
+      }
+    }
   });
 
   it("appends a workspace security audit and refuses extra fields", async () => {

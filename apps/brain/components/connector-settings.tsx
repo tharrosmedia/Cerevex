@@ -8,15 +8,23 @@ import {
   revokeMcpIdentityAction,
   setConnectorKillSwitchAction,
 } from '@/lib/mcp-connector-actions';
-import { MCP_SCOPE_LABELS, MCP_SCOPES, type ConnectorClient, type McpIdentityView } from '@/lib/mcp-connector';
+import {
+  MCP_SCOPE_LABELS,
+  MCP_SCOPES,
+  connectorSwitchView,
+  type ConnectorClient,
+  type McpIdentityView,
+} from '@/lib/mcp-connector';
 
 export function ConnectorSettings({
   killSwitch,
+  envForcedOff = false,
   identities,
   clients,
   loadError,
 }: {
   killSwitch: boolean | null;
+  envForcedOff?: boolean;
   identities: McpIdentityView[];
   clients: ConnectorClient[];
   loadError: string | null;
@@ -25,6 +33,7 @@ export function ConnectorSettings({
   const [pending, start] = useTransition();
   const [message, setMessage] = useState<string | null>(loadError);
   const [token, setToken] = useState<string | null>(null);
+  const connector = connectorSwitchView({ killSwitch, envForcedOff });
 
   function run(action: () => Promise<{ ok: boolean; message: string; token?: string }>) {
     start(async () => {
@@ -58,14 +67,26 @@ export function ConnectorSettings({
           run(() => setConnectorKillSwitchAction(data));
         }}
       >
-        <label className="cx-field">
+        <p role="status" data-connector={connector.known ? (connector.off ? 'off' : 'on') : 'unknown'}>
+          {connector.status}
+        </p>
+        <label className="cx-field cx-switch">
           <span>
-            <input type="checkbox" name="connectorOff" defaultChecked={killSwitch !== false} disabled={killSwitch === null} />{' '}
-            Connector off
+            <input
+              type="checkbox"
+              role="switch"
+              name="connectorOn"
+              defaultChecked={connector.known && !connector.savedOff}
+              disabled={!connector.canEdit}
+            />{' '}
+            Connector on
           </span>
-          <p className="cx-help">Checked refuses every connector call. Uncheck and save to release it.</p>
+          <p className="cx-help">
+            Turn on to allow connector calls. Leave it off to refuse them. An environment override still forces the
+            connector off.
+          </p>
         </label>
-        <button type="submit" className="btn-secondary" disabled={pending || killSwitch === null}>
+        <button type="submit" className="btn-secondary" disabled={pending || !connector.canEdit}>
           Save connector switch
         </button>
       </form>

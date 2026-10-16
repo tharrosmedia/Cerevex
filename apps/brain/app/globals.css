@@ -1077,6 +1077,21 @@ a { color: var(--foreground); }
   font-weight: 650;
 }
 
+.cx-switch > span {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.cx-switch input[type="checkbox"] {
+  width: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
 .cx-field input,
 .cx-field select,
 .cx-field textarea {

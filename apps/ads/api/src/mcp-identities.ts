@@ -9,7 +9,7 @@ import { getDb } from "@tharros/ads-shared/db";
 import { auditLog, clients, mcpIdentities, mcpIdentityGrants, workspaces } from "@tharros/ads-shared/schema";
 import type { AuthContext } from "@tharros/ads-shared";
 import { isServicePrincipal, internalWorkspaceId } from "./auth";
-import { MCP_CONNECTOR_KILL_SWITCH_KEY, connectorKillSwitchTripped } from "./mcp-connector";
+import { MCP_CONNECTOR_KILL_SWITCH_KEY, connectorOwnerView, connectorServiceView } from "./mcp-connector";
 import { registerMcpReadRoute } from "./mcp-reads";
 import { registerMcpSubmitRoute } from "./mcp-submit";
 import { mcpKeyMatches } from "./mcp-principal";
@@ -387,7 +387,7 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
     const { workspaceId } = requireOwnerWorkspace(c.get("auth"));
     const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
     if (!workspace) throw new HTTPException(404, { message: "Workspace not found" });
-    return c.json({ killSwitch: connectorKillSwitchTripped(workspace.settingsJson) });
+    return c.json(connectorOwnerView(workspace.settingsJson));
   });
 
   app.put("/mcp/connector", requireAuth, async (c) => {
@@ -410,7 +410,7 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
         payload: { killSwitch: tripped },
       });
     });
-    return c.json({ killSwitch: tripped });
+    return c.json(connectorOwnerView({ [MCP_CONNECTOR_KILL_SWITCH_KEY]: tripped }));
   });
 }
 
@@ -423,7 +423,7 @@ export function registerMcpServiceRoutes(app: Hono<AppEnv>) {
     const workspaceId = await assertMcpWorkspace(c.req.header("x-cerevex-mcp-key"));
     const workspace = await getDb().query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
     if (!workspace) throw new HTTPException(401, { message: "Service workspace is not configured" });
-    return c.json({ killSwitch: connectorKillSwitchTripped(workspace.settingsJson) });
+    return c.json(connectorServiceView(workspace.settingsJson));
   });
 
   app.post("/internal/mcp/security-audit", async (c) => {
