@@ -20,7 +20,7 @@ import { registerM51Routes } from "./m51";
 import { registerLpIntelligenceRoutes } from "./lp-intelligence";
 import { registerOfflineRoutes } from "./offline";
 import { registerInMarketRoutes } from "./in-market";
-import { registerMcpConnectorRoutes } from "./mcp-connector";
+import { registerMcpIdentityRoutes, registerMcpServiceRoutes } from "./mcp-identities";
 import { registerPlanningRoutes } from "./planning";
 import { checkViolationMessage } from "./db-errors";
 import { registerConnectRoutes } from "./routes";
@@ -281,7 +281,8 @@ export function createApp() {
   registerLpIntelligenceRoutes(app, requireAuth);
   registerPlanningRoutes(app, requireAuth);
   registerInMarketRoutes(app, requireAuth);
-  registerMcpConnectorRoutes(app, requireAuth);
+  registerMcpServiceRoutes(app);
+  registerMcpIdentityRoutes(app, requireAuth);
 
   app.post("/jobs/stub", requireAuth, async (c) => {
     const auth = c.get("auth");

@@ -196,7 +196,13 @@ async function cloneBase(suffix: string): Promise<string> {
 const serviceTag = "0007_service_actor_constraints";
 const serviceIndex = journal.migrations.findIndex((migration) => migration.tag === serviceTag);
 const beforeServiceTags = journal.migrations.slice(0, serviceIndex).map((migration) => migration.tag);
-const serviceThenAudit = [serviceTag, "0008_client_audit_log", "0009_monthly_usage", "0010_recommendation_scope"];
+const serviceThenAudit = [
+  serviceTag,
+  "0008_client_audit_log",
+  "0009_monthly_usage",
+  "0010_recommendation_scope",
+  "0011_mcp_identities",
+];
 const beforeServiceName = `cerevex_prod_mig_${process.pid}_pre7`;
 let beforeServiceReady: Promise<string> | undefined;
 
@@ -505,7 +511,7 @@ describe("os production migrate", () => {
   });
 
   it("applies 0008 and 0009 after 0000–0007 and keeps scholarship limits", async () => {
-    expect(pending.tag).toBe("0010_recommendation_scope");
+    expect(pending.tag).toBe("0011_mcp_identities");
     expect(appliedTags).toContain("0006_plan_entitlements");
     expect(appliedTags).toContain(serviceTag);
     expect(appliedTags).toContain("0008_client_audit_log");
@@ -525,7 +531,12 @@ describe("os production migrate", () => {
       await clientSetup.end();
     }
     const dry = await request(databaseUrl, "dry-run");
-    expect(dry.pending).toEqual(["0008_client_audit_log", "0009_monthly_usage", "0010_recommendation_scope"]);
+    expect(dry.pending).toEqual([
+      "0008_client_audit_log",
+      "0009_monthly_usage",
+      "0010_recommendation_scope",
+      "0011_mcp_identities",
+    ]);
     expect(dry.migrationsApplied).toEqual([]);
     expect(await pendingTable(databaseUrl)).toBeNull();
 
@@ -534,6 +545,7 @@ describe("os production migrate", () => {
       "0008_client_audit_log",
       "0009_monthly_usage",
       "0010_recommendation_scope",
+      "0011_mcp_identities",
     ]);
 
     const client = new pg.Client({ connectionString: databaseUrl });

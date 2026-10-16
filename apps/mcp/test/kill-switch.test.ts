@@ -76,6 +76,9 @@ describe("POST /mcp kill switch", () => {
           throw new Error("ads api down");
         },
         async writeSecurityAudit() {},
+        async verifyToken() {
+          return null;
+        },
       },
     });
     const res = await app.request("/mcp", request2026());
@@ -99,6 +102,9 @@ describe("POST /mcp kill switch", () => {
           return remote as "clear";
         },
         async writeSecurityAudit() {},
+        async verifyToken() {
+          return null;
+        },
       },
     });
     expect((await app.request("/mcp", request2026())).status).toBe(401);

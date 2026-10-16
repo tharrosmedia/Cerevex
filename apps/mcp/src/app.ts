@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { rejectUntilScopedBearer, type McpAuthenticator, type McpIdentity } from "./auth";
+import { createDeniedAuditAggregator } from "./audit-buffer";
 import { buildSecurityAuditEntry, type AuditReason, type AuditResult, type SecurityAuditEntry } from "./audit";
 import { MAX_MCP_BODY_BYTES, readLimitedText } from "./body";
 import type { GuardClient } from "./guards";
 import { asRemoteKillSwitch, connectorKilled, envForcesOff } from "./kill-switch";
+import { cacheRemoteKillSwitch } from "./kill-switch-cache";
+import { getConnInfo } from "@hono/node-server/conninfo";
+import { clientIpFromHeaders, createDeniedIpLimiter, createTokenBucket } from "./limiter";
+import { bearerToken } from "./token";
 import { classifyOrigin, parseAllowedOrigins } from "./origin";
 import { PING_TOOL_NAME, pingCallResult, pingToolsList } from "./ping";
 import {
@@ -18,15 +23,46 @@ import {
   isJsonContentType,
   parseMcpRequest,
 } from "./protocol";
+import { requiredScope } from "./scope";
 
 export const SERVICE_NAME = "cerevex-mcp";
+export const DENIED_IP_LIMIT = 30;
+export const DENIED_IP_WINDOW_MS = 60_000;
+/** Under the one-minute kill-switch bound. Revocation is not cached. */
+export const KILL_SWITCH_CACHE_MS = 5_000;
+export const DENIED_AUDIT_FLUSH_MS = 5_000;
+/** Process-wide denial budget. Not keyed by IP. One app per process holds one bucket. */
+export const GLOBAL_DENIAL_CAPACITY = 60;
+export const GLOBAL_DENIAL_REFILL_PER_SECOND = 1;
+
+export type AuditControl = {
+  flush: () => Promise<void>;
+};
 
 export type McpAppDeps = {
   allowedOrigins: string;
   killSwitchEnv: string | undefined;
   guards: GuardClient;
   authenticator?: McpAuthenticator;
+  killSwitchTtlMs?: number;
+  deniedPerIp?: number;
+  deniedWindowMs?: number;
+  deniedFlushMs?: number;
+  now?: () => number;
+  auditControl?: AuditControl;
+  deniedMaxIps?: number;
+  globalDenialCapacity?: number;
+  globalDenialRefillPerSecond?: number;
 };
+
+function peerAddress(c: { env: unknown }): string | null {
+  try {
+    const address = getConnInfo(c as never).remote.address;
+    return typeof address === "string" && address.length > 0 ? address : null;
+  } catch {
+    return null;
+  }
+}
 
 type JsonRpcError = {
   code: number;
@@ -42,7 +78,41 @@ const BASE_HEADERS = {
 export function createApp(deps: McpAppDeps) {
   const authenticator = deps.authenticator ?? rejectUntilScopedBearer;
   const allowedOrigins = parseAllowedOrigins(deps.allowedOrigins);
+  const now = deps.now ?? Date.now;
+  const readKillSwitch = cacheRemoteKillSwitch(() => deps.guards.readKillSwitch(), deps.killSwitchTtlMs ?? 0, now);
+  const limiter = createDeniedIpLimiter({
+    limit: deps.deniedPerIp ?? DENIED_IP_LIMIT,
+    windowMs: deps.deniedWindowMs ?? DENIED_IP_WINDOW_MS,
+    maxIps: deps.deniedMaxIps,
+    now,
+  });
+  const denialBucket = createTokenBucket({
+    capacity: deps.globalDenialCapacity ?? GLOBAL_DENIAL_CAPACITY,
+    refillPerSecond: deps.globalDenialRefillPerSecond ?? GLOBAL_DENIAL_REFILL_PER_SECOND,
+    now,
+  });
+  const deniedAudits = createDeniedAuditAggregator();
+  const flushMs = deps.deniedFlushMs ?? 0;
   const app = new Hono();
+
+  async function flushDeniedAudits(): Promise<void> {
+    const rows = deniedAudits.drain();
+    for (const entry of rows) {
+      try {
+        await deps.guards.writeSecurityAudit(entry);
+      } catch {
+        // A denied response still returns. The next window can record again.
+      }
+    }
+  }
+
+  if (deps.auditControl) deps.auditControl.flush = flushDeniedAudits;
+  if (flushMs > 0) {
+    const timer = setInterval(() => {
+      void flushDeniedAudits();
+    }, flushMs);
+    timer.unref?.();
+  }
 
   app.get("/health", (c) => {
     return c.json({ ok: true, service: SERVICE_NAME });
@@ -51,10 +121,12 @@ export function createApp(deps: McpAppDeps) {
   app.all("/mcp", async (c) => {
     const started = Date.now();
     const requestId = randomUUID();
+    const ip = clientIpFromHeaders(c.req.raw.headers, peerAddress(c));
     const origin = classifyOrigin(c.req.header("origin"), allowedOrigins);
+    let lookupHeld = false;
 
     const reject = async (input: {
-      status: 400 | 401 | 403 | 404 | 405 | 500;
+      status: 400 | 401 | 403 | 404 | 405 | 429 | 500;
       id: string | number | null;
       error: JsonRpcError;
       reason: AuditReason;
@@ -66,7 +138,13 @@ export function createApp(deps: McpAppDeps) {
       clientVersion?: string | null;
       identity?: McpIdentity | null;
       headers?: Record<string, string>;
+      recordIp?: boolean;
     }) => {
+      const unauthenticatedOrDenied = !input.identity || input.status === 401 || input.status === 403;
+      if (input.recordIp !== false && unauthenticatedOrDenied && input.status !== 429) {
+        if (!lookupHeld) denialBucket.take();
+        limiter.record(ip);
+      }
       await writeAudit({
         requestId,
         started,
@@ -79,6 +157,7 @@ export function createApp(deps: McpAppDeps) {
         clientVersion: input.clientVersion ?? null,
         reason: input.reason,
         identity: input.identity ?? null,
+        immediate: flushMs <= 0,
       });
       return c.json({ jsonrpc: "2.0", id: input.id, error: input.error }, input.status, {
         ...BASE_HEADERS,
@@ -86,6 +165,32 @@ export function createApp(deps: McpAppDeps) {
         ...input.headers,
       });
     };
+
+    const globalRetry = denialBucket.retryAfterSeconds();
+    if (globalRetry > 0) {
+      return reject({
+        status: 429,
+        id: null,
+        reason: "rate_limited",
+        result: "rate_limited",
+        recordIp: false,
+        headers: { "retry-after": String(globalRetry) },
+        error: { code: JSON_RPC_CLOSED, message: "Rate limit exceeded" },
+      });
+    }
+
+    const retryAfter = limiter.retryAfterSeconds(ip);
+    if (retryAfter != null) {
+      return reject({
+        status: 429,
+        id: null,
+        reason: "rate_limited",
+        result: "rate_limited",
+        recordIp: false,
+        headers: { "retry-after": String(retryAfter) },
+        error: { code: JSON_RPC_CLOSED, message: "Rate limit exceeded" },
+      });
+    }
 
     if (origin === "rejected") {
       return reject({
@@ -100,7 +205,7 @@ export function createApp(deps: McpAppDeps) {
     let remote: unknown = "tripped";
     if (!envForcesOff(deps.killSwitchEnv)) {
       try {
-        remote = asRemoteKillSwitch(await deps.guards.readKillSwitch());
+        remote = asRemoteKillSwitch(await readKillSwitch());
       } catch {
         remote = "unreachable";
       }
@@ -201,11 +306,35 @@ export function createApp(deps: McpAppDeps) {
     }
 
     const request = parsed.request;
+    const authorization = c.req.header("authorization") ?? null;
+    if (bearerToken(authorization)) {
+      if (!denialBucket.take()) {
+        return reject({
+          status: 429,
+          id: request.id,
+          reason: "rate_limited",
+          result: "rate_limited",
+          recordIp: false,
+          protocolVersion: request.protocolVersion,
+          method: request.method,
+          tool: request.tool,
+          clientName: request.clientName,
+          clientVersion: request.clientVersion,
+          headers: { "retry-after": String(denialBucket.retryAfterSeconds()) },
+          error: { code: JSON_RPC_CLOSED, message: "Rate limit exceeded" },
+        });
+      }
+      lookupHeld = true;
+    }
     let decision: { ok: false } | { ok: true; identity: McpIdentity };
     try {
-      decision = await authenticator(c.req.header("authorization") ?? null);
+      decision = await authenticator(authorization);
     } catch {
       decision = { ok: false };
+    }
+    if (decision.ok && lookupHeld) {
+      denialBucket.refund();
+      lookupHeld = false;
     }
     const unauthenticated = () =>
       reject({
@@ -223,7 +352,25 @@ export function createApp(deps: McpAppDeps) {
       });
     if (!decision.ok) return unauthenticated();
     const identity = decision.identity;
-    if (!identity.id || !identity.name) return unauthenticated();
+    const scopes = Array.isArray(identity.scopes) ? identity.scopes : [];
+    if (!identity.id || !identity.name || scopes.length === 0) return unauthenticated();
+    const needed = requiredScope(request.method, request.tool);
+    if (needed && !scopes.includes(needed)) {
+      return reject({
+        status: 403,
+        id: request.id,
+        reason: "insufficient_scope",
+        result: "denied",
+        protocolVersion: request.protocolVersion,
+        method: request.method,
+        tool: request.tool,
+        clientName: request.clientName,
+        clientVersion: request.clientVersion,
+        identity,
+        headers: { "www-authenticate": `Bearer error="insufficient_scope", scope="${needed}"` },
+        error: { code: JSON_RPC_CLOSED, message: "insufficient_scope" },
+      });
+    }
     if (request.method === "tools/list") {
       return succeed(c, requestId, started, request, identity, pingToolsList(request.protocolVersion));
     }
@@ -236,6 +383,7 @@ export function createApp(deps: McpAppDeps) {
       id: request.id,
       reason: "protocol",
       result: "error",
+      recordIp: false,
       protocolVersion: request.protocolVersion,
       method: request.method,
       tool: request.tool,
@@ -260,6 +408,7 @@ export function createApp(deps: McpAppDeps) {
     clientVersion: string | null;
     reason: AuditReason;
     identity: McpIdentity | null;
+    immediate: boolean;
   }): Promise<boolean> {
     const entry: SecurityAuditEntry = buildSecurityAuditEntry({
       requestId: input.requestId,
@@ -274,6 +423,11 @@ export function createApp(deps: McpAppDeps) {
       reason: input.reason,
       identity: input.identity,
     });
+    const unauthenticatedOrDenied = !input.identity || input.result === "denied" || input.result === "rate_limited";
+    if (!input.immediate && unauthenticatedOrDenied) {
+      deniedAudits.add(entry);
+      return true;
+    }
     try {
       await deps.guards.writeSecurityAudit(entry);
       return true;
@@ -302,6 +456,7 @@ export function createApp(deps: McpAppDeps) {
       clientVersion: request.clientVersion,
       reason: "call",
       identity,
+      immediate: true,
     });
     if (!logged) {
       return c.json(

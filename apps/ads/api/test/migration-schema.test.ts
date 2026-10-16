@@ -151,6 +151,7 @@ describe("migration journal schema", () => {
       "0008_client_audit_log",
       "0009_monthly_usage",
       "0010_recommendation_scope",
+      "0011_mcp_identities",
     ];
     expect(entries.map((entry) => entry.tag)).toEqual(prefix);
     const applied = entries.slice(0, 6);

@@ -20,6 +20,7 @@ import { StatusBadge } from '@/components/status-badge';
 import { GscPropertyField } from '@/components/gsc-property-field';
 import { WordpressConnectSettings } from '@/components/wordpress-connect-settings';
 import { AdsPauseToggle } from '@/components/ads/pause-toggle';
+import { ConnectorSettingsPanel } from '@/components/connector-settings-panel';
 import { SubmitButton } from '@/components/submit-button';
 import { GSC_RECS_TURN_ON_CTA, GSC_SYNC_QUEUED_COPY, GSC_SYNC_RECS_OFF_COPY } from '@/src/lib/seo/gsc-copy';
 
@@ -752,6 +753,12 @@ export default async function Settings({ searchParams }: { searchParams?: Promis
         </div>
 
         <AdsPauseToggle returnTo="/settings#ads-pause" />
+      </section>
+
+      <section id="connector" className="cx-settings-section">
+        <h2>Connector</h2>
+        <p className="cx-lede">Agent identities for the Cerevex MCP connector. A token is shown once. This does not apply, approve, or spend.</p>
+        <ConnectorSettingsPanel />
       </section>
 
       <section id="modules" className="cx-settings-section">

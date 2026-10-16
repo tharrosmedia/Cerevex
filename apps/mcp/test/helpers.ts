@@ -19,6 +19,9 @@ export function spyGuard(remote: RemoteKillSwitch | string = "clear", audit?: (e
       calls.audits.push(entry);
       audit?.(entry);
     },
+    async verifyToken() {
+      return null;
+    },
   };
   return { calls, client };
 }
@@ -32,6 +35,15 @@ export function testApp(
     killSwitchEnv: overrides.killSwitchEnv,
     guards: overrides.guards ?? guard.client,
     authenticator: overrides.authenticator,
+    killSwitchTtlMs: overrides.killSwitchTtlMs,
+    deniedPerIp: overrides.deniedPerIp,
+    deniedWindowMs: overrides.deniedWindowMs,
+    deniedFlushMs: overrides.deniedFlushMs,
+    deniedMaxIps: overrides.deniedMaxIps,
+    globalDenialCapacity: overrides.globalDenialCapacity,
+    globalDenialRefillPerSecond: overrides.globalDenialRefillPerSecond,
+    now: overrides.now,
+    auditControl: overrides.auditControl,
   });
   return { app, guard };
 }
@@ -114,5 +126,9 @@ export async function readJson(res: Response) {
 
 export const acceptingAuthenticator: McpAuthenticator = () => ({
   ok: true,
-  identity: { id: "11111111-1111-4111-8111-111111111111", name: "ping-agent" },
+  identity: {
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "ping-agent",
+    scopes: ["cerevex.read", "cerevex.recs.submit"],
+  },
 });

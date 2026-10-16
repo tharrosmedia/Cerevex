@@ -733,3 +733,42 @@ export const skillStoreConfigs = osSchema.table(
   },
   (table) => [primaryKey({ columns: [table.clientSlug, table.storeKey] })],
 );
+
+/** One row per Tharros agent. token_hash is sha256 hex. The raw token is not a column. */
+export const mcpIdentities = osSchema.table(
+  "mcp_identities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    scopes: jsonb("scopes").notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("mcp_identities_token_hash_idx").on(table.tokenHash),
+    uniqueIndex("mcp_identities_workspace_name_idx").on(table.workspaceId, table.name),
+  ],
+);
+
+/** Clients this identity may see. Checked on every connector call in later PRs. */
+export const mcpIdentityGrants = osSchema.table(
+  "mcp_identity_grants",
+  {
+    identityId: uuid("identity_id")
+      .notNull()
+      .references(() => mcpIdentities.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.identityId, table.clientId] }),
+    index("mcp_identity_grants_client_idx").on(table.clientId),
+  ],
+);

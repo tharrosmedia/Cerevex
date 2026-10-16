@@ -32,13 +32,20 @@ describe("default authenticator", () => {
     expect(source).not.toMatch(/process\.env/);
   });
 
-  it("is what the server process wires, with no authenticator override", () => {
+  it("is what the server process wires, with the scoped bearer verifier", () => {
     const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
-    expect(source).not.toMatch(/authenticator/);
-    expect(source).toMatch(/createHttpGuardClient/);
+    expect(source).toMatch(/createBearerAuthenticator/);
+    expect(source).toMatch(/MCP_SERVICE_KEY/);
+    expect(source).toMatch(/KILL_SWITCH_CACHE_MS/);
+    expect(source).toMatch(/DENIED_AUDIT_FLUSH_MS/);
+    expect(source).not.toMatch(/ADS_INTERNAL_KEY/);
+    expect(source).not.toMatch(/x-cerevex-internal-key/);
     const appSource = readFileSync(new URL("../src/app.ts", import.meta.url), "utf8");
     expect(appSource).toMatch(/rejectUntilScopedBearer/);
     expect(appSource).not.toMatch(/process\.env/);
+    const authSource = readFileSync(new URL("../src/auth.ts", import.meta.url), "utf8");
+    expect(authSource).not.toMatch(/process\.env/);
+    expect(authSource).not.toMatch(/private_key_jwt/);
   });
 });
 

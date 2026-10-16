@@ -6,12 +6,14 @@ export const AUDIT_REASONS = [
   "headers",
   "kill_switch",
   "unauthenticated",
+  "insufficient_scope",
+  "rate_limited",
   "call",
 ] as const;
 
 export type AuditReason = (typeof AUDIT_REASONS)[number];
 
-export const AUDIT_RESULTS = ["ok", "denied", "error"] as const;
+export const AUDIT_RESULTS = ["ok", "denied", "error", "rate_limited"] as const;
 export type AuditResult = (typeof AUDIT_RESULTS)[number];
 
 export type SecurityAuditEntry = {
@@ -28,6 +30,7 @@ export type SecurityAuditEntry = {
   identityId: string | null;
   identityName: string | null;
   authType: "unauthenticated" | "agent";
+  count: number;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -65,6 +68,7 @@ export function buildSecurityAuditEntry(input: {
   latencyMs: number;
   reason: AuditReason;
   identity: { id: string; name: string } | null;
+  count?: number;
 }): SecurityAuditEntry {
   const identityId = input.identity ? auditToken(input.identity.id, UUID) : null;
   const identityName = input.identity ? auditToken(input.identity.name, IDENTITY_NAME) : null;
@@ -82,5 +86,11 @@ export function buildSecurityAuditEntry(input: {
     identityId,
     identityName,
     authType: input.identity && identityId && identityName ? "agent" : "unauthenticated",
+    count: clampCount(input.count),
   };
+}
+
+function clampCount(value: number | undefined): number {
+  if (!Number.isInteger(value) || value == null || value < 1) return 1;
+  return Math.min(100_000, value);
 }

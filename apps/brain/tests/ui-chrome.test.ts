@@ -15,11 +15,11 @@ assert.equal(new Set(SEO_NAV.map((item) => item.href)).size, SEO_NAV.length);
 
 assert.deepEqual(
   SETTINGS_SECTIONS.map((section) => section.id),
-  ['connects', 'approvals', 'modules', 'store', 'account'],
+  ['connects', 'approvals', 'connector', 'modules', 'store', 'account'],
 );
 assert.deepEqual(
   SETTINGS_SECTIONS.map((section) => section.label),
-  ['Connects', 'Approvals & autonomy', 'Modules & flags', 'Store', 'Account'],
+  ['Connects', 'Approvals & autonomy', 'Connector', 'Modules & flags', 'Store', 'Account'],
 );
 
 assert.equal(

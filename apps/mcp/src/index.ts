@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
-import { createApp, SERVICE_NAME } from "./app";
+import { createBearerAuthenticator } from "./auth";
+import { createApp, DENIED_AUDIT_FLUSH_MS, KILL_SWITCH_CACHE_MS, SERVICE_NAME } from "./app";
 import { createHttpGuardClient } from "./guards";
 import { assertMcpRuntimeConfigured, listenPort } from "./runtime";
 
@@ -18,13 +19,18 @@ if (!Number.isInteger(port)) {
   process.exit(1);
 }
 
+const guards = createHttpGuardClient({
+  apiUrl: process.env.ADS_API_URL,
+  mcpKey: process.env.MCP_SERVICE_KEY,
+});
+
 const app = createApp({
   allowedOrigins: process.env.MCP_ALLOWED_ORIGINS ?? "",
   killSwitchEnv: process.env.MCP_CONNECTOR_KILL_SWITCH,
-  guards: createHttpGuardClient({
-    apiUrl: process.env.ADS_API_URL,
-    internalKey: process.env.ADS_INTERNAL_KEY,
-  }),
+  guards,
+  authenticator: createBearerAuthenticator((tokenHash) => guards.verifyToken(tokenHash)),
+  killSwitchTtlMs: KILL_SWITCH_CACHE_MS,
+  deniedFlushMs: DENIED_AUDIT_FLUSH_MS,
 });
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
