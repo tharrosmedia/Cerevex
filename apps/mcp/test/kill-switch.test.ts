@@ -82,6 +82,9 @@ describe("POST /mcp kill switch", () => {
         async readGranted() {
           return { ok: false, status: 404 };
         },
+        async submitRecommendation() {
+          return { ok: false, status: 404 };
+        },
       },
     });
     const res = await app.request("/mcp", request2026());
@@ -109,6 +112,9 @@ describe("POST /mcp kill switch", () => {
           return null;
         },
         async readGranted() {
+          return { ok: false, status: 404 };
+        },
+        async submitRecommendation() {
           return { ok: false, status: 404 };
         },
       },

@@ -11,6 +11,7 @@ import type { AuthContext } from "@tharros/ads-shared";
 import { isServicePrincipal, internalWorkspaceId } from "./auth";
 import { MCP_CONNECTOR_KILL_SWITCH_KEY, connectorKillSwitchTripped } from "./mcp-connector";
 import { registerMcpReadRoute } from "./mcp-reads";
+import { registerMcpSubmitRoute } from "./mcp-submit";
 import { mcpKeyMatches } from "./mcp-principal";
 import { createMcpToken, MCP_TOKEN_HASH_HEX } from "./mcp-token";
 import type { AppEnv } from "./types";
@@ -474,4 +475,5 @@ export function registerMcpServiceRoutes(app: Hono<AppEnv>) {
   });
 
   registerMcpReadRoute(app, assertMcpWorkspace);
+  registerMcpSubmitRoute(app, assertMcpWorkspace);
 }

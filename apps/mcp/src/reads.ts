@@ -12,6 +12,7 @@ import {
 import type { AuditReason, AuditResult } from "./audit";
 import type { McpReadRequest, McpReadResponse } from "./guards";
 import { pingToolDefinition } from "./ping";
+import { submitToolDefinition } from "./submit";
 import { PROTOCOL_2026 } from "./protocol";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -171,7 +172,9 @@ export function readToolDefinitions() {
 }
 
 export function phase1ToolsList(protocolVersion: string): Record<string, unknown> {
-  const result: Record<string, unknown> = { tools: [pingToolDefinition(), ...readToolDefinitions()] };
+  const result: Record<string, unknown> = {
+    tools: [pingToolDefinition(), ...readToolDefinitions(), submitToolDefinition()],
+  };
   if (protocolVersion === PROTOCOL_2026) {
     result._meta = { "io.modelcontextprotocol/protocolVersion": protocolVersion };
   }

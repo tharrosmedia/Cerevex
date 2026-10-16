@@ -1,7 +1,7 @@
 import { createApp, type McpAppDeps } from "../src/app";
 import type { McpAuthenticator } from "../src/auth";
 import type { SecurityAuditEntry } from "../src/audit";
-import { unreadGranted, type GuardClient } from "../src/guards";
+import { unreadGranted, unsubmitted, type GuardClient } from "../src/guards";
 import type { RemoteKillSwitch } from "../src/kill-switch";
 import { PROTOCOL_2025, PROTOCOL_2026 } from "../src/protocol";
 
@@ -23,6 +23,7 @@ export function spyGuard(remote: RemoteKillSwitch | string = "clear", audit?: (e
       return null;
     },
     readGranted: unreadGranted,
+    submitRecommendation: unsubmitted,
   };
   return { calls, client };
 }

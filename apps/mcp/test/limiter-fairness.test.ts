@@ -50,6 +50,9 @@ function gatedKillSwitch() {
     async readGranted() {
       return { ok: false, status: 404 };
     },
+    async submitRecommendation() {
+      return { ok: false, status: 404 };
+    },
   };
   return { guards, entered: () => entered, release: () => release() };
 }
