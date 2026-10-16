@@ -29,7 +29,7 @@ function readIdentities(value: unknown): McpIdentityView[] {
 export async function ConnectorSettingsPanel() {
   try {
     const [connector, identities, clients] = await Promise.all([
-      adsApi<{ killSwitch: boolean }>('/mcp/connector', {}, { asOwner: true, ownerAssertion: true }),
+      adsApi<{ killSwitch: boolean; envForcedOff?: boolean }>('/mcp/connector', {}, { asOwner: true, ownerAssertion: true }),
       adsApi<{ identities: McpIdentityView[] }>('/mcp/identities', {}, { asOwner: true, ownerAssertion: true }),
       listAdsClients(),
     ]);
@@ -37,6 +37,7 @@ export async function ConnectorSettingsPanel() {
     return (
       <ConnectorSettings
         killSwitch={connector.ok && typeof connector.data.killSwitch === 'boolean' ? connector.data.killSwitch : null}
+        envForcedOff={connector.ok && connector.data.envForcedOff === true}
         identities={identities.ok ? readIdentities(identities.data) : []}
         clients={clients.ok ? clients.data.clients.map((client) => ({ id: client.id, name: client.name })) : []}
         loadError={loadError}
@@ -46,6 +47,7 @@ export async function ConnectorSettingsPanel() {
     return (
       <ConnectorSettings
         killSwitch={null}
+        envForcedOff={false}
         identities={[]}
         clients={[]}
         loadError="Connector settings could not be loaded."

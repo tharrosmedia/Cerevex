@@ -54,8 +54,62 @@ export function parseCreateForm(formData: FormData):
   return { ok: true, body: { name, scopes, clientIds } };
 }
 
-export function connectorOffFromForm(formData: FormData): boolean {
-  return formData.get('connectorOff') === 'on';
+export const CONNECTOR_OFF_STATUS = 'Off. Connector calls are refused.';
+export const CONNECTOR_ON_STATUS = 'On. Connector calls are allowed.';
+export const CONNECTOR_UNKNOWN_STATUS = 'Connector status did not load. Calls stay off until this page can read the workspace.';
+export const CONNECTOR_ENV_STATUS =
+  'Off. MCP_CONNECTOR_KILL_SWITCH is forcing the connector off. Saving the switch cannot turn it on.';
+
+export type ConnectorSwitchView = {
+  known: boolean;
+  /** Saved workspace flag. True means the owner left the connector off. */
+  savedOff: boolean;
+  envForcedOff: boolean;
+  /** What callers see. Off when the page could not load, the flag is off, or the env override is set. */
+  off: boolean;
+  status: string;
+  canEdit: boolean;
+};
+
+/**
+ * Saved flag and the env override. Unset on the server arrives as killSwitch true.
+ * A load failure is null and stays off, so the page cannot turn the connector on by guess.
+ */
+export function connectorSwitchView(input: { killSwitch: boolean | null; envForcedOff: boolean }): ConnectorSwitchView {
+  if (input.envForcedOff) {
+    return {
+      known: input.killSwitch !== null,
+      savedOff: input.killSwitch !== false,
+      envForcedOff: true,
+      off: true,
+      status: CONNECTOR_ENV_STATUS,
+      canEdit: false,
+    };
+  }
+  if (input.killSwitch == null) {
+    return {
+      known: false,
+      savedOff: true,
+      envForcedOff: false,
+      off: true,
+      status: CONNECTOR_UNKNOWN_STATUS,
+      canEdit: false,
+    };
+  }
+  const savedOff = input.killSwitch !== false;
+  return {
+    known: true,
+    savedOff,
+    envForcedOff: false,
+    off: savedOff,
+    status: savedOff ? CONNECTOR_OFF_STATUS : CONNECTOR_ON_STATUS,
+    canEdit: true,
+  };
+}
+
+/** Checked checkbox means the owner wants the connector on. A missing field stays off. */
+export function connectorOnFromForm(formData: FormData): boolean {
+  return formData.get('connectorOn') === 'on';
 }
 
 export { MCP_SCOPES };

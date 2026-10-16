@@ -1,6 +1,7 @@
 /**
  * Remote view of settings_json.mcpConnectorKillSwitch.
  * The ads API reports tripped unless that flag is boolean false.
+ * It also reports tripped when the ads API's own MCP_CONNECTOR_KILL_SWITCH is set.
  * unreachable covers transport failures and any body that is not a boolean.
  */
 export type RemoteKillSwitch = "tripped" | "clear" | "unreachable";

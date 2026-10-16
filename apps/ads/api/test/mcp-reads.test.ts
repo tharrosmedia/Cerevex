@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { MCP_BRAIN_READ_CALLER, MCP_READ_MAX_LIMIT } from "@cerevex/contracts";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { clients, mcpIdentities, mcpIdentityGrants, workspaces } from "@tharros/ads-shared/schema";
+import { MCP_CONNECTOR_KILL_SWITCH_KEY } from "../src/mcp-connector";
 import { app, json, login } from "./helpers";
 
 const INTERNAL_KEY = "read-internal-key";
@@ -32,6 +33,7 @@ describe("mcp read façade", () => {
     fetch: globalThis.fetch,
   };
   let brainMode: "ok" | "deny" = "ok";
+  let originalSettings: unknown = {};
   const brainCalls: string[] = [];
 
   beforeAll(async () => {
@@ -61,7 +63,14 @@ describe("mcp read façade", () => {
     const workspace = await db.query.workspaces.findFirst({ where: eq(workspaces.name, "Tharros Media") });
     if (!workspace) throw new Error("Seed workspace missing");
     workspaceId = workspace.id;
+    originalSettings = workspace.settingsJson;
     process.env.ADS_INTERNAL_WORKSPACE_ID = workspaceId;
+    const settings =
+      workspace.settingsJson !== null && typeof workspace.settingsJson === "object" && !Array.isArray(workspace.settingsJson)
+        ? { ...(workspace.settingsJson as Record<string, unknown>) }
+        : {};
+    settings[MCP_CONNECTOR_KILL_SWITCH_KEY] = false;
+    await db.update(workspaces).set({ settingsJson: settings }).where(eq(workspaces.id, workspaceId));
     storeId = randomUUID();
     const [client] = await db
       .insert(clients)
@@ -113,6 +122,9 @@ describe("mcp read façade", () => {
     if (workspaceId) await db.delete(mcpIdentities).where(eq(mcpIdentities.workspaceId, workspaceId));
     for (const id of [clientId, ungrantedClientId]) {
       if (id) await db.delete(clients).where(eq(clients.id, id));
+    }
+    if (workspaceId) {
+      await db.update(workspaces).set({ settingsJson: originalSettings ?? {} }).where(eq(workspaces.id, workspaceId));
     }
     if (otherClientId) await db.delete(clients).where(eq(clients.id, otherClientId));
     if (original.key === undefined) delete process.env.ADS_INTERNAL_KEY;
@@ -262,6 +274,49 @@ describe("mcp read façade", () => {
     const res = await postRead(readBody("get_store_catalog", readIdentityId, clientId, { apply: true }));
     expect(res.status).toBe(400);
     expect(await res.text()).toBe(JSON.stringify({ ok: false }));
+  });
+
+  it("refuses a read when the workspace flag is off or the env override is set", async () => {
+    const previousEnv = process.env.MCP_CONNECTOR_KILL_SWITCH;
+    const previous = originalSettings;
+    const base =
+      previous !== null && typeof previous === "object" && !Array.isArray(previous)
+        ? { ...(previous as Record<string, unknown>) }
+        : {};
+    delete process.env.MCP_CONNECTOR_KILL_SWITCH;
+    try {
+      await getDb()
+        .update(workspaces)
+        .set({ settingsJson: { ...base, [MCP_CONNECTOR_KILL_SWITCH_KEY]: true } })
+        .where(eq(workspaces.id, workspaceId));
+      const flagged = await postRead(readBody("get_store_catalog", readIdentityId, clientId));
+      expect(flagged.status).toBe(403);
+      expect(await flagged.text()).toBe(JSON.stringify({ ok: false, error: "kill_switch" }));
+
+      delete base[MCP_CONNECTOR_KILL_SWITCH_KEY];
+      await getDb().update(workspaces).set({ settingsJson: base }).where(eq(workspaces.id, workspaceId));
+      const unset = await postRead(readBody("get_store_catalog", readIdentityId, clientId));
+      expect(unset.status).toBe(403);
+
+      await getDb()
+        .update(workspaces)
+        .set({ settingsJson: { ...base, [MCP_CONNECTOR_KILL_SWITCH_KEY]: false } })
+        .where(eq(workspaces.id, workspaceId));
+      process.env.MCP_CONNECTOR_KILL_SWITCH = "false";
+      const before = brainCalls.length;
+      const forced = await postRead(readBody("get_store_catalog", readIdentityId, clientId));
+      expect(forced.status).toBe(403);
+      expect(await forced.text()).toBe(JSON.stringify({ ok: false, error: "kill_switch" }));
+      expect(brainCalls.length).toBe(before);
+    } finally {
+      if (previousEnv === undefined) delete process.env.MCP_CONNECTOR_KILL_SWITCH;
+      else process.env.MCP_CONNECTOR_KILL_SWITCH = previousEnv;
+      const restored =
+        previous !== null && typeof previous === "object" && !Array.isArray(previous)
+          ? { ...(previous as Record<string, unknown>), [MCP_CONNECTOR_KILL_SWITCH_KEY]: false }
+          : { [MCP_CONNECTOR_KILL_SWITCH_KEY]: false };
+      await getDb().update(workspaces).set({ settingsJson: restored }).where(eq(workspaces.id, workspaceId));
+    }
   });
 
   it("returns 403 for a submit-only identity without naming the client", async () => {

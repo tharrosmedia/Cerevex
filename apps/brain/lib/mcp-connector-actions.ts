@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { adsApi } from '@/lib/ads-bff';
 import { consoleAuthorized } from '@/lib/console-auth';
 import {
-  connectorOffFromForm,
+  connectorOnFromForm,
   parseClientIds,
   parseCreateForm,
   type McpIdentityView,
@@ -69,13 +69,16 @@ export async function grantMcpClientsAction(id: string, formData: FormData): Pro
 export async function setConnectorKillSwitchAction(formData: FormData): Promise<ConnectorActionResult> {
   const refused = await authorized();
   if (refused) return refused;
-  const killSwitch = connectorOffFromForm(formData);
-  const result = await adsApi<{ killSwitch: boolean }>(
+  const killSwitch = !connectorOnFromForm(formData);
+  const result = await adsApi<{ killSwitch: boolean; envForcedOff?: boolean }>(
     '/mcp/connector',
     { method: 'PUT', body: JSON.stringify({ killSwitch }) },
     { asOwner: true, ownerAssertion: true },
   );
   if (!result.ok) return { ok: false, message: result.message };
   revalidatePath('/settings');
-  return { ok: true, message: killSwitch ? 'Connector is off.' : 'Connector kill switch is released.' };
+  if (result.data.envForcedOff === true) {
+    return { ok: true, message: 'Saved. MCP_CONNECTOR_KILL_SWITCH is still forcing the connector off.' };
+  }
+  return { ok: true, message: killSwitch ? 'Connector is off.' : 'Connector is on.' };
 }

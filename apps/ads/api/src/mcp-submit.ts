@@ -4,7 +4,7 @@ import { isMcpScope, parseMcpSubmitRequest, type McpScope, type McpSubmitRecomme
 import { getDb } from "@tharros/ads-shared/db";
 import { createPendingMcpRecommendation, McpRecommendationError } from "@tharros/ads-shared/mcp-recommendations";
 import { clients, mcpIdentities, mcpIdentityGrants, workspaces } from "@tharros/ads-shared/schema";
-import { connectorKillSwitchTripped } from "./mcp-connector";
+import { connectorEffectivelyOff, connectorEnvValue } from "./mcp-connector";
 import { logger } from "./logger";
 import type { AppEnv } from "./types";
 
@@ -63,7 +63,7 @@ export function registerMcpSubmitRoute(
 
     const db = getDb();
     const workspace = await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
-    if (!workspace || connectorKillSwitchTripped(workspace.settingsJson)) {
+    if (!workspace || connectorEffectivelyOff(workspace.settingsJson, connectorEnvValue())) {
       return c.json({ ok: false, error: "kill_switch" }, 403);
     }
 
