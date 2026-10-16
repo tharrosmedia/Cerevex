@@ -67,7 +67,9 @@ jobs:
         run: npm run typecheck --workspace=@cerevex/jobs-seo
       - name: Typecheck contracts
         if: needs.changes.outputs.brain == 'true'
-        run: npm run typecheck --workspace=@cerevex/contracts
+        run: |
+          npm run typecheck --workspace=@cerevex/contracts
+          npm test --workspace=@cerevex/contracts
       - name: Typecheck and test skills package
         if: needs.changes.outputs.brain == 'true'
         run: |
@@ -202,6 +204,7 @@ jobs:
           npm run typecheck --workspace=@cerevex/jobs-google-ads
           npm run smoke:ids --workspace=@tharros/ads-workers
           npm run typecheck --workspace=@cerevex/contracts
+          npm test --workspace=@cerevex/contracts
           npm run typecheck --workspace=@tharros/ads-web
       - name: Migrate + seed + test ads module (schema os only)
         if: needs.changes.outputs.ads == 'true'

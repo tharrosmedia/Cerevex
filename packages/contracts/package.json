@@ -5,12 +5,15 @@
   "description": "Shared TypeScript contracts for Cerevex console + ads module (tenancy, authz envelopes, audit, Inngest prefixes).",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./owner-assertion": "./src/owner-assertion.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test src/owner-assertion.test.ts"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "typescript": "^7.0.2"
   }
 }
