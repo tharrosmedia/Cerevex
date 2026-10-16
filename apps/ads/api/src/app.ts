@@ -43,6 +43,7 @@ import {
   signSession,
   verifySession,
 } from "./auth";
+import { authenticateOwnerAssertion } from "./owner-assertion";
 import { childLogger, newRequestId } from "./logger";
 import { getVisibleClient, listVisibleClients, TenancyError } from "./tenancy";
 
@@ -68,6 +69,11 @@ const JOB_AUDIT_ACTIONS = [
 export const VERSION = "0.1.0";
 
 const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
+  if (await authenticateOwnerAssertion(c)) {
+    await next();
+    return;
+  }
+
   const internalKey = extractInternalKey(c.req.header("x-cerevex-internal-key"));
   if (internalKeyMatches(internalKey)) {
     const auth = await loadServiceAuth();

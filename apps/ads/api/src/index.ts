@@ -4,6 +4,7 @@ import { warnIfGoogleNotConfigured } from "@tharros/ads-shared/worker-health";
 import { assertServiceWorkspaceConfigured } from "./auth";
 import { assertMcpPrincipalConfigured } from "./mcp-principal";
 import { assertJwtSecretConfigured, warnIfJwtSecretUnset } from "./jwt-secret";
+import { assertOwnerAssertionSecretsDistinct, warnOwnerAssertionBoot } from "./owner-assertion";
 import { createApp, VERSION } from "./app";
 import { logger } from "./logger";
 
@@ -15,10 +16,12 @@ try {
   process.exit(1);
 }
 warnIfJwtSecretUnset((message) => logger.warn({ msg: message }));
+warnOwnerAssertionBoot((message) => logger.warn({ msg: message }));
 
 try {
   assertServiceWorkspaceConfigured();
   assertMcpPrincipalConfigured();
+  assertOwnerAssertionSecretsDistinct();
 } catch (error) {
   logger.error({
     msg: "api.boot_refused",
