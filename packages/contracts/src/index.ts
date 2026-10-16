@@ -354,8 +354,20 @@ export {
   parseWordpressExternalCatalogId,
   siteCmsPlainError,
 } from "./site-cms";
-export { MCP_SCOPES, isMcpScope } from "./mcp";
-export type { McpScope } from "./mcp";
+export {
+  MCP_SCOPES,
+  MCP_READ_TOOLS,
+  MCP_READ_DEFAULT_LIMIT,
+  MCP_READ_MAX_LIMIT,
+  MCP_GSC_MAX_RANGE_DAYS,
+  isMcpScope,
+  isMcpReadTool,
+  mcpUtcDay,
+  mcpInclusiveDays,
+  mcpDefaultGscRange,
+  mcpReadLimit,
+} from "./mcp";
+export type { McpScope, McpReadTool } from "./mcp";
 
 export type {
   StoreConnectorType,

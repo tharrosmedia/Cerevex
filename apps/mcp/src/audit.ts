@@ -7,6 +7,7 @@ export const AUDIT_REASONS = [
   "kill_switch",
   "unauthenticated",
   "insufficient_scope",
+  "not_granted",
   "rate_limited",
   "call",
 ] as const;

@@ -22,6 +22,7 @@ export type ParsedMcpRequest = {
   id: string | number | null;
   method: string;
   tool: string | null;
+  arguments: unknown;
   clientName: string | null;
   clientVersion: string | null;
 };
@@ -84,6 +85,11 @@ export function decodeMirroredName(value: string): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function callArguments(params: Record<string, unknown> | null): unknown {
+  if (!params || !Object.prototype.hasOwnProperty.call(params, "arguments")) return null;
+  return params.arguments;
 }
 
 function bodyName(params: Record<string, unknown>, method: string): string | null {
@@ -150,7 +156,15 @@ export function parseMcpRequest(input: {
     const client = clientInfoFrom(meta ? meta["io.modelcontextprotocol/clientInfo"] : null);
     return {
       ok: true,
-      request: { protocolVersion, id, method, tool, clientName: client.name, clientVersion: client.version },
+      request: {
+        protocolVersion,
+        id,
+        method,
+        tool,
+        arguments: callArguments(params),
+        clientName: client.name,
+        clientVersion: client.version,
+      },
     };
   }
 
@@ -171,6 +185,14 @@ export function parseMcpRequest(input: {
   const client = clientInfoFrom(params ? params.clientInfo : null);
   return {
     ok: true,
-    request: { protocolVersion, id, method, tool, clientName: client.name, clientVersion: client.version },
+    request: {
+      protocolVersion,
+      id,
+      method,
+      tool,
+      arguments: callArguments(params),
+      clientName: client.name,
+      clientVersion: client.version,
+    },
   };
 }

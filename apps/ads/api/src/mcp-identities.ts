@@ -10,6 +10,7 @@ import { auditLog, clients, mcpIdentities, mcpIdentityGrants, workspaces } from 
 import type { AuthContext } from "@tharros/ads-shared";
 import { isServicePrincipal, internalWorkspaceId } from "./auth";
 import { MCP_CONNECTOR_KILL_SWITCH_KEY, connectorKillSwitchTripped } from "./mcp-connector";
+import { registerMcpReadRoute } from "./mcp-reads";
 import { mcpKeyMatches } from "./mcp-principal";
 import { createMcpToken, MCP_TOKEN_HASH_HEX } from "./mcp-token";
 import type { AppEnv } from "./types";
@@ -70,6 +71,7 @@ const securityAuditSchema = z
       "kill_switch",
       "unauthenticated",
       "insufficient_scope",
+      "not_granted",
       "rate_limited",
       "call",
     ]),
@@ -470,4 +472,6 @@ export function registerMcpServiceRoutes(app: Hono<AppEnv>) {
     if (!row || scopes.length === 0) return c.json({ ok: false });
     return c.json({ ok: true, identity: { id: row.id, name: row.name, scopes } });
   });
+
+  registerMcpReadRoute(app, assertMcpWorkspace);
 }

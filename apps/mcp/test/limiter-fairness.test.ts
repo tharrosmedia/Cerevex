@@ -47,6 +47,9 @@ function gatedKillSwitch() {
     async verifyToken() {
       return null;
     },
+    async readGranted() {
+      return { ok: false, status: 404 };
+    },
   };
   return { guards, entered: () => entered, release: () => release() };
 }
