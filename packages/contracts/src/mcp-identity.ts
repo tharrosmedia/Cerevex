@@ -4,16 +4,16 @@ export const MCP_DISPLAY_NAME_MAX = 64;
 export const MCP_DISPLAY_NAME_MESSAGE =
   "Display name must be 1 to 64 characters after trimming and must not contain control characters.";
 
-const CONTROL = /\p{Cc}/u;
+const BANNED = /[\p{Cc}\p{Cf}]/u;
 const SLUG = /^[a-z0-9-]{2,40}$/;
 
-/** Trimmed display name, or null when it is empty, too long, or contains a control character. */
+/** Trimmed display name, or null when it is empty, too long, or contains a control or format character. */
 export function parseMcpDisplayName(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const name = value.trim();
   const length = [...name].length;
   if (length < 1 || length > MCP_DISPLAY_NAME_MAX) return null;
-  if (CONTROL.test(name)) return null;
+  if (BANNED.test(name)) return null;
   return name;
 }
 

@@ -404,6 +404,8 @@ describe("mcp identity admin", () => {
       "Grok\u007fBot",
       "Grok\u0085Bot",
       "Grok\u009fBot",
+      "Grok\u200B_Bot",
+      "\u202Etob",
     ];
     for (const displayName of rejected) {
       const res = await post(displayName);
@@ -427,6 +429,8 @@ describe("mcp identity admin", () => {
       ["Agent #1", "agent-1"],
       ["José", "jos"],
       ["O'Brien", "o-brien"],
+      ["CQ 😀 bot", "cq-bot"],
+      [`CQ${"é".repeat(62)}`, "cq"],
     ] as const) {
       const res = await post(displayName);
       expect(res.status, displayName).toBe(200);

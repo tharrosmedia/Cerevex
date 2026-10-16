@@ -12,6 +12,8 @@ describe("parseMcpDisplayName", () => {
     assert.equal(parseMcpDisplayName("A"), "A");
     assert.equal(parseMcpDisplayName("A".repeat(64)), "A".repeat(64));
     assert.equal(parseMcpDisplayName("é".repeat(64)), "é".repeat(64));
+    assert.equal(parseMcpDisplayName("Café"), "Café");
+    assert.equal(parseMcpDisplayName("CQ 😀 bot"), "CQ 😀 bot");
   });
 
   it("rejects empty, overlong, and control characters", () => {
@@ -25,6 +27,12 @@ describe("parseMcpDisplayName", () => {
     assert.equal(parseMcpDisplayName("Grok\u007fBot"), null);
     assert.equal(parseMcpDisplayName("Grok\u0085Bot"), null);
     assert.equal(parseMcpDisplayName("Grok\u009fBot"), null);
+    assert.equal(parseMcpDisplayName("Grok\u200B_Bot"), null);
+    assert.equal(parseMcpDisplayName("\u202Etob"), null);
+    assert.equal(parseMcpDisplayName("a\u200Db"), null);
+    assert.equal(parseMcpDisplayName("a\u2066b"), null);
+    assert.equal(parseMcpDisplayName("a\u2069b"), null);
+    assert.equal(parseMcpDisplayName("a\uFEFFb"), null);
     assert.equal(parseMcpDisplayName(null), null);
     assert.equal(parseMcpDisplayName(12), null);
   });

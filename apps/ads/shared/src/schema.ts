@@ -761,7 +761,7 @@ export const mcpIdentities = osSchema.table(
     uniqueIndex("mcp_identities_workspace_display_name_idx").on(table.workspaceId, sql`lower(${table.displayName})`),
     check(
       "mcp_identities_display_name_check",
-      sql`char_length(${table.displayName}) BETWEEN 1 AND 64 AND ${table.displayName} = btrim(${table.displayName}) AND ${table.displayName} !~ '[[:cntrl:]]'`,
+      sql`char_length(${table.displayName}) BETWEEN 1 AND 64 AND ${table.displayName} = btrim(${table.displayName}) AND ${table.displayName} !~ U&'[\\0001-\\001F\\007F-\\009F\\00AD\\0600-\\0605\\061C\\06DD\\070F\\0890-\\0891\\08E2\\180E\\200B-\\200F\\202A-\\202E\\2060-\\2064\\2066-\\206F\\FEFF\\FFF9-\\FFFB\\+0110BD\\+0110CD\\+013430-\\+01343F\\+01BCA0-\\+01BCA3\\+01D173-\\+01D17A\\+0E0001\\+0E0020-\\+0E007F]'`,
     ),
   ],
 );
