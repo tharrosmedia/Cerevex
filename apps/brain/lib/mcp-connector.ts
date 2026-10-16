@@ -1,11 +1,11 @@
-import { isMcpScope, MCP_SCOPES, type McpScope } from '@cerevex/contracts';
+import { isMcpScope, MCP_DISPLAY_NAME_MESSAGE, MCP_SCOPES, parseMcpDisplayName, type McpScope } from '@cerevex/contracts';
 
-const NAME = /^[a-z0-9-]{2,40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type McpIdentityView = {
   id: string;
   name: string;
+  displayName: string;
   scopes: McpScope[];
   clientIds: string[];
   revokedAt: string | null;
@@ -18,11 +18,6 @@ export const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   'cerevex.read': 'Read synced data',
   'cerevex.recs.submit': 'Submit recommendations',
 };
-
-export function parseIdentityName(value: unknown): string | null {
-  const name = typeof value === 'string' ? value.trim() : '';
-  return NAME.test(name) ? name : null;
-}
 
 export function parseScopes(values: unknown[]): McpScope[] | null {
   const scopes: McpScope[] = [];
@@ -43,15 +38,15 @@ export function parseClientIds(values: unknown[]): string[] | null {
 }
 
 export function parseCreateForm(formData: FormData):
-  | { ok: true; body: { name: string; scopes: McpScope[]; clientIds: string[] } }
+  | { ok: true; body: { displayName: string; scopes: McpScope[]; clientIds: string[] } }
   | { ok: false; message: string } {
-  const name = parseIdentityName(formData.get('name'));
-  if (!name) return { ok: false, message: 'Name must be 2 to 40 lowercase letters, digits, or hyphens.' };
+  const displayName = parseMcpDisplayName(formData.get('displayName'));
+  if (!displayName) return { ok: false, message: MCP_DISPLAY_NAME_MESSAGE };
   const scopes = parseScopes(formData.getAll('scopes'));
   if (!scopes) return { ok: false, message: 'Choose at least one scope. Only read and submit are allowed.' };
   const clientIds = parseClientIds(formData.getAll('clientIds'));
   if (!clientIds) return { ok: false, message: 'Choose clients from this workspace.' };
-  return { ok: true, body: { name, scopes, clientIds } };
+  return { ok: true, body: { displayName, scopes, clientIds } };
 }
 
 export function connectorOffFromForm(formData: FormData): boolean {

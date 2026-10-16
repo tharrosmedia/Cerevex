@@ -11,16 +11,20 @@ assert.deepEqual(parseScopes(['cerevex.recs.submit']), ['cerevex.recs.submit']);
 assert.equal(parseScopes([]), null);
 
 const form = new FormData();
-form.set('name', 'Example-Agent');
+form.set('displayName', '  Grok_Bot  ');
 form.append('scopes', 'cerevex.read');
-assert.equal(parseCreateForm(form).ok, false);
-form.set('name', 'example-agent');
 const parsed = parseCreateForm(form);
 assert.equal(parsed.ok, true);
 if (parsed.ok) {
-  assert.deepEqual(parsed.body, { name: 'example-agent', scopes: ['cerevex.read'], clientIds: [] });
+  assert.deepEqual(parsed.body, { displayName: 'Grok_Bot', scopes: ['cerevex.read'], clientIds: [] });
   assert.equal('token' in parsed.body, false);
+  assert.equal('name' in parsed.body, false);
 }
+form.set('displayName', 'Grok\nBot');
+assert.equal(parseCreateForm(form).ok, false);
+form.set('displayName', 'example-agent');
+const slugNamed = parseCreateForm(form);
+assert.equal(slugNamed.ok, true);
 
 const off = new FormData();
 assert.equal(connectorOffFromForm(off), false);
@@ -39,6 +43,10 @@ assert.ok(actions.includes('asOwner: true'));
 assert.ok(!actions.includes('ADS_INTERNAL_KEY'));
 assert.ok(!actions.includes('redirect('));
 assert.ok(!formSrc.includes('searchParams'));
+assert.ok(formSrc.includes('Display name'));
+assert.ok(formSrc.includes('name="displayName"'));
+assert.ok(formSrc.includes('identity.displayName'));
+assert.ok(panel.includes('parseMcpDisplayName'));
 assert.ok(formSrc.includes('Token, shown once'));
 assert.ok(formSrc.includes('Revoke'));
 

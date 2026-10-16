@@ -192,7 +192,7 @@ describe("owner assertion verification", () => {
     const created = await call("/mcp/identities", mint({ htm: "POST", htu: "/mcp/identities" }), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, scopes: ["cerevex.read"], clientIds: [] }),
+      body: JSON.stringify({ displayName: name, scopes: ["cerevex.read"], clientIds: [] }),
     });
     expect(created.status).toBe(200);
     const createdBody = await json(created);

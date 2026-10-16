@@ -202,6 +202,7 @@ const serviceThenAudit = [
   "0009_monthly_usage",
   "0010_recommendation_scope",
   "0011_mcp_identities",
+  "0012_mcp_identity_display_name",
 ];
 const beforeServiceName = `cerevex_prod_mig_${process.pid}_pre7`;
 let beforeServiceReady: Promise<string> | undefined;
@@ -511,7 +512,7 @@ describe("os production migrate", () => {
   });
 
   it("applies 0008 and 0009 after 0000–0007 and keeps scholarship limits", async () => {
-    expect(pending.tag).toBe("0011_mcp_identities");
+    expect(pending.tag).toBe("0012_mcp_identity_display_name");
     expect(appliedTags).toContain("0006_plan_entitlements");
     expect(appliedTags).toContain(serviceTag);
     expect(appliedTags).toContain("0008_client_audit_log");
@@ -536,6 +537,7 @@ describe("os production migrate", () => {
       "0009_monthly_usage",
       "0010_recommendation_scope",
       "0011_mcp_identities",
+      "0012_mcp_identity_display_name",
     ]);
     expect(dry.migrationsApplied).toEqual([]);
     expect(await pendingTable(databaseUrl)).toBeNull();
@@ -546,6 +548,7 @@ describe("os production migrate", () => {
       "0009_monthly_usage",
       "0010_recommendation_scope",
       "0011_mcp_identities",
+      "0012_mcp_identity_display_name",
     ]);
 
     const client = new pg.Client({ connectionString: databaseUrl });

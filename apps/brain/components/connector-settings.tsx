@@ -84,8 +84,9 @@ export function ConnectorSettings({
         }}
       >
         <div className="cx-field">
-          <label htmlFor="mcp-name">Identity name</label>
-          <input id="mcp-name" name="name" autoComplete="off" placeholder="example-seo-agent" />
+          <label htmlFor="mcp-display-name">Display name</label>
+          <input id="mcp-display-name" name="displayName" autoComplete="off" placeholder="Grok_Bot" />
+          <p className="cx-help">Any case, spaces, and underscores. 1 to 64 characters.</p>
         </div>
         <fieldset className="cx-field">
           <legend>Scopes</legend>
@@ -120,13 +121,13 @@ export function ConnectorSettings({
             run(() => grantMcpClientsAction(identity.id, data));
           }}
         >
-          <h3>{identity.name}</h3>
+          <h3>{identity.displayName}</h3>
           <p className="cx-help">
             {identity.scopes.join(', ')}
             {identity.revokedAt ? ' · revoked' : ''}
           </p>
           <fieldset className="cx-field">
-            <legend>Clients for {identity.name}</legend>
+            <legend>Clients for {identity.displayName}</legend>
             {clients.map((client) => (
               <label key={client.id}>
                 <input

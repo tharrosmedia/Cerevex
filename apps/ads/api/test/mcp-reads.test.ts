@@ -85,11 +85,13 @@ describe("mcp read façade", () => {
     peerIdentityId = await createIdentity("cerevex.read", ungrantedClientId);
     submitIdentityId = await createIdentity("cerevex.recs.submit", clientId);
     revokedIdentityId = await createIdentity("cerevex.read", clientId);
+    const foreignName = `f${randomUUID().replace(/-/g, "").slice(0, 20)}`;
     const [foreign] = await db
       .insert(mcpIdentities)
       .values({
         workspaceId: otherWorkspace!.id,
-        name: `f${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+        name: foreignName,
+        displayName: foreignName,
         tokenHash: createHash("sha256").update(randomUUID()).digest("hex"),
         scopes: ["cerevex.read"],
       })
@@ -173,7 +175,7 @@ describe("mcp read façade", () => {
     const created = await app.request("/mcp/identities", {
       method: "POST",
       headers: owner(true),
-      body: JSON.stringify({ name, scopes: [scope], clientIds: [grantedClientId] }),
+      body: JSON.stringify({ displayName: name, scopes: [scope], clientIds: [grantedClientId] }),
     });
     expect(created.status).toBe(200);
     const body = await json(created);

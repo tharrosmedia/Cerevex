@@ -369,6 +369,12 @@ export {
 } from "./mcp";
 export type { McpScope, McpReadTool } from "./mcp";
 export {
+  MCP_DISPLAY_NAME_MAX,
+  MCP_DISPLAY_NAME_MESSAGE,
+  parseMcpDisplayName,
+  allocateMcpIdentitySlug,
+} from "./mcp-identity";
+export {
   MCP_SUBMIT_TOOL,
   MCP_RECOMMENDATION_TYPES,
   MCP_SUBMIT_TITLE_MAX,

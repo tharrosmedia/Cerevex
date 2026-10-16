@@ -734,7 +734,12 @@ export const skillStoreConfigs = osSchema.table(
   (table) => [primaryKey({ columns: [table.clientSlug, table.storeKey] })],
 );
 
-/** One row per Tharros agent. token_hash is sha256 hex. The raw token is not a column. */
+/**
+ * One row per Tharros agent.
+ * name is the immutable slug used by token verify and logs.
+ * display_name is the owner-facing label. It is unique per workspace, case-insensitive.
+ * token_hash is sha256 hex. The raw token is not a column.
+ */
 export const mcpIdentities = osSchema.table(
   "mcp_identities",
   {
@@ -743,6 +748,7 @@ export const mcpIdentities = osSchema.table(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    displayName: text("display_name").notNull(),
     tokenHash: text("token_hash").notNull(),
     scopes: jsonb("scopes").notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -752,6 +758,11 @@ export const mcpIdentities = osSchema.table(
   (table) => [
     uniqueIndex("mcp_identities_token_hash_idx").on(table.tokenHash),
     uniqueIndex("mcp_identities_workspace_name_idx").on(table.workspaceId, table.name),
+    uniqueIndex("mcp_identities_workspace_display_name_idx").on(table.workspaceId, sql`lower(${table.displayName})`),
+    check(
+      "mcp_identities_display_name_check",
+      sql`char_length(${table.displayName}) BETWEEN 1 AND 64 AND ${table.displayName} = btrim(${table.displayName}) AND ${table.displayName} !~ '[[:cntrl:]]'`,
+    ),
   ],
 );
 

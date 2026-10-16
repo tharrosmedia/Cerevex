@@ -1,6 +1,6 @@
 import { adsApi, listAdsClients } from '@/lib/ads-bff';
 import { ConnectorSettings } from '@/components/connector-settings';
-import { isMcpScope, type McpScope } from '@cerevex/contracts';
+import { isMcpScope, parseMcpDisplayName, type McpScope } from '@cerevex/contracts';
 import type { McpIdentityView } from '@/lib/mcp-connector';
 
 function readIdentities(value: unknown): McpIdentityView[] {
@@ -11,12 +11,14 @@ function readIdentities(value: unknown): McpIdentityView[] {
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
     const record = row as Record<string, unknown>;
-    if (typeof record.id !== 'string' || typeof record.name !== 'string') continue;
+    const displayName = parseMcpDisplayName(record.displayName) ?? parseMcpDisplayName(record.name);
+    if (typeof record.id !== 'string' || typeof record.name !== 'string' || !displayName) continue;
     const scopes = Array.isArray(record.scopes) ? record.scopes.filter((scope): scope is McpScope => typeof scope === 'string' && isMcpScope(scope)) : [];
     const clientIds = Array.isArray(record.clientIds) ? record.clientIds.filter((id): id is string => typeof id === 'string') : [];
     identities.push({
       id: record.id,
       name: record.name,
+      displayName,
       scopes,
       clientIds,
       revokedAt: typeof record.revokedAt === 'string' ? record.revokedAt : null,
