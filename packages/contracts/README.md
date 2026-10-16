@@ -4,6 +4,8 @@ Shared TypeScript contracts for the Cerevex console (Brain) + ads module. Merged
 
 Import from `@cerevex/contracts`. Formerly `@shopify-brain/contracts`.
 
+The owner assertion helper is `@cerevex/contracts/owner-assertion` only. It uses `node:crypto` and is not exported from the package index, so the Brain edge middleware never loads it.
+
 ## Tenancy
 
 - **Client 1→N Store** via `store_id` (`ClientStoreLink`).

@@ -8,7 +8,9 @@
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "target": "ES2022",
-    "lib": ["esnext"]
+    "lib": ["esnext"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]
