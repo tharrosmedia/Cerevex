@@ -47,12 +47,27 @@ function payloadOf(token: string): OwnerAssertionClaims {
 }
 
 function resign(payload: Record<string, unknown>, secret = CURRENT, kid: "cur" | "prev" = "cur"): string {
+  return signParts({ alg: "HS256", typ: "JWT", kid }, payload, secret);
+}
+
+function signParts(header: Record<string, unknown>, payload: Record<string, unknown>, secret = CURRENT): string {
   const key = ownerAssertionKeyBytes(secret);
   assert.ok(key);
-  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT", kid }), "utf8").toString("base64url");
-  const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-  const signature = createHmac("sha256", key).update(`${header}.${body}`).digest("base64url");
-  return `${header}.${body}.${signature}`;
+  const encodedHeader = Buffer.from(JSON.stringify(header), "utf8").toString("base64url");
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = createHmac("sha256", key).update(`${encodedHeader}.${encodedPayload}`).digest("base64url");
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
+
+/** Last-character alias of a 32-byte base64url secret. It decodes to the same bytes. */
+function nonCanonicalAlias(secret: string): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const index = alphabet.indexOf(secret.at(-1) ?? "");
+  assert.ok(index >= 0);
+  const alias = `${secret.slice(0, -1)}${alphabet[index ^ 1]}`;
+  assert.notEqual(alias, secret);
+  assert.ok(Buffer.from(alias, "base64url").equals(Buffer.from(secret, "base64url")));
+  return alias;
 }
 
 describe("owner assertion", () => {
@@ -142,6 +157,67 @@ describe("owner assertion", () => {
     assert.equal(ownerAssertionKeyBytes(Buffer.alloc(31, 1).toString("base64url")), null);
     assert.equal(verifyOwnerAssertion("not-a-token", { current: CURRENT, now: NOW }).ok, false);
     assert.throws(() => signOwnerAssertion({ sub: "a@b.co", wid: WID, htm: "GET", htu: "/x", secret: "short" }), /missing or short/);
+  });
+
+  it("rejects a signature whose length differs from the MAC", () => {
+    const [header, payload, signature] = sign().split(".");
+    const truncated = `${header}.${payload}.${signature!.slice(0, -1)}`;
+    assert.deepEqual(verifyOwnerAssertion(truncated, { current: CURRENT, now: NOW }), { ok: false, reason: "bad_sig" });
+  });
+
+  it("rejects a header alg other than HS256 even when the MAC is HS256", () => {
+    const token = signParts({ alg: "HS512", typ: "JWT", kid: "cur" }, payloadOf(sign()));
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects an extra header key", () => {
+    const token = signParts({ alg: "HS256", typ: "JWT", kid: "cur", jku: "https://evil.example/jwks" }, payloadOf(sign()));
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects a kid other than cur or prev", () => {
+    const token = signParts({ alg: "HS256", typ: "JWT", kid: "none" }, payloadOf(sign()));
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects a role other than owner", () => {
+    const token = resign({ ...payloadOf(sign()), role: "operator" });
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects an extra claim", () => {
+    const token = resign({ ...payloadOf(sign()), admin: true });
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects a jti that is not 128 bits of canonical base64url", () => {
+    const token = resign({ ...payloadOf(sign()), jti: "not-128-bits" });
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects a mixed-case sub", () => {
+    const token = resign({ ...payloadOf(sign()), sub: "Adam@TharrosMedia.com" });
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects a fractional iat", () => {
+    const iat = NOW + 0.5;
+    const token = resign({ ...payloadOf(sign()), iat, exp: iat + OWNER_ASSERTION_TTL_SECONDS });
+    assert.deepEqual(verifyOwnerAssertion(token, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects tokens that are not exactly three segments", () => {
+    const token = sign();
+    const two = token.split(".").slice(0, 2).join(".");
+    const four = `${token}.extra`;
+    assert.deepEqual(verifyOwnerAssertion(two, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+    assert.deepEqual(verifyOwnerAssertion(four, { current: CURRENT, now: NOW }), { ok: false, reason: "malformed" });
+  });
+
+  it("rejects a non-canonical secret encoding", () => {
+    const alias = nonCanonicalAlias(CURRENT);
+    assert.equal(ownerAssertionKeyBytes(alias), null);
+    assert.deepEqual(verifyOwnerAssertion(sign(), { current: alias, now: NOW }), { ok: false, reason: "missing_secret" });
   });
 
   it("stays off the contracts index", () => {
