@@ -28,6 +28,7 @@ describe("mcp submit façade", () => {
   let ownerToken = "";
   let workspaceId = "";
   let clientId = "";
+  let secondClientId = "";
   let ungrantedClientId = "";
   let otherClientId = "";
   let submitIdentityId = "";
@@ -65,6 +66,10 @@ describe("mcp submit façade", () => {
       .insert(clients)
       .values({ workspaceId, name: clientName, status: "active" })
       .returning();
+    const [second] = await db
+      .insert(clients)
+      .values({ workspaceId, name: `${clientName} second`, status: "active" })
+      .returning();
     const [ungranted] = await db
       .insert(clients)
       .values({ workspaceId, name: `${clientName} other`, status: "active" })
@@ -74,13 +79,15 @@ describe("mcp submit façade", () => {
       .insert(clients)
       .values({ workspaceId: otherWorkspace!.id, name: `${clientName} foreign`, status: "active" })
       .returning();
-    if (!client || !ungranted || !otherWorkspace || !otherClient) throw new Error("clients missing");
+    if (!client || !second || !ungranted || !otherWorkspace || !otherClient) throw new Error("clients missing");
     clientId = client.id;
+    secondClientId = second.id;
     ungrantedClientId = ungranted.id;
     otherClientId = otherClient.id;
 
     submitName = `s${randomUUID().replace(/-/g, "").slice(0, 24)}`;
     submitIdentityId = await createIdentity(submitName, ["cerevex.recs.submit"], clientId);
+    await db.insert(mcpIdentityGrants).values({ identityId: submitIdentityId, clientId: secondClientId });
     readIdentityId = await createIdentity(`r${randomUUID().replace(/-/g, "").slice(0, 24)}`, ["cerevex.read"], clientId);
     peerIdentityId = await createIdentity(`p${randomUUID().replace(/-/g, "").slice(0, 24)}`, ["cerevex.recs.submit"], ungrantedClientId);
     revokedIdentityId = await createIdentity(`v${randomUUID().replace(/-/g, "").slice(0, 24)}`, ["cerevex.recs.submit"], clientId);
@@ -113,7 +120,7 @@ describe("mcp submit façade", () => {
       await db.delete(mcpIdentities).where(eq(mcpIdentities.workspaceId, workspaceId));
     }
     if (foreignIdentityId) await db.delete(mcpIdentities).where(eq(mcpIdentities.id, foreignIdentityId));
-    const createdClients = [clientId, ungrantedClientId, otherClientId].filter((id) => id.length > 0);
+    const createdClients = [clientId, secondClientId, ungrantedClientId, otherClientId].filter((id) => id.length > 0);
     if (createdClients.length > 0) {
       // The rec audit is append-only. This test removes only the rows it wrote, then turns the trigger back on.
       await db.execute(sql`ALTER TABLE "os"."client_audit_log" DISABLE TRIGGER "client_audit_log_no_delete"`);
@@ -318,6 +325,71 @@ describe("mcp submit façade", () => {
     expect(audits).toHaveLength(1);
   });
 
+  it("does not dedupe the same key for a different identity on the same client", async () => {
+    const key = "retry-key-identity0001";
+    const otherName = `b${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+    const otherIdentityId = await createIdentity(otherName, ["cerevex.recs.submit"], clientId);
+    const first = await postSubmit(bodyFor(submitIdentityId, clientId, { idempotencyKey: key }));
+    const second = await postSubmit(
+      bodyFor(otherIdentityId, clientId, {
+        idempotencyKey: key,
+        title: "Second identity files its own rec",
+      }),
+    );
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const created = (await json(first)).recommendation as { id: string; outcome: string };
+    const otherBody = await json(second);
+    const other = otherBody.recommendation as { id: string; outcome: string; source: string };
+    expect(created.outcome).toBe("created");
+    expect(other).toMatchObject({
+      outcome: "created",
+      status: "proposed",
+      approvalStatus: "PENDING_APPROVAL",
+      source: `agent:${otherName}`,
+    });
+    expect(other.id).not.toBe(created.id);
+    expect(JSON.stringify(otherBody)).not.toContain(created.id);
+    const rows = await keyedRows(clientId, key);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.id).sort()).toEqual([created.id, other.id].sort());
+    expect(rows.map((row) => mcpIdentity(row.evidenceJson)).sort()).toEqual([otherIdentityId, submitIdentityId].sort());
+  });
+
+  it("does not dedupe the same key for the same identity on a different client", async () => {
+    const key = "retry-key-client000001";
+    const first = await postSubmit(bodyFor(submitIdentityId, clientId, { idempotencyKey: key }));
+    const second = await postSubmit(bodyFor(submitIdentityId, secondClientId, { idempotencyKey: key }));
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const created = (await json(first)).recommendation as { id: string; outcome: string };
+    const otherBody = await json(second);
+    const other = otherBody.recommendation as { id: string; outcome: string };
+    expect(created.outcome).toBe("created");
+    expect(other).toMatchObject({ outcome: "created", status: "proposed", approvalStatus: "PENDING_APPROVAL" });
+    expect(other.id).not.toBe(created.id);
+    expect(JSON.stringify(otherBody)).not.toContain(created.id);
+    expect(await keyedRows(clientId, key)).toEqual([expect.objectContaining({ id: created.id })]);
+    expect(await keyedRows(secondClientId, key)).toEqual([expect.objectContaining({ id: other.id })]);
+  });
+
+  it("stores one recommendation when the same key is submitted concurrently", async () => {
+    const key = "retry-key-concurrent01";
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, () => postSubmit(bodyFor(submitIdentityId, clientId, { idempotencyKey: key }))),
+    );
+    expect(responses.map((res) => res.status)).toEqual(Array.from({ length: 10 }, () => 200));
+    const submitted = await Promise.all(
+      responses.map(async (res) => (await json(res)).recommendation as { id: string; outcome: string }),
+    );
+    expect(new Set(submitted.map((row) => row.id)).size).toBe(1);
+    expect(submitted.filter((row) => row.outcome === "created")).toHaveLength(1);
+    expect(submitted.filter((row) => row.outcome === "duplicate")).toHaveLength(9);
+    const rows = await keyedRows(clientId, key);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(submitted[0]?.id);
+  });
+
   it("does not let another identity reuse the key as the same rec", async () => {
     const res = await postSubmit(bodyFor(peerIdentityId, ungrantedClientId));
     expect(res.status).toBe(200);
@@ -361,10 +433,27 @@ async function recommendationIds(clientId: string): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
-function mcpKey(evidence: unknown): string | null {
+function mcpRecord(evidence: unknown): Record<string, unknown> | null {
   if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) return null;
   const mcp = (evidence as Record<string, unknown>).mcp;
   if (mcp === null || typeof mcp !== "object" || Array.isArray(mcp)) return null;
-  const key = (mcp as Record<string, unknown>).idempotencyKey;
+  return mcp as Record<string, unknown>;
+}
+
+function mcpKey(evidence: unknown): string | null {
+  const key = mcpRecord(evidence)?.idempotencyKey;
   return typeof key === "string" ? key : null;
+}
+
+function mcpIdentity(evidence: unknown): string | null {
+  const identityId = mcpRecord(evidence)?.identityId;
+  return typeof identityId === "string" ? identityId : null;
+}
+
+async function keyedRows(clientId: string, key: string) {
+  const rows = await getDb()
+    .select({ id: recommendations.id, evidenceJson: recommendations.evidenceJson })
+    .from(recommendations)
+    .where(eq(recommendations.clientId, clientId));
+  return rows.filter((row) => mcpKey(row.evidenceJson) === key);
 }
