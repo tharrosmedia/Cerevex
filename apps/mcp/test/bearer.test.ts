@@ -345,6 +345,9 @@ describe("denied-request holds", () => {
         async readGranted() {
           return { ok: false, status: 404 };
         },
+        async submitRecommendation() {
+          return { ok: false, status: 404 };
+        },
       },
     });
     expect((await app.request("/mcp", request2026())).status).toBe(403);
@@ -696,6 +699,9 @@ describe("global denial bucket, each layer alone", () => {
         async readGranted() {
           return { ok: false, status: 404 };
         },
+        async submitRecommendation() {
+          return { ok: false, status: 404 };
+        },
       },
       authenticator: createBearerAuthenticator(async () => {
         lookups += 1;
@@ -781,6 +787,9 @@ describe("global denial bucket, each layer alone", () => {
           return null;
         },
         async readGranted() {
+          return { ok: false, status: 404 };
+        },
+        async submitRecommendation() {
           return { ok: false, status: 404 };
         },
       },

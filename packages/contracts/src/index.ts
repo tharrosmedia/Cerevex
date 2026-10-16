@@ -369,6 +369,27 @@ export {
 } from "./mcp";
 export type { McpScope, McpReadTool } from "./mcp";
 export {
+  MCP_SUBMIT_TOOL,
+  MCP_RECOMMENDATION_TYPES,
+  MCP_SUBMIT_TITLE_MAX,
+  MCP_SUBMIT_RATIONALE_MAX,
+  MCP_SUBMIT_STATUSES,
+  MCP_SUBMIT_APPROVAL_STATUSES,
+  MCP_SUBMIT_OUTCOMES,
+  parseMcpSubmitArguments,
+  parseMcpSubmitRequest,
+  projectMcpSubmitRecommendation,
+} from "./mcp-submit";
+export type {
+  McpRecommendationType,
+  McpSubmitArguments,
+  McpSubmitRequest,
+  McpSubmitRecommendation,
+  McpSubmitStatus,
+  McpSubmitApprovalStatus,
+  McpSubmitOutcome,
+} from "./mcp-submit";
+export {
   MCP_BRAIN_READ_PATH,
   MCP_BRAIN_READ_CALLER,
   MCP_BRAIN_READ_CALLER_HEADER,

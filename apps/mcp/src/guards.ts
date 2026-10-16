@@ -1,4 +1,4 @@
-import type { McpReadTool } from "@cerevex/contracts";
+import type { McpReadTool, McpSubmitRequest } from "@cerevex/contracts";
 import { remoteFromApiBody, type RemoteKillSwitch } from "./kill-switch";
 import type { SecurityAuditEntry } from "./audit";
 
@@ -28,20 +28,30 @@ export type McpReadResponse =
   | { ok: true; read: Record<string, unknown> }
   | { ok: false; status: 400 | 403 | 404 | 500 };
 
+export type McpSubmitResponse =
+  | { ok: true; recommendation: Record<string, unknown> }
+  | { ok: false; status: 400 | 404 | 500 }
+  | { ok: false; status: 403; error: "insufficient_scope" | "kill_switch" };
+
 export type GuardClient = {
   readKillSwitch(): Promise<RemoteKillSwitch>;
   writeSecurityAudit(entry: SecurityAuditEntry): Promise<void>;
   verifyToken(tokenHash: string): Promise<VerifiedAgent | null>;
   readGranted(request: McpReadRequest): Promise<McpReadResponse>;
+  submitRecommendation(request: McpSubmitRequest): Promise<McpSubmitResponse>;
 };
 
 /** Fail closed when a test double has not wired reads. */
 export const unreadGranted: GuardClient["readGranted"] = async () => ({ ok: false, status: 404 });
 
+/** Fail closed when a test double has not wired submits. */
+export const unsubmitted: GuardClient["submitRecommendation"] = async () => ({ ok: false, status: 404 });
+
 const CONNECTOR_PATH = "/internal/mcp/connector";
 const AUDIT_PATH = "/internal/mcp/security-audit";
 const VERIFY_PATH = "/internal/mcp/verify";
 const READ_PATH = "/internal/mcp/read";
+const SUBMIT_PATH = "/internal/mcp/submit";
 const TOKEN_HASH = /^[0-9a-f]{64}$/;
 
 export function guardEndpoint(base: string, path: string): string | null {
@@ -138,7 +148,42 @@ export function createHttpGuardClient(options: {
         return { ok: false, status: 500 };
       }
     },
+    async submitRecommendation(request) {
+      const response = await call(SUBMIT_PATH, "POST", JSON.stringify(request));
+      if (!response) return { ok: false, status: 500 };
+      if (response.status === 404) return { ok: false, status: 404 };
+      if (response.status === 400) return { ok: false, status: 400 };
+      if (response.status === 403) return submitDenied(response);
+      if (response.status < 200 || response.status >= 300) return { ok: false, status: 500 };
+      try {
+        return submitFromBody(await response.json());
+      } catch {
+        return { ok: false, status: 500 };
+      }
+    },
   };
+}
+
+async function submitDenied(response: Response): Promise<McpSubmitResponse> {
+  try {
+    const body = await response.json();
+    if (body !== null && typeof body === "object" && !Array.isArray(body)) {
+      const error = (body as Record<string, unknown>).error;
+      if (error === "kill_switch") return { ok: false, status: 403, error: "kill_switch" };
+    }
+  } catch {
+    return { ok: false, status: 403, error: "insufficient_scope" };
+  }
+  return { ok: false, status: 403, error: "insufficient_scope" };
+}
+
+function submitFromBody(body: unknown): McpSubmitResponse {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { ok: false, status: 500 };
+  const record = body as Record<string, unknown>;
+  if (record.ok !== true || record.recommendation === null || typeof record.recommendation !== "object" || Array.isArray(record.recommendation)) {
+    return { ok: false, status: 500 };
+  }
+  return { ok: true, recommendation: record.recommendation as Record<string, unknown> };
 }
 
 function readFromBody(body: unknown): McpReadResponse {

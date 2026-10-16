@@ -1,6 +1,6 @@
-import { isMcpReadTool, type McpScope } from "@cerevex/contracts";
+import { isMcpReadTool, MCP_SUBMIT_TOOL, type McpScope } from "@cerevex/contracts";
 
-const SUBMIT_TOOLS = new Set(["validate_recommendation", "submit_recommendation"]);
+const SUBMIT_TOOLS = new Set(["validate_recommendation", MCP_SUBMIT_TOOL]);
 
 /** Read tools and ping need cerevex.read. Queue tools need cerevex.recs.submit. */
 export function requiredScope(method: string, tool: string | null): McpScope | null {

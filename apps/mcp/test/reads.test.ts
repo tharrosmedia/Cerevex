@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MCP_READ_MAX_LIMIT } from "@cerevex/contracts";
 import type { McpAuthenticator } from "../src/auth";
 import type { SecurityAuditEntry } from "../src/audit";
-import { createHttpGuardClient, type GuardClient, type McpReadRequest, type McpReadResponse } from "../src/guards";
+import { createHttpGuardClient, unsubmitted, type GuardClient, type McpReadRequest, type McpReadResponse } from "../src/guards";
 import { readJson, request2026, testApp } from "./helpers";
 
 const IDENTITY_ID = "11111111-1111-4111-8111-111111111111";
@@ -32,6 +32,7 @@ function guardFor(read: (request: McpReadRequest) => Promise<McpReadResponse> | 
       reads.push(request);
       return read(request);
     },
+    submitRecommendation: unsubmitted,
   };
   return { guards, reads, audits };
 }

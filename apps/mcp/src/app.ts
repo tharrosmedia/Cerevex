@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { isMcpReadTool } from "@cerevex/contracts";
+import { isMcpReadTool, MCP_SUBMIT_TOOL } from "@cerevex/contracts";
 import { Hono } from "hono";
 import { rejectUntilScopedBearer, type McpAuthenticator, type McpIdentity } from "./auth";
 import { createDeniedAuditAggregator } from "./audit-buffer";
@@ -21,6 +21,7 @@ import { bearerToken, hashMcpToken } from "./token";
 import { classifyOrigin, parseAllowedOrigins } from "./origin";
 import { PING_TOOL_NAME, pingCallResult } from "./ping";
 import { callReadTool, phase1ToolsList } from "./reads";
+import { callSubmitTool } from "./submit";
 import {
   JSON_RPC_CLOSED,
   JSON_RPC_HEADER_MISMATCH,
@@ -506,7 +507,7 @@ export function createApp(deps: McpAppDeps) {
         error: { code: JSON_RPC_CLOSED, message: "insufficient_scope" },
       });
     }
-    if (request.method === "tools/call" && request.tool === "submit_recommendation") {
+    if (request.method === "tools/call" && request.tool === MCP_SUBMIT_TOOL) {
       const submitRetry = identitySubmits.retryAfterSeconds(identity.id);
       if (submitRetry != null) return tooMany(submitRetry, identity);
       identitySubmits.record(identity.id);
@@ -517,6 +518,33 @@ export function createApp(deps: McpAppDeps) {
     if (request.method === "tools/call" && request.tool === PING_TOOL_NAME) {
       return succeed(c, requestId, started, request, identity, pingCallResult(request.protocolVersion));
     }
+    const rejectTool = (outcome: {
+      status: 400 | 403 | 404 | 500;
+      reason: AuditReason;
+      result: AuditResult;
+      message: string;
+      scope?: string;
+    }) =>
+      reject({
+        status: outcome.status,
+        id: request.id,
+        reason: outcome.reason,
+        result: outcome.result,
+        recordIp: false,
+        protocolVersion: request.protocolVersion,
+        method: request.method,
+        tool: request.tool,
+        clientName: request.clientName,
+        clientVersion: request.clientVersion,
+        identity,
+        headers: outcome.scope
+          ? { "www-authenticate": `Bearer error="insufficient_scope", scope="${outcome.scope}"` }
+          : undefined,
+        error: {
+          code: outcome.status === 400 ? JSON_RPC_INVALID_PARAMS : JSON_RPC_CLOSED,
+          message: outcome.message,
+        },
+      });
     if (request.method === "tools/call" && request.tool && isMcpReadTool(request.tool)) {
       const outcome = await callReadTool({
         tool: request.tool,
@@ -526,28 +554,17 @@ export function createApp(deps: McpAppDeps) {
         nowMs: now(),
         read: (body) => deps.guards.readGranted(body),
       });
-      if (!outcome.ok) {
-        return reject({
-          status: outcome.status,
-          id: request.id,
-          reason: outcome.reason,
-          result: outcome.result,
-          recordIp: false,
-          protocolVersion: request.protocolVersion,
-          method: request.method,
-          tool: request.tool,
-          clientName: request.clientName,
-          clientVersion: request.clientVersion,
-          identity,
-          headers: outcome.scope
-            ? { "www-authenticate": `Bearer error="insufficient_scope", scope="${outcome.scope}"` }
-            : undefined,
-          error: {
-            code: outcome.status === 400 ? JSON_RPC_INVALID_PARAMS : JSON_RPC_CLOSED,
-            message: outcome.message,
-          },
-        });
-      }
+      if (!outcome.ok) return rejectTool(outcome);
+      return succeed(c, requestId, started, request, identity, outcome.result);
+    }
+    if (request.method === "tools/call" && request.tool === MCP_SUBMIT_TOOL) {
+      const outcome = await callSubmitTool({
+        args: request.arguments,
+        identityId: identity.id,
+        protocolVersion: request.protocolVersion,
+        submit: (body) => deps.guards.submitRecommendation(body),
+      });
+      if (!outcome.ok) return rejectTool(outcome);
       return succeed(c, requestId, started, request, identity, outcome.result);
     }
     const unknownTool = request.method === "tools/call";

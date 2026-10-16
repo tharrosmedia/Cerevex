@@ -235,14 +235,19 @@ describe("POST /mcp stays 401 until scoped bearer auth exists", () => {
     const listed = await app.request("/mcp", request2026({ method: "tools/list" }));
     expect(listed.status).toBe(200);
     const listBody = await readJson(listed);
-    const tools = (listBody.result as { tools: Array<{ name: string; annotations: { readOnlyHint: boolean } }> }).tools;
+    const tools = (listBody.result as { tools: Array<{ name: string; annotations: { readOnlyHint: boolean; destructiveHint?: boolean } }> }).tools;
     expect(tools.map((tool) => tool.name)).toEqual([
       "ping",
       "get_gsc_performance",
       "get_seo_findings",
       "get_store_catalog",
+      "submit_recommendation",
     ]);
-    expect(tools.every((tool) => tool.annotations.readOnlyHint)).toBe(true);
+    expect(tools.filter((tool) => tool.name !== "submit_recommendation").every((tool) => tool.annotations.readOnlyHint)).toBe(true);
+    expect(tools.find((tool) => tool.name === "submit_recommendation")?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
+    });
     expect(tools.map((tool) => tool.name)).not.toContain("get_ga4_report");
 
     const pong = await app.request(
