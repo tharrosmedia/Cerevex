@@ -8,8 +8,8 @@ import type { GuardClient } from "./guards";
 import { asRemoteKillSwitch, connectorKilled, envForcesOff } from "./kill-switch";
 import { cacheRemoteKillSwitch } from "./kill-switch-cache";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { clientIpFromHeaders, createDeniedIpLimiter, createTokenBucket } from "./limiter";
-import { bearerToken } from "./token";
+import { clientIpFromHeaders, createDeniedIpLimiter, createTokenBucket, createVerifiedTokenSet } from "./limiter";
+import { bearerToken, hashMcpToken } from "./token";
 import { classifyOrigin, parseAllowedOrigins } from "./origin";
 import { PING_TOOL_NAME, pingCallResult, pingToolsList } from "./ping";
 import {
@@ -20,6 +20,7 @@ import {
   JSON_RPC_METHOD_NOT_FOUND,
   JSON_RPC_UNSUPPORTED_PROTOCOL,
   SUPPORTED_PROTOCOL_VERSIONS,
+  cleanHeaderValue,
   isJsonContentType,
   parseMcpRequest,
 } from "./protocol";
@@ -31,9 +32,13 @@ export const DENIED_IP_WINDOW_MS = 60_000;
 /** Under the one-minute kill-switch bound. Revocation is not cached. */
 export const KILL_SWITCH_CACHE_MS = 5_000;
 export const DENIED_AUDIT_FLUSH_MS = 5_000;
-/** Process-wide denial budget. Not keyed by IP. One app per process holds one bucket. */
+/** Process-wide budget for calls that are not carrying a well-formed bearer. Not keyed by IP. */
 export const GLOBAL_DENIAL_CAPACITY = 60;
 export const GLOBAL_DENIAL_REFILL_PER_SECOND = 1;
+/** A hash that verified OK may skip the shared lookup bucket for this long. Verify still runs every call. */
+export const VERIFIED_BEARER_TTL_MS = 10 * 60_000;
+/** One slot per identity. Forged tokens never enter, and a full set drops the oldest expiry. */
+export const VERIFIED_BEARER_MAX = 256;
 
 export type AuditControl = {
   flush: () => Promise<void>;
@@ -53,6 +58,9 @@ export type McpAppDeps = {
   deniedMaxIps?: number;
   globalDenialCapacity?: number;
   globalDenialRefillPerSecond?: number;
+  globalBearerCapacity?: number;
+  globalBearerRefillPerSecond?: number;
+  failedLookupPerIp?: number;
 };
 
 function peerAddress(c: { env: unknown }): string | null {
@@ -86,9 +94,23 @@ export function createApp(deps: McpAppDeps) {
     maxIps: deps.deniedMaxIps,
     now,
   });
-  const denialBucket = createTokenBucket({
-    capacity: deps.globalDenialCapacity ?? GLOBAL_DENIAL_CAPACITY,
-    refillPerSecond: deps.globalDenialRefillPerSecond ?? GLOBAL_DENIAL_REFILL_PER_SECOND,
+  const denialCapacity = deps.globalDenialCapacity ?? GLOBAL_DENIAL_CAPACITY;
+  const denialRefill = deps.globalDenialRefillPerSecond ?? GLOBAL_DENIAL_REFILL_PER_SECOND;
+  // Two buckets with the same default rates. Unauthenticated calls cannot drain the lookup budget.
+  const denialBucket = createTokenBucket({ capacity: denialCapacity, refillPerSecond: denialRefill, now });
+  const bearerBucket = createTokenBucket({
+    capacity: deps.globalBearerCapacity ?? denialCapacity,
+    refillPerSecond: deps.globalBearerRefillPerSecond ?? denialRefill,
+    now,
+  });
+  const failedLookups = createDeniedIpLimiter({
+    limit: deps.failedLookupPerIp ?? DENIED_IP_LIMIT,
+    windowMs: deps.deniedWindowMs ?? DENIED_IP_WINDOW_MS,
+    now,
+  });
+  const verifiedBearers = createVerifiedTokenSet({
+    ttlMs: VERIFIED_BEARER_TTL_MS,
+    maxSize: VERIFIED_BEARER_MAX,
     now,
   });
   const deniedAudits = createDeniedAuditAggregator();
@@ -123,7 +145,9 @@ export function createApp(deps: McpAppDeps) {
     const requestId = randomUUID();
     const ip = clientIpFromHeaders(c.req.raw.headers, peerAddress(c));
     const origin = classifyOrigin(c.req.header("origin"), allowedOrigins);
-    let lookupHeld = false;
+    const authorization = c.req.header("authorization") ?? null;
+    let denialHeld = false;
+    let bearerHeld = false;
 
     const reject = async (input: {
       status: 400 | 401 | 403 | 404 | 405 | 429 | 500;
@@ -139,11 +163,24 @@ export function createApp(deps: McpAppDeps) {
       identity?: McpIdentity | null;
       headers?: Record<string, string>;
       recordIp?: boolean;
+      spendBearer?: boolean;
     }) => {
       const unauthenticatedOrDenied = !input.identity || input.status === 401 || input.status === 403;
       if (input.recordIp !== false && unauthenticatedOrDenied && input.status !== 429) {
-        if (!lookupHeld) denialBucket.take();
-        limiter.record(ip);
+        if (bearerHeld) {
+          if (input.spendBearer) bearerHeld = false;
+          else {
+            bearerBucket.refund();
+            bearerHeld = false;
+          }
+        }
+        // A failed take must not occupy a map slot. Record only a token this request already holds or takes now.
+        if (denialHeld) {
+          denialHeld = false;
+          limiter.record(ip);
+        } else if (denialBucket.take()) {
+          limiter.record(ip);
+        }
       }
       await writeAudit({
         requestId,
@@ -166,22 +203,8 @@ export function createApp(deps: McpAppDeps) {
       });
     };
 
-    const globalRetry = denialBucket.retryAfterSeconds();
-    if (globalRetry > 0) {
-      return reject({
-        status: 429,
-        id: null,
-        reason: "rate_limited",
-        result: "rate_limited",
-        recordIp: false,
-        headers: { "retry-after": String(globalRetry) },
-        error: { code: JSON_RPC_CLOSED, message: "Rate limit exceeded" },
-      });
-    }
-
-    const retryAfter = limiter.retryAfterSeconds(ip);
-    if (retryAfter != null) {
-      return reject({
+    const tooMany = (retryAfter: number) =>
+      reject({
         status: 429,
         id: null,
         reason: "rate_limited",
@@ -190,6 +213,36 @@ export function createApp(deps: McpAppDeps) {
         headers: { "retry-after": String(retryAfter) },
         error: { code: JSON_RPC_CLOSED, message: "Rate limit exceeded" },
       });
+
+    // Admit before any await so a concurrent burst cannot all pass a peek and then fill the map.
+    // A POST with a supported protocol header and a well-formed bearer is a lookup. A hash that
+    // verified recently skips the shared lookup bucket. Every other bearer-shaped call, including
+    // a bad protocol header or a GET, uses the denial limiter.
+    const presented = bearerToken(authorization);
+    const presentedHash = presented ? hashMcpToken(presented) : null;
+    const protocolHeader = cleanHeaderValue(c.req.header("mcp-protocol-version"));
+    const protocolSupported = protocolHeader != null && (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolHeader);
+    const authenticating =
+      presentedHash != null &&
+      c.req.method === "POST" &&
+      origin !== "rejected" &&
+      protocolSupported &&
+      isJsonContentType(c.req.header("content-type"));
+    const knownBearer = authenticating && presentedHash != null && verifiedBearers.has(presentedHash);
+    if (authenticating) {
+      const saturated = limiter.mapFullRetryAfter(ip);
+      if (saturated != null) return tooMany(saturated);
+      if (!knownBearer) {
+        const failedRetry = failedLookups.retryAfterSeconds(ip);
+        if (failedRetry != null) return tooMany(failedRetry);
+        if (!bearerBucket.take()) return tooMany(bearerBucket.retryAfterSeconds());
+        bearerHeld = true;
+      }
+    } else {
+      const retryAfter = limiter.retryAfterSeconds(ip);
+      if (retryAfter != null) return tooMany(retryAfter);
+      if (!denialBucket.take()) return tooMany(denialBucket.retryAfterSeconds());
+      denialHeld = true;
     }
 
     if (origin === "rejected") {
@@ -306,35 +359,25 @@ export function createApp(deps: McpAppDeps) {
     }
 
     const request = parsed.request;
-    const authorization = c.req.header("authorization") ?? null;
-    if (bearerToken(authorization)) {
-      if (!denialBucket.take()) {
-        return reject({
-          status: 429,
-          id: request.id,
-          reason: "rate_limited",
-          result: "rate_limited",
-          recordIp: false,
-          protocolVersion: request.protocolVersion,
-          method: request.method,
-          tool: request.tool,
-          clientName: request.clientName,
-          clientVersion: request.clientVersion,
-          headers: { "retry-after": String(denialBucket.retryAfterSeconds()) },
-          error: { code: JSON_RPC_CLOSED, message: "Rate limit exceeded" },
-        });
-      }
-      lookupHeld = true;
-    }
     let decision: { ok: false } | { ok: true; identity: McpIdentity };
     try {
       decision = await authenticator(authorization);
     } catch {
       decision = { ok: false };
     }
-    if (decision.ok && lookupHeld) {
-      denialBucket.refund();
-      lookupHeld = false;
+    if (!decision.ok && authenticating && presentedHash) {
+      verifiedBearers.forget(presentedHash);
+      failedLookups.record(ip);
+    }
+    if (decision.ok) {
+      if (bearerHeld) {
+        bearerBucket.refund();
+        bearerHeld = false;
+      }
+      if (denialHeld) {
+        denialBucket.refund();
+        denialHeld = false;
+      }
     }
     const unauthenticated = () =>
       reject({
@@ -342,6 +385,7 @@ export function createApp(deps: McpAppDeps) {
         id: request.id,
         reason: "unauthenticated",
         result: "denied",
+        spendBearer: true,
         protocolVersion: request.protocolVersion,
         method: request.method,
         tool: request.tool,
@@ -353,7 +397,14 @@ export function createApp(deps: McpAppDeps) {
     if (!decision.ok) return unauthenticated();
     const identity = decision.identity;
     const scopes = Array.isArray(identity.scopes) ? identity.scopes : [];
-    if (!identity.id || !identity.name || scopes.length === 0) return unauthenticated();
+    if (!identity.id || !identity.name || scopes.length === 0) {
+      if (authenticating && presentedHash) {
+        verifiedBearers.forget(presentedHash);
+        failedLookups.record(ip);
+      }
+      return unauthenticated();
+    }
+    if (authenticating && presentedHash) verifiedBearers.remember(presentedHash);
     const needed = requiredScope(request.method, request.tool);
     if (needed && !scopes.includes(needed)) {
       return reject({

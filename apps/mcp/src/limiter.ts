@@ -87,12 +87,25 @@ export function createDeniedIpLimiter(options: { limit: number; windowMs: number
     }
   }
 
+  function windowRetry(): number {
+    return Math.max(1, Math.ceil(options.windowMs / 1000));
+  }
+
+  /** A new address when the map is already full. An address already stored is not blocked here. */
+  function blockedBecauseMapFull(ip: string): number | null {
+    if (!hits.has(ip) && hits.size >= maxIps) return windowRetry();
+    return null;
+  }
+
   return {
+    mapFullRetryAfter(ip: string): number | null {
+      pruneAll();
+      return blockedBecauseMapFull(ip);
+    },
     retryAfterSeconds(ip: string): number | null {
       pruneAll();
-      if (!hits.has(ip) && hits.size >= maxIps) {
-        return Math.max(1, Math.ceil(options.windowMs / 1000));
-      }
+      const full = blockedBecauseMapFull(ip);
+      if (full != null) return full;
       const kept = hits.get(ip) ?? [];
       if (kept.length < options.limit) return null;
       const oldest = kept[0] ?? now();
@@ -104,6 +117,54 @@ export function createDeniedIpLimiter(options: { limit: number; windowMs: number
       const kept = prune(ip);
       kept.push(now());
       hits.set(ip, kept);
+    },
+  };
+}
+
+/**
+ * Hashes that have verified OK. A caller inserts only after a successful verify,
+ * so the set cannot grow from forged tokens. It is capped at the identity bound;
+ * a full set drops the soonest expiry. Every call still verifies.
+ */
+export function createVerifiedTokenSet(options: { ttlMs: number; maxSize: number; now?: () => number }) {
+  const now = options.now ?? Date.now;
+  const expiresAt = new Map<string, number>();
+
+  function dropExpired(at: number) {
+    for (const [hash, expiry] of expiresAt) {
+      if (expiry <= at) expiresAt.delete(hash);
+    }
+  }
+
+  return {
+    has(hash: string): boolean {
+      const at = now();
+      const expiry = expiresAt.get(hash);
+      if (expiry == null) return false;
+      if (expiry <= at) {
+        expiresAt.delete(hash);
+        return false;
+      }
+      return true;
+    },
+    remember(hash: string) {
+      const at = now();
+      dropExpired(at);
+      if (!expiresAt.has(hash) && expiresAt.size >= options.maxSize) {
+        let oldestHash: string | null = null;
+        let oldestExpiry = Number.POSITIVE_INFINITY;
+        for (const [candidate, expiry] of expiresAt) {
+          if (expiry < oldestExpiry) {
+            oldestHash = candidate;
+            oldestExpiry = expiry;
+          }
+        }
+        if (oldestHash) expiresAt.delete(oldestHash);
+      }
+      expiresAt.set(hash, at + options.ttlMs);
+    },
+    forget(hash: string) {
+      expiresAt.delete(hash);
     },
   };
 }

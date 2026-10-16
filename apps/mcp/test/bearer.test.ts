@@ -682,7 +682,7 @@ describe("global denial bucket, each layer alone", () => {
       guards: {
         async readKillSwitch() {
           entered += 1;
-          if (entered === 3) release();
+          if (entered === 1) release();
           await gate;
           return "clear";
         },
@@ -710,6 +710,7 @@ describe("global denial bucket, each layer alone", () => {
     const statuses = (await Promise.all(responses.map(async (res) => res.status))).sort((a, b) => a - b);
     expect(statuses).toEqual([401, 429, 429]);
     expect(lookups).toBe(1);
+    expect(entered).toBe(1);
   });
 
   it("does not refund a failed lookup, and does refund a successful one", async () => {
