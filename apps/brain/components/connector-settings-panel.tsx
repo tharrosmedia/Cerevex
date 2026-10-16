@@ -29,8 +29,8 @@ function readIdentities(value: unknown): McpIdentityView[] {
 export async function ConnectorSettingsPanel() {
   try {
     const [connector, identities, clients] = await Promise.all([
-      adsApi<{ killSwitch: boolean }>('/mcp/connector', {}, { asOwner: true }),
-      adsApi<{ identities: McpIdentityView[] }>('/mcp/identities', {}, { asOwner: true }),
+      adsApi<{ killSwitch: boolean }>('/mcp/connector', {}, { asOwner: true, ownerAssertion: true }),
+      adsApi<{ identities: McpIdentityView[] }>('/mcp/identities', {}, { asOwner: true, ownerAssertion: true }),
       listAdsClients(),
     ]);
     const loadError = !connector.ok ? connector.message : !identities.ok ? identities.message : null;

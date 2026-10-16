@@ -1,5 +1,7 @@
 import { adsCallerHeaders } from "../src/lib/db/workspace-ads-sync";
+import { OWNER_ASSERTION_HEADER, mintOwnerAssertion } from "./owner-assertion";
 import { isProductionRuntime } from "./runtime-env";
+import type { CredentialSource } from "./sensitive-auth";
 
 export type AdsFailReason = "not_configured" | "unreachable" | "unauthorized" | "not_found" | "error";
 
@@ -96,6 +98,13 @@ export type AdsCallOptions = {
   anonymous?: boolean;
   /** Owner bearer token only. The service key is not a workspace owner. */
   asOwner?: boolean;
+  /**
+   * P3 owner calls. When OWNER_ASSERTION_ENABLED is on, send a fresh assertion
+   * and no bearer or internal key. When the flag is off, asOwner is unchanged.
+   */
+  ownerAssertion?: boolean;
+  /** Tests pass the console session. Production reads the auth cookie. */
+  assertionCreds?: CredentialSource;
 };
 
 const ADS_API_TIMEOUT_MS = 8_000;
@@ -128,7 +137,18 @@ export async function adsApi<T>(
   // for writes ads-api refuses from the service principal. Pause stays on the default.
   headers.delete("x-cerevex-internal-key");
   headers.delete("authorization");
-  if (!options.anonymous) {
+  headers.delete("x-cerevex-owner-assertion");
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  const method = (init.method ?? "GET").toUpperCase();
+  let assertionHandled = false;
+  if (!options.anonymous && options.ownerAssertion) {
+    const minted = await mintOwnerAssertion({ htm: method, htu: suffix, creds: options.assertionCreds });
+    if (minted.enabled) {
+      assertionHandled = true;
+      if (minted.token) headers.set(OWNER_ASSERTION_HEADER, minted.token);
+    }
+  }
+  if (!options.anonymous && !assertionHandled) {
     const caller = options.asOwner
       ? adsCallerHeaders({
           safetyOn: true,
@@ -146,10 +166,10 @@ export async function adsApi<T>(
     if (authorization) headers.set("authorization", authorization);
   }
 
-  const suffix = path.startsWith("/") ? path : `/${path}`;
   try {
     const res = await fetch(`${base}${suffix}`, {
       ...init,
+      method,
       headers,
       cache: "no-store",
       signal: AbortSignal.timeout(ADS_API_TIMEOUT_MS),
@@ -254,8 +274,8 @@ export function ensureSiteClient(siteId: string, name: string) {
   );
 }
 
-export function listAdsClients() {
-  return adsApi<{ clients: AdsClient[] }>("/clients", {}, { asOwner: true });
+export function listAdsClients(creds?: CredentialSource) {
+  return adsApi<{ clients: AdsClient[] }>("/clients", {}, { asOwner: true, ownerAssertion: true, assertionCreds: creds });
 }
 
 export function renameAdsClient(clientId: string, name: string) {

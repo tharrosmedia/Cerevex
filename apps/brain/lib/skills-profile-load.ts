@@ -18,6 +18,7 @@ export function skillsProfilePost(clientId: string, slug: string) {
     method: "POST" as const,
     body: { slug },
     asOwner: true as const,
+    ownerAssertion: true as const,
   };
 }
 
@@ -28,8 +29,9 @@ export type SkillsProfileLoadResult =
 export async function loadLinkedSkillsProfile(input: {
   siteId: string;
   slug: string;
+  creds?: CredentialSource;
 }): Promise<SkillsProfileLoadResult> {
-  const listed = await adsApi<{ clients: AdsClient[] }>("/clients", {}, { asOwner: true });
+  const listed = await adsApi<{ clients: AdsClient[] }>("/clients", {}, { asOwner: true, ownerAssertion: true, assertionCreds: input.creds });
   if (!listed.ok) return { ok: false, message: listed.message };
   const match = clientForSite(listed.data.clients, input.siteId);
   if (!match.ok) return match;
@@ -37,7 +39,7 @@ export async function loadLinkedSkillsProfile(input: {
   const posted = await adsApi<{ snapshotId: string; clientId: string }>(
     post.path,
     { method: post.method, body: JSON.stringify(post.body) },
-    { asOwner: post.asOwner },
+    { asOwner: post.asOwner, ownerAssertion: post.ownerAssertion, assertionCreds: input.creds },
   );
   if (!posted.ok) return { ok: false, message: posted.message };
   return {
