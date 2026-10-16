@@ -8,7 +8,14 @@ import type { GuardClient } from "./guards";
 import { asRemoteKillSwitch, connectorKilled, envForcesOff } from "./kill-switch";
 import { cacheRemoteKillSwitch } from "./kill-switch-cache";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { clientIpFromHeaders, createDeniedIpLimiter, createTokenBucket, createVerifiedTokenSet } from "./limiter";
+import {
+  clientIpFromHeaders,
+  createCallWindow,
+  createDeniedIpLimiter,
+  createTokenBucket,
+  createVerifiedTokenSet,
+  createWaitingSet,
+} from "./limiter";
 import { bearerToken, hashMcpToken } from "./token";
 import { classifyOrigin, parseAllowedOrigins } from "./origin";
 import { PING_TOOL_NAME, pingCallResult, pingToolsList } from "./ping";
@@ -39,6 +46,20 @@ export const GLOBAL_DENIAL_REFILL_PER_SECOND = 1;
 export const VERIFIED_BEARER_TTL_MS = 10 * 60_000;
 /** One slot per identity. Forged tokens never enter, and a full set drops the oldest expiry. */
 export const VERIFIED_BEARER_MAX = 256;
+/** Brief §11. Sliding window, charged before the ads lookup for a hash that already verified. */
+export const IDENTITY_CALLS_PER_MINUTE = 60;
+export const IDENTITY_SUBMITS_PER_MINUTE = 30;
+export const IDENTITY_WINDOW_MS = 60_000;
+/**
+ * A retried unknown hash, from an address with no failed lookup, may verify
+ * once without taking the shared fake-token bucket. The process-wide cap
+ * stops a rotating retry flood from minting a lookup per address.
+ */
+export const PROTECTED_FIRST_VERIFY_PER_IP = 1;
+export const PROTECTED_FIRST_VERIFY_MAX = 60;
+export const WAITING_BEARER_MAX = 4096;
+export const WAITING_BEARER_TTL_MS = 60_000;
+const PROTECTED_GLOBAL_KEY = "protected";
 
 export type AuditControl = {
   flush: () => Promise<void>;
@@ -61,6 +82,11 @@ export type McpAppDeps = {
   globalBearerCapacity?: number;
   globalBearerRefillPerSecond?: number;
   failedLookupPerIp?: number;
+  identityCallsPerMinute?: number;
+  identitySubmitsPerMinute?: number;
+  identityWindowMs?: number;
+  protectedFirstVerifyPerIp?: number;
+  protectedFirstVerifyPerMinute?: number;
 };
 
 function peerAddress(c: { env: unknown }): string | null {
@@ -96,10 +122,11 @@ export function createApp(deps: McpAppDeps) {
   });
   const denialCapacity = deps.globalDenialCapacity ?? GLOBAL_DENIAL_CAPACITY;
   const denialRefill = deps.globalDenialRefillPerSecond ?? GLOBAL_DENIAL_REFILL_PER_SECOND;
+  const bearerCapacity = deps.globalBearerCapacity ?? denialCapacity;
   // Two buckets with the same default rates. Unauthenticated calls cannot drain the lookup budget.
   const denialBucket = createTokenBucket({ capacity: denialCapacity, refillPerSecond: denialRefill, now });
   const bearerBucket = createTokenBucket({
-    capacity: deps.globalBearerCapacity ?? denialCapacity,
+    capacity: bearerCapacity,
     refillPerSecond: deps.globalBearerRefillPerSecond ?? denialRefill,
     now,
   });
@@ -108,6 +135,31 @@ export function createApp(deps: McpAppDeps) {
     windowMs: deps.deniedWindowMs ?? DENIED_IP_WINDOW_MS,
     now,
   });
+  const identityWindowMs = deps.identityWindowMs ?? IDENTITY_WINDOW_MS;
+  const identityCalls = createCallWindow({
+    limit: deps.identityCallsPerMinute ?? IDENTITY_CALLS_PER_MINUTE,
+    windowMs: identityWindowMs,
+    maxKeys: VERIFIED_BEARER_MAX,
+    now,
+  });
+  const identitySubmits = createCallWindow({
+    limit: deps.identitySubmitsPerMinute ?? IDENTITY_SUBMITS_PER_MINUTE,
+    windowMs: identityWindowMs,
+    maxKeys: VERIFIED_BEARER_MAX,
+    now,
+  });
+  const protectedPerIp = createCallWindow({
+    limit: deps.protectedFirstVerifyPerIp ?? PROTECTED_FIRST_VERIFY_PER_IP,
+    windowMs: identityWindowMs,
+    now,
+  });
+  const protectedGlobal = createCallWindow({
+    limit: deps.protectedFirstVerifyPerMinute ?? PROTECTED_FIRST_VERIFY_MAX,
+    windowMs: identityWindowMs,
+    maxKeys: 1,
+    now,
+  });
+  const waiting = createWaitingSet({ maxSize: WAITING_BEARER_MAX, ttlMs: WAITING_BEARER_TTL_MS, now });
   const verifiedBearers = createVerifiedTokenSet({
     ttlMs: VERIFIED_BEARER_TTL_MS,
     maxSize: VERIFIED_BEARER_MAX,
@@ -148,6 +200,7 @@ export function createApp(deps: McpAppDeps) {
     const authorization = c.req.header("authorization") ?? null;
     let denialHeld = false;
     let bearerHeld = false;
+    let identityCharged = false;
 
     const reject = async (input: {
       status: 400 | 401 | 403 | 404 | 405 | 429 | 500;
@@ -203,21 +256,23 @@ export function createApp(deps: McpAppDeps) {
       });
     };
 
-    const tooMany = (retryAfter: number) =>
+    const tooMany = (retryAfter: number, identity?: { id: string; name: string } | null) =>
       reject({
         status: 429,
         id: null,
         reason: "rate_limited",
         result: "rate_limited",
         recordIp: false,
-        headers: { "retry-after": String(retryAfter) },
+        identity: identity ? { id: identity.id, name: identity.name, scopes: [] } : null,
+        headers: { "retry-after": String(Math.max(1, Math.ceil(retryAfter))) },
         error: { code: JSON_RPC_CLOSED, message: "Rate limit exceeded" },
       });
 
     // Admit before any await so a concurrent burst cannot all pass a peek and then fill the map.
     // A POST with a supported protocol header and a well-formed bearer is a lookup. A hash that
-    // verified recently skips the shared lookup bucket. Every other bearer-shaped call, including
-    // a bad protocol header or a GET, uses the denial limiter.
+    // verified recently is limited per identity and skips the shared lookup bucket. An unknown
+    // hash that already waited once may verify without that bucket. Every other bearer-shaped
+    // call, including a bad protocol header or a GET, uses the denial limiter.
     const presented = bearerToken(authorization);
     const presentedHash = presented ? hashMcpToken(presented) : null;
     const protocolHeader = cleanHeaderValue(c.req.header("mcp-protocol-version"));
@@ -228,15 +283,41 @@ export function createApp(deps: McpAppDeps) {
       origin !== "rejected" &&
       protocolSupported &&
       isJsonContentType(c.req.header("content-type"));
-    const knownBearer = authenticating && presentedHash != null && verifiedBearers.has(presentedHash);
+    const known = authenticating && presentedHash ? verifiedBearers.get(presentedHash) : null;
     if (authenticating) {
       const saturated = limiter.mapFullRetryAfter(ip);
       if (saturated != null) return tooMany(saturated);
-      if (!knownBearer) {
+      if (known && !envForcesOff(deps.killSwitchEnv)) {
+        const retry = identityCalls.retryAfterSeconds(known.identityId);
+        if (retry != null) return tooMany(retry, { id: known.identityId, name: known.identityName });
+        identityCalls.record(known.identityId);
+        identityCharged = true;
+      } else if (!known && presentedHash) {
+        // Over the failed-lookup limit: refuse before either lookup bucket.
         const failedRetry = failedLookups.retryAfterSeconds(ip);
         if (failedRetry != null) return tooMany(failedRetry);
-        if (!bearerBucket.take()) return tooMany(bearerBucket.retryAfterSeconds());
-        bearerHeld = true;
+        // The wait is per address. A burst of one hash from many addresses
+        // does not become a protected retry for every address in the burst.
+        const waitKey = `${ip}\n${presentedHash}`;
+        const retrying = waiting.has(waitKey);
+        const protectedRetry =
+          retrying &&
+          failedLookups.count(ip) === 0 &&
+          protectedPerIp.retryAfterSeconds(ip) == null &&
+          protectedGlobal.retryAfterSeconds(PROTECTED_GLOBAL_KEY) == null;
+        if (protectedRetry) {
+          protectedPerIp.record(ip);
+          protectedGlobal.record(PROTECTED_GLOBAL_KEY);
+          waiting.forget(waitKey);
+        } else {
+          const leave = bearerCapacity > 1 && !retrying && waiting.size > 0 ? 1 : 0;
+          if (!bearerBucket.take(leave)) {
+            waiting.note(waitKey);
+            return tooMany(Math.max(1, bearerBucket.retryAfterSeconds()));
+          }
+          waiting.forget(waitKey);
+          bearerHeld = true;
+        }
       }
     } else {
       const retryAfter = limiter.retryAfterSeconds(ip);
@@ -404,7 +485,8 @@ export function createApp(deps: McpAppDeps) {
       }
       return unauthenticated();
     }
-    if (authenticating && presentedHash) verifiedBearers.remember(presentedHash);
+    if (!identityCharged) identityCalls.record(identity.id);
+    if (authenticating && presentedHash) verifiedBearers.remember(presentedHash, { id: identity.id, name: identity.name });
     const needed = requiredScope(request.method, request.tool);
     if (needed && !scopes.includes(needed)) {
       return reject({
@@ -421,6 +503,11 @@ export function createApp(deps: McpAppDeps) {
         headers: { "www-authenticate": `Bearer error="insufficient_scope", scope="${needed}"` },
         error: { code: JSON_RPC_CLOSED, message: "insufficient_scope" },
       });
+    }
+    if (request.method === "tools/call" && request.tool === "submit_recommendation") {
+      const submitRetry = identitySubmits.retryAfterSeconds(identity.id);
+      if (submitRetry != null) return tooMany(submitRetry, identity);
+      identitySubmits.record(identity.id);
     }
     if (request.method === "tools/list") {
       return succeed(c, requestId, started, request, identity, pingToolsList(request.protocolVersion));

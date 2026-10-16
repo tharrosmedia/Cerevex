@@ -111,6 +111,11 @@ export function createDeniedIpLimiter(options: { limit: number; windowMs: number
       const oldest = kept[0] ?? now();
       return Math.max(1, Math.ceil((oldest + options.windowMs - now()) / 1000));
     },
+    /** Failures still inside the window. An address with zero has not been charged for a bad lookup. */
+    count(ip: string): number {
+      pruneAll();
+      return hits.get(ip)?.length ?? 0;
+    },
     record(ip: string) {
       pruneAll();
       if (!hits.has(ip) && hits.size >= maxIps) return;
@@ -121,50 +126,163 @@ export function createDeniedIpLimiter(options: { limit: number; windowMs: number
   };
 }
 
+export type VerifiedBearer = {
+  identityId: string;
+  identityName: string;
+};
+
 /**
- * Hashes that have verified OK. A caller inserts only after a successful verify,
- * so the set cannot grow from forged tokens. It is capped at the identity bound;
- * a full set drops the soonest expiry. Every call still verifies.
+ * Hashes that have verified OK, with the identity they verified as.
+ * A caller inserts only after a successful verify, so the set cannot grow
+ * from forged tokens. It is capped at the identity bound; a full set drops
+ * the soonest expiry. Every admitted call still verifies.
  */
 export function createVerifiedTokenSet(options: { ttlMs: number; maxSize: number; now?: () => number }) {
   const now = options.now ?? Date.now;
-  const expiresAt = new Map<string, number>();
+  const entries = new Map<string, { expiry: number; identityId: string; identityName: string }>();
 
   function dropExpired(at: number) {
-    for (const [hash, expiry] of expiresAt) {
-      if (expiry <= at) expiresAt.delete(hash);
+    for (const [hash, entry] of entries) {
+      if (entry.expiry <= at) entries.delete(hash);
+    }
+  }
+
+  return {
+    get(hash: string): VerifiedBearer | null {
+      const at = now();
+      const entry = entries.get(hash);
+      if (!entry) return null;
+      if (entry.expiry <= at) {
+        entries.delete(hash);
+        return null;
+      }
+      return { identityId: entry.identityId, identityName: entry.identityName };
+    },
+    remember(hash: string, identity: { id: string; name: string }) {
+      const at = now();
+      dropExpired(at);
+      if (!entries.has(hash) && entries.size >= options.maxSize) {
+        let oldestHash: string | null = null;
+        let oldestExpiry = Number.POSITIVE_INFINITY;
+        for (const [candidate, entry] of entries) {
+          if (entry.expiry < oldestExpiry) {
+            oldestHash = candidate;
+            oldestExpiry = entry.expiry;
+          }
+        }
+        if (oldestHash) entries.delete(oldestHash);
+      }
+      entries.set(hash, {
+        expiry: at + options.ttlMs,
+        identityId: identity.id,
+        identityName: identity.name,
+      });
+    },
+    forget(hash: string) {
+      entries.delete(hash);
+    },
+  };
+}
+
+/**
+ * Sliding window of calls. The key is an identity id, or one shared key
+ * when the limit is process-wide. Retry-After is the time until the oldest
+ * call in the window falls out.
+ */
+export function createCallWindow(options: { limit: number; windowMs: number; maxKeys?: number; now?: () => number }) {
+  const now = options.now ?? Date.now;
+  const hits = new Map<string, number[]>();
+  const maxKeys = options.maxKeys ?? 4096;
+
+  function pruneKey(key: string, at: number): number[] {
+    const cutoff = at - options.windowMs;
+    const kept = (hits.get(key) ?? []).filter((stamp) => stamp > cutoff);
+    if (kept.length === 0) hits.delete(key);
+    else hits.set(key, kept);
+    return kept;
+  }
+
+  function pruneAll(at: number) {
+    for (const key of [...hits.keys()]) pruneKey(key, at);
+  }
+
+  /** Drop the quietest other key so a newly seen identity is still limited. */
+  function evictOldest(except: string) {
+    if (hits.has(except) || hits.size < maxKeys) return;
+    let oldestKey: string | null = null;
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const [candidate, times] of hits) {
+      const last = times[times.length - 1] ?? 0;
+      if (last < oldest) {
+        oldest = last;
+        oldestKey = candidate;
+      }
+    }
+    if (oldestKey) hits.delete(oldestKey);
+  }
+
+  return {
+    retryAfterSeconds(key: string): number | null {
+      const at = now();
+      pruneAll(at);
+      const kept = hits.get(key) ?? [];
+      if (kept.length < options.limit) return null;
+      const oldest = kept[0] ?? at;
+      return Math.max(1, Math.ceil((oldest + options.windowMs - at) / 1000));
+    },
+    record(key: string) {
+      const at = now();
+      pruneAll(at);
+      evictOldest(key);
+      const kept = pruneKey(key, at);
+      if (kept.length >= options.limit) return;
+      kept.push(at);
+      hits.set(key, kept);
+    },
+  };
+}
+
+/**
+ * Hashes refused because the shared lookup bucket was empty. A later
+ * presentation of the same hash is a first-verify retry. The set is bounded.
+ * When it is full, the oldest hash is dropped so a new one can enter.
+ */
+export function createWaitingSet(options: { maxSize: number; ttlMs: number; now?: () => number }) {
+  const now = options.now ?? Date.now;
+  const notedAt = new Map<string, number>();
+
+  function prune(at: number) {
+    for (const [hash, noted] of notedAt) {
+      if (at >= noted + options.ttlMs) notedAt.delete(hash);
     }
   }
 
   return {
     has(hash: string): boolean {
       const at = now();
-      const expiry = expiresAt.get(hash);
-      if (expiry == null) return false;
-      if (expiry <= at) {
-        expiresAt.delete(hash);
-        return false;
-      }
-      return true;
+      prune(at);
+      return notedAt.has(hash);
     },
-    remember(hash: string) {
+    get size(): number {
+      prune(now());
+      return notedAt.size;
+    },
+    note(hash: string) {
       const at = now();
-      dropExpired(at);
-      if (!expiresAt.has(hash) && expiresAt.size >= options.maxSize) {
-        let oldestHash: string | null = null;
-        let oldestExpiry = Number.POSITIVE_INFINITY;
-        for (const [candidate, expiry] of expiresAt) {
-          if (expiry < oldestExpiry) {
-            oldestHash = candidate;
-            oldestExpiry = expiry;
-          }
-        }
-        if (oldestHash) expiresAt.delete(oldestHash);
+      prune(at);
+      if (notedAt.has(hash)) {
+        notedAt.delete(hash);
+        notedAt.set(hash, at);
+        return;
       }
-      expiresAt.set(hash, at + options.ttlMs);
+      if (notedAt.size >= options.maxSize) {
+        const oldest = notedAt.keys().next().value;
+        if (oldest) notedAt.delete(oldest);
+      }
+      notedAt.set(hash, at);
     },
     forget(hash: string) {
-      expiresAt.delete(hash);
+      notedAt.delete(hash);
     },
   };
 }
@@ -195,9 +313,14 @@ export function createTokenBucket(options: { capacity: number; refillPerSecond: 
       if (options.refillPerSecond <= 0) return 60;
       return Math.max(1, Math.ceil((1 - tokens) / options.refillPerSecond));
     },
-    take(): boolean {
+    /**
+     * leave keeps that many tokens. Callers that have not already waited
+     * pass leave=1 while a cold hash is waiting, so new fakes cannot spend
+     * the token that retry is holding for.
+     */
+    take(leave = 0): boolean {
       refill();
-      if (tokens < 1) return false;
+      if (tokens < 1 + Math.max(0, leave)) return false;
       tokens -= 1;
       return true;
     },

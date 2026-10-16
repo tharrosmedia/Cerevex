@@ -151,7 +151,13 @@ describe("limiter fairness", () => {
     expect(lookups).toBe(2);
 
     now += 1_000;
-    const follow = await app.request("/mcp", authed("203.0.113.40", bad));
+    const held = await app.request("/mcp", authed("203.0.113.40", bad));
+    expect(held.status).toBe(429);
+    expect(held.headers.get("retry-after")).toBe("1");
+    expect(lookups).toBe(2);
+
+    now += 1_000;
+    const follow = await app.request("/mcp", authed("203.0.113.41", bad));
     expect(follow.status).toBe(401);
     expect(lookups).toBe(3);
   });
@@ -435,7 +441,13 @@ describe("limiter fairness", () => {
       authenticator: (header) => {
         lookups += 1;
         if (header === `Bearer ${fake}`) return { ok: false };
-        return { ok: true, identity: IDENTITY };
+        const raw = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
+        const n = Number.parseInt(raw.slice(4), 36);
+        const hex = (Number.isFinite(n) ? n : 0).toString(16).padStart(12, "0");
+        return {
+          ok: true,
+          identity: { id: `11111111-1111-4111-8111-${hex}`, name: IDENTITY.name, scopes: IDENTITY.scopes },
+        };
       },
     });
     for (let n = 0; n < VERIFIED_BEARER_MAX; n += 1) {
