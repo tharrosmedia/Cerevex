@@ -516,4 +516,37 @@ describe("per-identity rate limit", () => {
     expect(after.status).toBe(200);
     expect(lookups).toBe(IDENTITY_CALLS_PER_MINUTE);
   });
+
+  it("caps a header-less call on the identity window and does not look the token up again", async () => {
+    const run = async (method: "tools/list" | "initialize", ip: string) => {
+      let lookups = 0;
+      const bearer = token(method === "tools/list" ? "nolst" : "noini");
+      const { app } = testApp({
+        identityCallsPerMinute: 2,
+        authenticator: () => {
+          lookups += 1;
+          return { ok: true, identity: AGENT_A };
+        },
+      });
+      const statuses: number[] = [];
+      for (let n = 1; n <= 3; n += 1) {
+        const res = await app.request(
+          "/mcp",
+          request2026({
+            method,
+            id: n,
+            protocolHeader: null,
+            authorization: `Bearer ${bearer}`,
+            extraHeaders: { "x-real-ip": ip },
+          }),
+        );
+        statuses.push(res.status);
+      }
+      expect(statuses).toEqual([200, 200, 429]);
+      expect(lookups).toBe(2);
+    };
+
+    await run("tools/list", "198.51.100.41");
+    await run("initialize", "198.51.100.42");
+  });
 });

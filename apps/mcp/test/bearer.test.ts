@@ -265,7 +265,12 @@ describe("denied-request holds", () => {
     for (let index = 0; index < 3; index += 1) {
       const res = await app.request("/mcp", {
         method: "POST",
-        headers: { ...headers, "x-real-ip": "203.0.113.22", "content-type": "application/json" },
+        headers: {
+          ...headers,
+          "x-real-ip": "203.0.113.22",
+          "content-type": "application/json",
+          "mcp-protocol-version": "2024-11-05",
+        },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "nope" }),
       });
       statuses.push(res.status);

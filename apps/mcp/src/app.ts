@@ -31,6 +31,7 @@ import {
   JSON_RPC_UNSUPPORTED_PROTOCOL,
   SUPPORTED_PROTOCOL_VERSIONS,
   cleanHeaderValue,
+  initializeResult,
   isJsonContentType,
   parseMcpRequest,
 } from "./protocol";
@@ -272,14 +273,17 @@ export function createApp(deps: McpAppDeps) {
       });
 
     // Admit before any await so a concurrent burst cannot all pass a peek and then fill the map.
-    // A POST with a supported protocol header and a well-formed bearer is a lookup. A hash that
-    // verified recently is limited per identity and skips the shared lookup bucket. An unknown
-    // hash that already waited once may verify without that bucket. Every other bearer-shaped
-    // call, including a bad protocol header or a GET, uses the denial limiter.
+    // A POST with a well-formed bearer and a supported protocol version is a lookup. A missing
+    // MCP-Protocol-Version header resolves to 2025-03-26 (or the negotiated initialize version),
+    // which is supported, so it uses the same identity window and verified-token cache. A hash
+    // that verified recently is limited per identity and skips the shared lookup bucket. An
+    // unknown hash that already waited once may verify without that bucket. Every other
+    // bearer-shaped call, including an unsupported protocol header or a GET, uses the denial limiter.
     const presented = bearerToken(authorization);
     const presentedHash = presented ? hashMcpToken(presented) : null;
     const protocolHeader = cleanHeaderValue(c.req.header("mcp-protocol-version"));
-    const protocolSupported = protocolHeader != null && (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolHeader);
+    const protocolSupported =
+      protocolHeader == null || (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolHeader);
     const authenticating =
       presentedHash != null &&
       c.req.method === "POST" &&
@@ -512,6 +516,12 @@ export function createApp(deps: McpAppDeps) {
       if (submitRetry != null) return tooMany(submitRetry, identity);
       identitySubmits.record(identity.id);
     }
+    if (request.method === "initialize") {
+      return succeed(c, requestId, started, request, identity, initializeResult(request.protocolVersion, SERVICE_NAME));
+    }
+    if (request.method === "notifications/initialized") {
+      return acceptNotification(c, requestId, started, request, identity);
+    }
     if (request.method === "tools/list") {
       return succeed(c, requestId, started, request, identity, phase1ToolsList(request.protocolVersion));
     }
@@ -624,6 +634,37 @@ export function createApp(deps: McpAppDeps) {
     } catch {
       return false;
     }
+  }
+
+  async function acceptNotification(
+    c: { json: (body: unknown, status: number, headers: Record<string, string>) => Response; body: (data: null, status: number, headers: Record<string, string>) => Response },
+    requestId: string,
+    started: number,
+    request: { protocolVersion: string; id: string | number | null; method: string; tool: string | null; clientName: string | null; clientVersion: string | null },
+    identity: McpIdentity,
+  ) {
+    const logged = await writeAudit({
+      requestId,
+      started,
+      result: "ok",
+      httpStatus: 202,
+      protocolVersion: request.protocolVersion,
+      method: request.method,
+      tool: request.tool,
+      clientName: request.clientName,
+      clientVersion: request.clientVersion,
+      reason: "call",
+      identity,
+      immediate: true,
+    });
+    if (!logged) {
+      return c.json(
+        { jsonrpc: "2.0", id: request.id, error: { code: JSON_RPC_CLOSED, message: "Audit log unavailable" } },
+        500,
+        { ...BASE_HEADERS, "x-request-id": requestId },
+      );
+    }
+    return c.body(null, 202, { ...BASE_HEADERS, "x-request-id": requestId });
   }
 
   async function succeed(
