@@ -228,7 +228,7 @@ try {
     gscVisible: false,
   });
   assert.match(findingSql[0] ?? '', /kind <> 'gsc_u'/);
-  assert.equal((findingSql[0] ?? '').includes('detail'), false);
+  assert.match(findingSql[0] ?? '', /detail/);
   assert.ok(findingValues.length >= 1);
   for (const values of findingValues) {
     assert.equal(values.includes(false), true);

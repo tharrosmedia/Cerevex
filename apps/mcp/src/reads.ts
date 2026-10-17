@@ -149,7 +149,7 @@ export function readToolDefinitions() {
     ),
     readTool(
       "get_seo_findings",
-      "Read-only SEO findings for one granted client.",
+      "Read-only SEO findings for one granted client. Each finding includes its title, summary, affected query and page, metrics, and recommendation. Emails, phone numbers, and other secrets are omitted.",
       {
         clientId: clientIdSchema,
         limit: { ...limitSchema, default: MCP_READ_DEFAULT_LIMIT },
