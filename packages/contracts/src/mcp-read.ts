@@ -24,6 +24,8 @@ const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const PHONE = /\+?\d[\d\s().-]{7,}\d/;
 const KIND = /^[a-z0-9_]{1,32}$/;
 const HANDLE = /^[A-Za-z0-9._-]{1,80}$/;
+/** GSC rows store "/" and paths such as "/services/ac". A slug-only check dropped those findings. */
+const FINDING_HANDLE = /^[A-Za-z0-9._~/-]{1,200}$/;
 const FINDING_STATUS = new Set(["open", "queued", "dismissed", "snoozed", "denied"]);
 const SEVERITY = new Set(["high", "med", "low", "info"]);
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
@@ -75,8 +77,16 @@ export type McpFindingReadRow = {
   kind: string;
   severity: "high" | "med" | "low" | "info";
   title: string;
+  summary: string | null;
   status: "open" | "queued" | "dismissed" | "snoozed" | "denied";
   handle: string | null;
+  query: string | null;
+  page: string | null;
+  clicks: number | null;
+  impressions: number | null;
+  ctr: number | null;
+  position: number | null;
+  recommendation: string | null;
 };
 
 export type McpCatalogReadRow = {
@@ -253,6 +263,37 @@ function gscPage(value: unknown): McpGscPageRow | null {
   return { page, clicks, impressions, ctr, position };
 }
 
+function findingHandle(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || unsafeText(trimmed) || !FINDING_HANDLE.test(trimmed)) return null;
+  return trimmed;
+}
+
+function optionalText(value: unknown, max: number): string | null {
+  if (value == null) return null;
+  return plain(value, max);
+}
+
+function optionalWhole(value: unknown): number | null {
+  if (value == null) return null;
+  return whole(value);
+}
+
+function optionalMetric(value: unknown, max: number): number | null {
+  if (value == null) return null;
+  return metric(value, max);
+}
+
+function findingPage(value: unknown): string | null {
+  const url = pageUrl(value);
+  if (url) return url;
+  const text = plain(value, 300);
+  if (!text || !text.startsWith("/") || text.startsWith("//")) return null;
+  if (!/^\/[A-Za-z0-9._~/-]*$/.test(text)) return null;
+  return text;
+}
+
 function findingRow(value: unknown): McpFindingReadRow | null {
   if (!isRecord(value)) return null;
   const id = typeof value.id === "string" && UUID.test(value.id) ? value.id : null;
@@ -260,9 +301,23 @@ function findingRow(value: unknown): McpFindingReadRow | null {
   const severity = typeof value.severity === "string" && SEVERITY.has(value.severity) ? value.severity : null;
   const title = plain(value.title, 200);
   const status = typeof value.status === "string" && FINDING_STATUS.has(value.status) ? value.status : null;
-  const handle = value.handle == null ? null : typeof value.handle === "string" && HANDLE.test(value.handle) ? value.handle : undefined;
-  if (!id || !kind || !severity || !title || !status || handle === undefined) return null;
-  return { id, kind, severity: severity as McpFindingReadRow["severity"], title, status: status as McpFindingReadRow["status"], handle };
+  if (!id || !kind || !severity || !title || !status) return null;
+  return {
+    id,
+    kind,
+    severity: severity as McpFindingReadRow["severity"],
+    title,
+    summary: optionalText(value.summary, 500),
+    status: status as McpFindingReadRow["status"],
+    handle: findingHandle(value.handle),
+    query: optionalText(value.query, 200),
+    page: value.page == null ? null : findingPage(value.page),
+    clicks: optionalWhole(value.clicks),
+    impressions: optionalWhole(value.impressions),
+    ctr: optionalMetric(value.ctr, 1),
+    position: optionalMetric(value.position, 1000),
+    recommendation: optionalText(value.recommendation, 500),
+  };
 }
 
 function catalogRow(value: unknown): McpCatalogReadRow | null {

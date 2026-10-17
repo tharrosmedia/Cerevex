@@ -217,12 +217,53 @@ async function loadGsc(sql: Sql, input: PageInput): Promise<McpReadPage> {
   };
 }
 
+function detailRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function firstText(detail: Record<string, unknown>, key: string, listKey: string): unknown {
+  const direct = detail[key];
+  if (typeof direct === "string" && direct.trim()) return direct;
+  const list = detail[listKey];
+  if (!Array.isArray(list)) return null;
+  return list.find((item) => typeof item === "string" && item.trim()) ?? null;
+}
+
+function findingFromRow(row: Record<string, unknown>): Record<string, unknown> {
+  const detail = detailRecord(field(row, "detail"));
+  return {
+    id: field(row, "id"),
+    kind: field(row, "kind"),
+    severity: field(row, "severity"),
+    title: field(row, "title"),
+    status: field(row, "status"),
+    handle: field(row, "handle"),
+    summary: detail.why ?? detail.discrepancy ?? null,
+    query: firstText(detail, "query", "queries"),
+    page: firstText(detail, "page", "pages"),
+    clicks: detail.clicks ?? null,
+    impressions: detail.impressions ?? null,
+    ctr: detail.ctr ?? null,
+    position: detail.position ?? null,
+    recommendation: detail.offerIntent ?? detail.why ?? null,
+  };
+}
+
 async function loadFindings(sql: Sql, input: PageInput): Promise<McpReadPage> {
   if (input.cursor.tool !== "get_seo_findings") return emptyPage();
   const includeGsc = input.gscVisible;
   const status = input.status ?? "open";
   const rows = await sql`
-    SELECT id::text AS id, kind, severity, title, status, handle
+    SELECT id::text AS id, kind, severity, title, status, handle, detail
     FROM seo_findings
     WHERE store_id = ${input.storeId}::uuid
       AND (${status} = 'all' OR status = 'open')
@@ -240,14 +281,7 @@ async function loadFindings(sql: Sql, input: PageInput): Promise<McpReadPage> {
     OFFSET ${input.cursor.offset}
     LIMIT ${input.limit + 1}
   `;
-  const findings = rows.slice(0, input.limit).map((row) => ({
-    id: field(row, "id"),
-    kind: field(row, "kind"),
-    severity: field(row, "severity"),
-    title: field(row, "title"),
-    status: field(row, "status"),
-    handle: field(row, "handle"),
-  }));
+  const findings = rows.slice(0, input.limit).map((row) => findingFromRow(row));
   const syncedRows = await sql`
     SELECT max(created_at) AS synced
     FROM seo_findings
