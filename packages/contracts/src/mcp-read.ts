@@ -7,6 +7,7 @@ import {
   MCP_READ_MAX_LIMIT,
   isMcpReadTool,
   isMcpScope,
+  mcpUtcDay,
   type McpReadTool,
 } from "./mcp";
 
@@ -286,6 +287,11 @@ function takeBudget<T>(value: unknown, budget: { left: number }, project: (row: 
   return rows;
 }
 
+function coveredReadDay(value: unknown): string | null {
+  if (typeof value !== "string" || mcpUtcDay(value) == null) return null;
+  return value;
+}
+
 function syncedAt(value: unknown): string | null {
   if (value == null) return null;
   if (typeof value !== "string" || !ISO_TIME.test(value)) return null;
@@ -348,8 +354,11 @@ export function projectMcpBrainRead(request: McpBrainReadRequest, read: unknown)
       : takeBudget(read.pages, view === "both" ? { left: request.limit } : budget, gscPage);
     if (!queries || !pages) return null;
     const returned = queries.length + pages.length;
-    payload.dateStart = request.dateStart;
-    payload.dateEnd = request.dateEnd;
+    const coveredStart = coveredReadDay(read.dateStart);
+    const coveredEnd = coveredReadDay(read.dateEnd);
+    if ((read.dateStart != null || read.dateEnd != null) && (!coveredStart || !coveredEnd)) return null;
+    payload.dateStart = coveredStart ?? request.dateStart;
+    payload.dateEnd = coveredEnd ?? request.dateEnd;
     payload.view = view;
     if (view !== "pages") payload.queries = queries;
     if (view !== "queries") payload.pages = pages;

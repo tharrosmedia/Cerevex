@@ -19,10 +19,10 @@ const source = [
 
 const sql: Sql = async (strings, ...values) => {
   const text = strings.join(' ');
-  if (text.includes('max(created_at)')) return [{ synced: '2026-10-16T12:00:00.000Z' }];
-  if (!text.includes('SELECT query, page')) return [];
-  const offset = Number(values[3]);
-  const limit = Number(values[4]);
+  if (text.includes('AS synced')) return [{ synced: '2026-10-16T12:00:00.000Z' }];
+  if (!text.includes('query, page')) return [];
+  const offset = Number(values.at(-2));
+  const limit = Number(values.at(-1));
   return source.slice(offset, offset + limit);
 };
 
