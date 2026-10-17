@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/owner-assertion.test.ts src/mcp-identity.test.ts"
+    "test": "node --experimental-strip-types --test src/owner-assertion.test.ts src/mcp-identity.test.ts src/mcp-read-limit.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
