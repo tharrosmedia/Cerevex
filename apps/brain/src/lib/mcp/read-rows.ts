@@ -82,6 +82,12 @@ async function gscSynced(sql: Sql, storeId: string): Promise<string | null> {
   return rows[0] ? iso(field(rows[0], "synced")) : null;
 }
 
+/**
+ * Each gsc_rows span is the window those metrics cover (date_start..date_end).
+ * Keep the row only when that span sits inside the requested window.
+ * Overlap (date_end >= start AND date_start <= end) returns the same rows
+ * for every request that merely touches the stored span.
+ */
 async function gscSide(
   sql: Sql,
   storeId: string,
@@ -99,8 +105,8 @@ async function gscSide(
           AND query IS NOT NULL
           AND date_start IS NOT NULL
           AND date_end IS NOT NULL
-          AND date_end >= ${dateStart}::date
-          AND date_start <= ${dateEnd}::date
+          AND date_start >= ${dateStart}::date
+          AND date_end <= ${dateEnd}::date
         ORDER BY id ASC
         OFFSET ${offset}
         LIMIT ${limit}
@@ -112,8 +118,8 @@ async function gscSide(
           AND page IS NOT NULL
           AND date_start IS NOT NULL
           AND date_end IS NOT NULL
-          AND date_end >= ${dateStart}::date
-          AND date_start <= ${dateEnd}::date
+          AND date_start >= ${dateStart}::date
+          AND date_end <= ${dateEnd}::date
         ORDER BY id ASC
         OFFSET ${offset}
         LIMIT ${limit}
@@ -140,6 +146,7 @@ async function loadGsc(sql: Sql, input: PageInput): Promise<McpReadPage> {
   if (!input.gscVisible || input.cursor.tool !== "get_gsc_performance") return emptyPage();
   const dateStart = input.dateStart ?? "";
   const dateEnd = input.dateEnd ?? "";
+  if (!dateStart || !dateEnd || dateStart > dateEnd) return emptyPage();
   const view = input.view ?? "both";
   const lastSyncedAt = await gscSynced(sql, input.storeId);
   const wantQueries = view !== "pages";
