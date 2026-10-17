@@ -288,13 +288,13 @@ describe("phase-1 read tools", () => {
       sourceSystem: "brain",
       availability: "ready",
       limit: 1,
-      returned: 1,
+      returned: 2,
       dateStart: "2026-09-19",
       dateEnd: "2026-10-16",
       view: "both",
       queries: [{ query: "heat pump", clicks: 3, impressions: 30, ctr: 0.1, position: 4.25 }],
+      pages: [{ page: "https://example.com/heat", clicks: 1, impressions: 4, ctr: 0.25, position: 2 }],
     });
-    expect(payload.pages).toEqual([]);
     expect(JSON.stringify(payload)).not.toContain("person@example.com");
     expect(JSON.stringify(payload)).not.toContain("platform-token");
     expect(JSON.stringify(payload)).not.toContain("bodyHtml");
