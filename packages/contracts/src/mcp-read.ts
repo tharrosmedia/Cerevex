@@ -338,8 +338,14 @@ export function projectMcpBrainRead(request: McpBrainReadRequest, read: unknown)
 
   if (request.tool === "get_gsc_performance") {
     const view = request.view ?? "both";
-    const queries = view === "pages" ? [] : takeBudget(read.queries, budget, gscQuery);
-    const pages = view === "queries" ? [] : takeBudget(read.pages, budget, gscPage);
+    // view both returns two sections. Each section gets its own limit, so page
+    // rows are on the first page instead of after every query row.
+    const queries = view === "pages"
+      ? []
+      : takeBudget(read.queries, view === "both" ? { left: request.limit } : budget, gscQuery);
+    const pages = view === "queries"
+      ? []
+      : takeBudget(read.pages, view === "both" ? { left: request.limit } : budget, gscPage);
     if (!queries || !pages) return null;
     const returned = queries.length + pages.length;
     payload.dateStart = request.dateStart;

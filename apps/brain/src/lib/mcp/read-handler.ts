@@ -75,14 +75,15 @@ function parseRead(url: URL): Parsed | null {
     const viewRaw = url.searchParams.get("view");
     const view = viewRaw == null || viewRaw === "" ? "both" : viewRaw;
     if (view !== "queries" && view !== "pages" && view !== "both") return null;
-    if (view === "queries" && cursor.tool === "get_gsc_performance" && cursor.side === "pages") return null;
-    if (view === "pages" && cursor.tool === "get_gsc_performance" && cursor.side === "queries") return null;
     const dateStart = url.searchParams.get("dateStart");
     const dateEnd = url.searchParams.get("dateEnd");
     if (!dateStart || !dateEnd || mcpInclusiveDays(dateStart, dateEnd) == null) return null;
     const gscCursor: McpReadCursor = cursorRaw == null || cursorRaw === ""
       ? { tool: "get_gsc_performance", side: view === "pages" ? "pages" : "queries", offset: 0 }
       : cursor;
+    if (gscCursor.tool !== "get_gsc_performance") return null;
+    if (view === "pages" && gscCursor.side !== "pages") return null;
+    if (view !== "pages" && gscCursor.side !== "queries") return null;
     return { tool: toolRaw, identityId, clientId, limit, cursor: gscCursor, dateStart, dateEnd, view };
   }
 

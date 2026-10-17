@@ -136,7 +136,7 @@ export function readToolDefinitions() {
   return [
     readTool(
       "get_gsc_performance",
-      "Read-only Search Console queries and pages for one granted client.",
+      "Read-only Search Console queries and pages for one granted client. view 'queries' or 'pages' returns that section only; omit the cursor to start at the beginning of it (a gp cursor is only valid with view 'pages'). view 'both' (default) returns two sections for one slice of underlying rows: queries and pages, each up to limit. Pass the gq cursor back with view 'both' for the next slice. A row that fails one projection appears only in the other section.",
       {
         clientId: clientIdSchema,
         dateStart: dateSchema,
@@ -216,7 +216,7 @@ function cursorFits(tool: McpReadTool, cursor: string | null, view?: "queries" |
   const parsed = mcpReadCursor(tool, cursor);
   if (!parsed) return false;
   if (cursor == null || tool !== "get_gsc_performance" || parsed.tool !== "get_gsc_performance") return true;
-  if (view === "queries") return parsed.side === "queries";
+  if (view === "queries" || view === "both") return parsed.side === "queries";
   if (view === "pages") return parsed.side === "pages";
   return true;
 }

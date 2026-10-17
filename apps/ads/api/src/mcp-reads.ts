@@ -51,6 +51,7 @@ function argumentsMatch(body: ReadBody): boolean {
   if (body.tool === "get_gsc_performance" && body.cursor && cursor.tool === "get_gsc_performance") {
     if (body.view === "queries" && cursor.side !== "queries") return false;
     if (body.view === "pages" && cursor.side !== "pages") return false;
+    if ((body.view === "both" || body.view == null) && cursor.side !== "queries") return false;
   }
   if (body.tool === "get_gsc_performance") {
     if (!body.dateStart || !body.dateEnd || !body.view || body.status) return false;

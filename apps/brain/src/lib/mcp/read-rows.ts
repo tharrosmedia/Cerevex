@@ -130,6 +130,30 @@ async function gscSide(
   });
 }
 
+/** Same date span as gscSide. One slice of underlying rows, projected into both sections. */
+async function gscWindow(
+  sql: Sql,
+  storeId: string,
+  dateStart: string,
+  dateEnd: string,
+  offset: number,
+  limit: number,
+): Promise<Record<string, unknown>[]> {
+  return sql`
+    SELECT query, page, clicks, impressions, ctr, position
+    FROM gsc_rows
+    WHERE store_id = ${storeId}::uuid
+      AND (query IS NOT NULL OR page IS NOT NULL)
+      AND date_start IS NOT NULL
+      AND date_end IS NOT NULL
+      AND date_start >= ${dateStart}::date
+      AND date_end <= ${dateEnd}::date
+    ORDER BY id ASC
+    OFFSET ${offset}
+    LIMIT ${limit}
+  `;
+}
+
 function emptyPage(): McpReadPage {
   return {
     queries: [],
@@ -149,56 +173,47 @@ async function loadGsc(sql: Sql, input: PageInput): Promise<McpReadPage> {
   if (!dateStart || !dateEnd || dateStart > dateEnd) return emptyPage();
   const view = input.view ?? "both";
   const lastSyncedAt = await gscSynced(sql, input.storeId);
-  const wantQueries = view !== "pages";
-  const wantPages = view !== "queries";
 
-  if (input.cursor.side === "pages" || !wantQueries) {
-    const fetched = await gscSide(sql, input.storeId, "page", dateStart, dateEnd, input.cursor.offset, input.limit + 1);
-    const pages = fetched.slice(0, input.limit);
-    const more = fetched.length > input.limit;
+  if (view === "both") {
+    if (input.cursor.side !== "queries") return { ...emptyPage(), lastSyncedAt };
+    const fetched = await gscWindow(sql, input.storeId, dateStart, dateEnd, input.cursor.offset, input.limit + 1);
+    const slice = fetched.slice(0, input.limit);
+    const queries: Record<string, unknown>[] = [];
+    const pages: Record<string, unknown>[] = [];
+    for (const row of slice) {
+      const query = metricRow(row, "query");
+      const page = metricRow(row, "page");
+      if (query) queries.push(query);
+      if (page) pages.push(page);
+    }
     return {
       ...emptyPage(),
+      queries,
       pages,
       lastSyncedAt,
-      nextCursor: more
-        ? mcpReadCursorToken({ tool: "get_gsc_performance", side: "pages", offset: input.cursor.offset + pages.length })
+      nextCursor: fetched.length > input.limit
+        ? mcpReadCursorToken({
+            tool: "get_gsc_performance",
+            side: "queries",
+            offset: input.cursor.offset + slice.length,
+          })
         : null,
     };
   }
 
-  const fetched = await gscSide(sql, input.storeId, "query", dateStart, dateEnd, input.cursor.offset, input.limit + 1);
-  const queries = fetched.slice(0, input.limit);
-  const moreQueries = fetched.length > input.limit;
-  if (moreQueries || !wantPages) {
-    return {
-      ...emptyPage(),
-      queries,
-      lastSyncedAt,
-      nextCursor: moreQueries
-        ? mcpReadCursorToken({ tool: "get_gsc_performance", side: "queries", offset: input.cursor.offset + queries.length })
-        : null,
-    };
-  }
-
-  const remaining = input.limit - queries.length;
-  if (remaining === 0) {
-    const probe = await gscSide(sql, input.storeId, "page", dateStart, dateEnd, 0, 1);
-    return {
-      ...emptyPage(),
-      queries,
-      lastSyncedAt,
-      nextCursor: probe.length ? mcpReadCursorToken({ tool: "get_gsc_performance", side: "pages", offset: 0 }) : null,
-    };
-  }
-  const pagesFetched = await gscSide(sql, input.storeId, "page", dateStart, dateEnd, 0, remaining + 1);
-  const pages = pagesFetched.slice(0, remaining);
-  const morePages = pagesFetched.length > remaining;
+  const label = view === "pages" || input.cursor.side === "pages" ? "page" : "query";
+  const side = label === "page" ? "pages" : "queries";
+  const fetched = await gscSide(sql, input.storeId, label, dateStart, dateEnd, input.cursor.offset, input.limit + 1);
+  const rows = fetched.slice(0, input.limit);
+  const more = fetched.length > input.limit;
   return {
     ...emptyPage(),
-    queries,
-    pages,
+    queries: side === "queries" ? rows : [],
+    pages: side === "pages" ? rows : [],
     lastSyncedAt,
-    nextCursor: morePages ? mcpReadCursorToken({ tool: "get_gsc_performance", side: "pages", offset: pages.length }) : null,
+    nextCursor: more
+      ? mcpReadCursorToken({ tool: "get_gsc_performance", side, offset: input.cursor.offset + rows.length })
+      : null,
   };
 }
 
