@@ -48,6 +48,16 @@ type Parsed = {
   status?: "open" | "all";
 };
 
+function gscAvailability(
+  visible: boolean,
+  lastSyncedAt: string | null,
+  rowCount: number,
+): "ready" | "hidden_by_capability" | "never_synced" {
+  if (!visible) return "hidden_by_capability";
+  if (rowCount === 0 && !lastSyncedAt) return "never_synced";
+  return "ready";
+}
+
 function json(body: { ok: false } | { ok: true; read: McpBrainRead }, status: number): Response {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
@@ -182,6 +192,10 @@ export async function handleMcpBrainRead(request: Request, deps: McpBrainReadDep
     }
   }
 
+  const rowCount = page.queries.length + page.pages.length;
+  const availability = parsed.tool === "get_gsc_performance"
+    ? gscAvailability(gscVisible, page.lastSyncedAt, rowCount)
+    : "ready";
   const read = projectMcpBrainRead(
     {
       tool: parsed.tool,
@@ -197,7 +211,7 @@ export async function handleMcpBrainRead(request: Request, deps: McpBrainReadDep
       storeId: grant.siteId,
       lastSyncedAt: page.lastSyncedAt,
       sourceSystem: "brain",
-      availability: "ready",
+      availability,
       limit: parsed.limit,
       nextCursor: page.nextCursor,
       queries: page.queries,

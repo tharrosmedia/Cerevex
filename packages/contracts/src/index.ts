@@ -412,6 +412,7 @@ export type {
   McpCatalogReadRow,
   McpFindingReadRow,
   McpGrantClient,
+  McpGscAvailability,
   McpGscPageRow,
   McpGscQueryRow,
   McpReadCursor,
