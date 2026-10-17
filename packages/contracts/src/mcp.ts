@@ -16,9 +16,9 @@ export function isMcpReadTool(value: string): value is McpReadTool {
   return (MCP_READ_TOOLS as readonly string[]).includes(value);
 }
 
-/** Brief §11 caps a read at 1,000 rows. Phase 1 stays at this lower cap. */
-export const MCP_READ_DEFAULT_LIMIT = 50;
-export const MCP_READ_MAX_LIMIT = 100;
+/** Brief §11 caps a read at 1,000 rows. Callers may ask for 500; the default is 100. */
+export const MCP_READ_DEFAULT_LIMIT = 100;
+export const MCP_READ_MAX_LIMIT = 500;
 /** Search Console sync window in the connector brief. Inclusive. */
 export const MCP_GSC_MAX_RANGE_DAYS = 28;
 
