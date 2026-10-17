@@ -1,3 +1,4 @@
+import { MCP_GSC_MAX_RANGE_DAYS } from '@cerevex/contracts';
 import { inngest } from '../client';
 import { fetchSearchAnalytics } from '@brain/lib/gsc/client';
 import { upsertGscRows } from '@brain/lib/db/gsc';
@@ -10,7 +11,7 @@ export const gscSyncFn = inngest.createFunction(
   async ({ event, step }: any) => {
     const { storeId } = event.data;
     const result = await step.run('gsc-sync', async () => {
-      const data = await fetchSearchAnalytics(storeId, 28);
+      const data = await fetchSearchAnalytics(storeId, MCP_GSC_MAX_RANGE_DAYS);
       await upsertGscRows(storeId, data.rows);
       const store = await getStore(storeId);
       if (store) {
