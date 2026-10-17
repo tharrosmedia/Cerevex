@@ -1,3 +1,4 @@
+import { MCP_GSC_MAX_RANGE_DAYS, mcpDefaultGscRange, mcpInclusiveDays, mcpUtcDay } from '@cerevex/contracts';
 import { getStore } from '../db/stores';
 import { decrypt } from '../encryption';
 import { fetchGscSites, type GscSite } from './sites';
@@ -106,14 +107,35 @@ export async function loadGscSitesForStore(storeId: string): Promise<{ sites: Gs
   }
 }
 
-export async function fetchSearchAnalytics(storeId: string, days = 28) {
+const DAY_MS = 86400000;
+
+/**
+ * Inclusive UTC span of `days` ending on the read window's last day.
+ * Subtracting `days` (not `days - 1`) stores one extra day, which cannot sit inside the cap.
+ */
+export function gscSyncSpan(days: number, nowMs: number): { dateStart: string; dateEnd: string } {
+  const readWindow = mcpDefaultGscRange(nowMs);
+  const endMs = mcpUtcDay(readWindow.dateEnd);
+  if (endMs == null || !Number.isInteger(days) || days < 1) {
+    throw new Error('GSC sync span is outside the read window');
+  }
+  const dateStart = new Date(endMs - (days - 1) * DAY_MS).toISOString().slice(0, 10);
+  if (mcpInclusiveDays(dateStart, readWindow.dateEnd) !== days) {
+    throw new Error('GSC sync span is outside the read window');
+  }
+  if (days === MCP_GSC_MAX_RANGE_DAYS && dateStart !== readWindow.dateStart) {
+    throw new Error('GSC sync span is outside the read window');
+  }
+  return { dateStart, dateEnd: readWindow.dateEnd };
+}
+
+export async function fetchSearchAnalytics(storeId: string, days = MCP_GSC_MAX_RANGE_DAYS) {
   const { access, gscCfg } = await accessTokenForStore(storeId);
   if (!gscCfg?.propertyUrl) throw new Error('GSC not connected for store');
 
-  const end = new Date();
-  const start = new Date(end.getTime() - days * 86400000);
-  const startDate = start.toISOString().slice(0,10);
-  const endDate = end.toISOString().slice(0,10);
+  const span = gscSyncSpan(days, Date.now());
+  const startDate = span.dateStart;
+  const endDate = span.dateEnd;
   const prop = encodeURIComponent(gscCfg.propertyUrl);
 
   const url = `${GSC_API}/sites/${prop}/searchAnalytics/query`;

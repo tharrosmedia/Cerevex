@@ -205,6 +205,8 @@ export async function handleMcpBrainRead(request: Request, deps: McpBrainReadDep
       findings: page.findings,
       products: page.products,
       collections: page.collections,
+      dateStart: page.dateStart,
+      dateEnd: page.dateEnd,
     },
   );
   if (!read) {
