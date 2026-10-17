@@ -94,12 +94,14 @@ export type McpCatalogReadRow = {
   title: string;
 };
 
+export type McpGscAvailability = "ready" | "hidden_by_capability" | "never_synced";
+
 export type McpBrainRead = {
   clientId: string;
   storeId: string | null;
   lastSyncedAt: string | null;
   sourceSystem: "brain";
-  availability: "ready";
+  availability: McpGscAvailability;
   limit: number;
   nextCursor: string | null;
   returned: number;
@@ -364,6 +366,12 @@ export type McpBrainReadRequest = {
   status?: "open" | "all";
 };
 
+function gscAvailability(tool: McpReadTool, value: unknown): McpGscAvailability | null {
+  if (tool !== "get_gsc_performance") return value === "ready" ? "ready" : null;
+  if (value === "ready" || value === "hidden_by_capability" || value === "never_synced") return value;
+  return null;
+}
+
 /**
  * Copy only the fields a read may return. Emails, phones, and anything
  * outside that field list are dropped here, before the bytes leave Brain.
@@ -372,7 +380,8 @@ export function projectMcpBrainRead(request: McpBrainReadRequest, read: unknown)
   if (!isRecord(read)) return null;
   if (!isMcpReadTool(request.tool)) return null;
   if (read.clientId !== request.clientId || !UUID.test(request.clientId)) return null;
-  if (read.sourceSystem !== "brain" || read.availability !== "ready") return null;
+  const availability = gscAvailability(request.tool, read.availability);
+  if (read.sourceSystem !== "brain" || !availability) return null;
   if (read.limit !== request.limit) return null;
   const storeId = read.storeId == null ? null : typeof read.storeId === "string" && UUID.test(read.storeId) ? read.storeId : undefined;
   if (storeId === undefined) return null;
@@ -384,7 +393,7 @@ export function projectMcpBrainRead(request: McpBrainReadRequest, read: unknown)
     storeId,
     lastSyncedAt,
     sourceSystem: "brain",
-    availability: "ready",
+    availability,
     limit: request.limit,
     nextCursor: null,
     returned: 0,
@@ -393,6 +402,16 @@ export function projectMcpBrainRead(request: McpBrainReadRequest, read: unknown)
 
   if (request.tool === "get_gsc_performance") {
     const view = request.view ?? "both";
+    if (availability !== "ready") {
+      payload.dateStart = request.dateStart;
+      payload.dateEnd = request.dateEnd;
+      payload.view = view;
+      if (view !== "pages") payload.queries = [];
+      if (view !== "queries") payload.pages = [];
+      payload.returned = 0;
+      payload.nextCursor = null;
+      return payload;
+    }
     // view both returns two sections. Each section gets its own limit, so page
     // rows are on the first page instead of after every query row.
     const queries = view === "pages"
