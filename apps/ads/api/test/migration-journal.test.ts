@@ -166,6 +166,7 @@ describe("migration journal", () => {
       "0009_monthly_usage",
       "0010_recommendation_scope",
       "0011_mcp_identities",
+      "0012_mcp_identity_display_name",
     ];
     expect(tags).toEqual(prefix);
     expect(tags).toContain("0006_plan_entitlements");

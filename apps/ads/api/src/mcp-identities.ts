@@ -3,7 +3,14 @@ import type { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { isMcpScope, MCP_SCOPES, type McpScope } from "@cerevex/contracts";
+import {
+  allocateMcpIdentitySlug,
+  isMcpScope,
+  MCP_DISPLAY_NAME_MESSAGE,
+  MCP_SCOPES,
+  parseMcpDisplayName,
+  type McpScope,
+} from "@cerevex/contracts";
 import { resolveAuditActor } from "@tharros/ads-shared/actor";
 import { getDb } from "@tharros/ads-shared/db";
 import { auditLog, clients, mcpIdentities, mcpIdentityGrants, workspaces } from "@tharros/ads-shared/schema";
@@ -20,11 +27,13 @@ const OWNER_ONLY = "Only a workspace owner can manage the connector.";
 
 const createSchema = z
   .object({
-    name: z.string().regex(/^[a-z0-9-]{2,40}$/),
+    displayName: z.string(),
     scopes: z.array(z.enum(MCP_SCOPES)).min(1).max(MCP_SCOPES.length),
     clientIds: z.array(z.string().uuid()).max(64).default([]),
   })
   .strict();
+
+const SLUG_UNIQUE = "mcp_identities_workspace_name_idx";
 
 const grantSchema = z
   .object({
@@ -85,11 +94,31 @@ const securityAuditSchema = z
 
 export type McpIdentityPublic = {
   id: string;
+  /** Immutable slug. Token verify and security logs use this, not the display name. */
   name: string;
+  displayName: string;
   scopes: McpScope[];
   clientIds: string[];
   revokedAt: string | null;
   createdAt: string;
+};
+
+type IdentityRow = {
+  id: string;
+  name: string;
+  displayName: string;
+  scopes: unknown;
+  revokedAt: Date | null;
+  createdAt: Date;
+};
+
+const identityColumns = {
+  id: mcpIdentities.id,
+  name: mcpIdentities.name,
+  displayName: mcpIdentities.displayName,
+  scopes: mcpIdentities.scopes,
+  revokedAt: mcpIdentities.revokedAt,
+  createdAt: mcpIdentities.createdAt,
 };
 
 export function requireOwnerWorkspace(auth: AuthContext): { workspaceId: string; userId: string } {
@@ -131,15 +160,19 @@ function uniqueIds(ids: string[]): string[] {
   return [...new Set(ids)].sort();
 }
 
-function isUniqueViolation(error: unknown): boolean {
+function uniqueViolation(error: unknown): { constraint: string | null } | null {
   const seen = new Set<unknown>();
   let current: unknown = error;
+  let constraint: string | null = null;
+  let unique = false;
   while (current && typeof current === "object" && !seen.has(current)) {
     seen.add(current);
-    if ("code" in current && (current as { code: unknown }).code === "23505") return true;
-    current = "cause" in current ? (current as { cause: unknown }).cause : undefined;
+    const record = current as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (record.code === "23505") unique = true;
+    if (typeof record.constraint === "string" && record.constraint.length > 0) constraint = record.constraint;
+    current = record.cause;
   }
-  return false;
+  return unique ? { constraint } : null;
 }
 
 async function grantsFor(identityIds: string[]): Promise<Map<string, string[]>> {
@@ -158,13 +191,11 @@ async function grantsFor(identityIds: string[]): Promise<Map<string, string[]>> 
   return grouped;
 }
 
-function toPublic(
-  row: { id: string; name: string; scopes: unknown; revokedAt: Date | null; createdAt: Date },
-  clientIds: string[],
-): McpIdentityPublic {
+function toPublic(row: IdentityRow, clientIds: string[]): McpIdentityPublic {
   return {
     id: row.id,
     name: row.name,
+    displayName: row.displayName,
     scopes: readScopes(row.scopes),
     clientIds,
     revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
@@ -214,6 +245,59 @@ function settingsWithKillSwitch(settings: unknown, tripped: boolean): Record<str
   return base;
 }
 
+async function insertIdentity(input: {
+  workspaceId: string;
+  userId: string;
+  displayName: string;
+  scopes: McpScope[];
+  clientIds: string[];
+  tokenHash: string;
+}): Promise<IdentityRow> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await getDb().transaction(async (tx) => {
+        const existing = await tx
+          .select({ name: mcpIdentities.name })
+          .from(mcpIdentities)
+          .where(eq(mcpIdentities.workspaceId, input.workspaceId));
+        const slug = allocateMcpIdentitySlug(input.displayName, new Set(existing.map((row) => row.name)));
+        if (!slug) throw new HTTPException(500, { message: "Identity was not created" });
+        const [row] = await tx
+          .insert(mcpIdentities)
+          .values({
+            workspaceId: input.workspaceId,
+            name: slug,
+            displayName: input.displayName,
+            tokenHash: input.tokenHash,
+            scopes: input.scopes,
+            createdBy: input.userId,
+          })
+          .returning(identityColumns);
+        if (!row) throw new HTTPException(500, { message: "Identity was not created" });
+        if (input.clientIds.length > 0) {
+          await tx
+            .insert(mcpIdentityGrants)
+            .values(input.clientIds.map((clientId) => ({ identityId: row.id, clientId })));
+        }
+        await insertOwnerAudit(tx, {
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          action: "mcp.identity.create",
+          entityId: row.id,
+          payload: { name: row.name, displayName: row.displayName, scopes: input.scopes, clientIds: input.clientIds },
+        });
+        return row;
+      });
+    } catch (error) {
+      if (error instanceof HTTPException) throw error;
+      const violation = uniqueViolation(error);
+      if (violation?.constraint === SLUG_UNIQUE && attempt === 0) continue;
+      throw error;
+    }
+  }
+  throw new HTTPException(500, { message: "Identity was not created" });
+}
+
 /**
  * Owner routes for identities and the connector kill switch.
  * The MCP service key cannot call these. The Brain service key cannot call these.
@@ -222,13 +306,7 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
   app.get("/mcp/identities", requireAuth, async (c) => {
     const { workspaceId } = requireOwnerWorkspace(c.get("auth"));
     const rows = await getDb()
-      .select({
-        id: mcpIdentities.id,
-        name: mcpIdentities.name,
-        scopes: mcpIdentities.scopes,
-        revokedAt: mcpIdentities.revokedAt,
-        createdAt: mcpIdentities.createdAt,
-      })
+      .select(identityColumns)
       .from(mcpIdentities)
       .where(eq(mcpIdentities.workspaceId, workspaceId))
       .orderBy(desc(mcpIdentities.createdAt));
@@ -244,6 +322,8 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
     if (!parsed.success) {
       throw new HTTPException(400, { message: "Name, scopes, and client ids are required" });
     }
+    const displayName = parseMcpDisplayName(parsed.data.displayName);
+    if (!displayName) throw new HTTPException(400, { message: MCP_DISPLAY_NAME_MESSAGE });
     const clientIds = uniqueIds(parsed.data.clientIds);
     const scopes = uniqueIds(parsed.data.scopes).filter(isMcpScope);
     if (scopes.length === 0) {
@@ -251,41 +331,19 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
     }
     await clientsInWorkspace(workspaceId, clientIds);
     const issued = createMcpToken();
-    let created: { id: string; name: string; scopes: unknown; revokedAt: Date | null; createdAt: Date };
+    let created: IdentityRow;
     try {
-      created = await getDb().transaction(async (tx) => {
-        const [row] = await tx
-          .insert(mcpIdentities)
-          .values({
-            workspaceId,
-            name: parsed.data.name,
-            tokenHash: issued.tokenHash,
-            scopes,
-            createdBy: userId,
-          })
-          .returning({
-            id: mcpIdentities.id,
-            name: mcpIdentities.name,
-            scopes: mcpIdentities.scopes,
-            revokedAt: mcpIdentities.revokedAt,
-            createdAt: mcpIdentities.createdAt,
-          });
-        if (!row) throw new HTTPException(500, { message: "Identity was not created" });
-        if (clientIds.length > 0) {
-          await tx.insert(mcpIdentityGrants).values(clientIds.map((clientId) => ({ identityId: row.id, clientId })));
-        }
-        await insertOwnerAudit(tx, {
-          workspaceId,
-          userId,
-          action: "mcp.identity.create",
-          entityId: row.id,
-          payload: { name: row.name, scopes, clientIds },
-        });
-        return row;
+      created = await insertIdentity({
+        workspaceId,
+        userId,
+        displayName,
+        scopes,
+        clientIds,
+        tokenHash: issued.tokenHash,
       });
     } catch (error) {
       if (error instanceof HTTPException) throw error;
-      if (isUniqueViolation(error)) {
+      if (uniqueViolation(error)) {
         throw new HTTPException(409, { message: "Identity name is already in use" });
       }
       throw error;
@@ -302,13 +360,7 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
     const revokedAt = new Date();
     const row = await getDb().transaction(async (tx) => {
       const [current] = await tx
-        .select({
-          id: mcpIdentities.id,
-          name: mcpIdentities.name,
-          scopes: mcpIdentities.scopes,
-          revokedAt: mcpIdentities.revokedAt,
-          createdAt: mcpIdentities.createdAt,
-        })
+        .select(identityColumns)
         .from(mcpIdentities)
         .where(and(eq(mcpIdentities.id, id), eq(mcpIdentities.workspaceId, workspaceId)))
         .for("update");
@@ -318,20 +370,14 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
         .update(mcpIdentities)
         .set({ revokedAt })
         .where(eq(mcpIdentities.id, id))
-        .returning({
-          id: mcpIdentities.id,
-          name: mcpIdentities.name,
-          scopes: mcpIdentities.scopes,
-          revokedAt: mcpIdentities.revokedAt,
-          createdAt: mcpIdentities.createdAt,
-        });
+        .returning(identityColumns);
       if (!updated) return null;
       await insertOwnerAudit(tx, {
         workspaceId,
         userId,
         action: "mcp.identity.revoke",
         entityId: updated.id,
-        payload: { name: updated.name },
+        payload: { name: updated.name, displayName: updated.displayName },
       });
       return updated;
     });
@@ -352,13 +398,7 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
     await clientsInWorkspace(workspaceId, clientIds);
     const row = await getDb().transaction(async (tx) => {
       const [current] = await tx
-        .select({
-          id: mcpIdentities.id,
-          name: mcpIdentities.name,
-          scopes: mcpIdentities.scopes,
-          revokedAt: mcpIdentities.revokedAt,
-          createdAt: mcpIdentities.createdAt,
-        })
+        .select(identityColumns)
         .from(mcpIdentities)
         .where(and(eq(mcpIdentities.id, id), eq(mcpIdentities.workspaceId, workspaceId)))
         .for("update");
@@ -375,7 +415,7 @@ export function registerMcpIdentityRoutes(app: Hono<AppEnv>, requireAuth: Middle
         userId,
         action: "mcp.identity.grant",
         entityId: current.id,
-        payload: { name: current.name, clientIds },
+        payload: { name: current.name, displayName: current.displayName, clientIds },
       });
       return current;
     });

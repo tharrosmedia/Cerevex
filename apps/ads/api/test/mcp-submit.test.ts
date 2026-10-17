@@ -91,11 +91,13 @@ describe("mcp submit façade", () => {
     readIdentityId = await createIdentity(`r${randomUUID().replace(/-/g, "").slice(0, 24)}`, ["cerevex.read"], clientId);
     peerIdentityId = await createIdentity(`p${randomUUID().replace(/-/g, "").slice(0, 24)}`, ["cerevex.recs.submit"], ungrantedClientId);
     revokedIdentityId = await createIdentity(`v${randomUUID().replace(/-/g, "").slice(0, 24)}`, ["cerevex.recs.submit"], clientId);
+    const foreignName = `f${randomUUID().replace(/-/g, "").slice(0, 20)}`;
     const [foreign] = await db
       .insert(mcpIdentities)
       .values({
         workspaceId: otherWorkspace.id,
-        name: `f${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+        name: foreignName,
+        displayName: foreignName,
         tokenHash: createHash("sha256").update(randomUUID()).digest("hex"),
         scopes: ["cerevex.recs.submit"],
       })
@@ -151,7 +153,7 @@ describe("mcp submit façade", () => {
     const created = await app.request("/mcp/identities", {
       method: "POST",
       headers: owner(true),
-      body: JSON.stringify({ name, scopes, clientIds: [grantedClientId] }),
+      body: JSON.stringify({ displayName: name, scopes, clientIds: [grantedClientId] }),
     });
     expect(created.status).toBe(200);
     const body = await json(created);

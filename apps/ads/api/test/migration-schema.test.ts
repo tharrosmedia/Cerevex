@@ -152,6 +152,7 @@ describe("migration journal schema", () => {
       "0009_monthly_usage",
       "0010_recommendation_scope",
       "0011_mcp_identities",
+      "0012_mcp_identity_display_name",
     ];
     expect(entries.map((entry) => entry.tag)).toEqual(prefix);
     const applied = entries.slice(0, 6);
@@ -597,6 +598,119 @@ describe("migration journal schema", () => {
         [seeded.workspace_id, seeded.client_id, "ad_account", seeded.account_id, null, "ok-ads"],
       );
       expect(ads.rows[0]?.scope).toBe("ad_account");
+    } finally {
+      await client.end();
+    }
+  }, 60_000);
+
+  it("copies existing identity names into display names", async () => {
+    const entries = journal();
+    expect(entries.at(-1)?.tag).toBe("0012_mcp_identity_display_name");
+    const databaseUrl = await createDatabase(`cerevex_schema_test_${process.pid}_display`);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await applySqlFiles(
+        client,
+        entries.slice(0, -1).map((entry) => entry.tag),
+      );
+      const workspace = await client.query<{ id: string }>(
+        `INSERT INTO os.workspaces (name) VALUES ('display-name-backfill') RETURNING id`,
+      );
+      const other = await client.query<{ id: string }>(
+        `INSERT INTO os.workspaces (name) VALUES ('display-name-other') RETURNING id`,
+      );
+      const workspaceId = workspace.rows[0]!.id;
+      await client.query(
+        `INSERT INTO os.mcp_identities (workspace_id, name, token_hash, scopes)
+         VALUES ($1, 'legacy-agent', $2, '["cerevex.read"]'::jsonb)`,
+        [workspaceId, "ab".repeat(32)],
+      );
+      await applySqlFiles(client, ["0012_mcp_identity_display_name"]);
+      const copied = await client.query<{ name: string; display_name: string }>(
+        `SELECT name, display_name FROM os.mcp_identities WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+      expect(copied.rows).toEqual([{ name: "legacy-agent", display_name: "legacy-agent" }]);
+      await expect(
+        client.query(
+          `INSERT INTO os.mcp_identities (workspace_id, name, display_name, token_hash, scopes)
+           VALUES ($1, 'legacy-agent-2', 'Legacy-Agent', $2, '["cerevex.read"]'::jsonb)`,
+          [workspaceId, "cd".repeat(32)],
+        ),
+      ).rejects.toThrow(/duplicate key/i);
+      await client.query(
+        `INSERT INTO os.mcp_identities (workspace_id, name, display_name, token_hash, scopes)
+         VALUES ($1, 'legacy-agent', 'Legacy-Agent', $2, '["cerevex.read"]'::jsonb)`,
+        [other.rows[0]!.id, "ef".repeat(32)],
+      );
+      await expect(
+        client.query(
+          `INSERT INTO os.mcp_identities (workspace_id, name, display_name, token_hash, scopes)
+           VALUES ($1, 'newline-agent', E'bad\\nname', $2, '["cerevex.read"]'::jsonb)`,
+          [workspaceId, "11".repeat(32)],
+        ),
+      ).rejects.toThrow(/mcp_identities_display_name_check/);
+    } finally {
+      await client.end();
+    }
+  }, 60_000);
+
+  it("rejects format characters in display_name and accepts letters beyond ASCII", async () => {
+    const databaseUrl = await createDatabase(`cerevex_schema_test_${process.pid}_chars`);
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await applySqlFiles(
+        client,
+        journal().map((entry) => entry.tag),
+      );
+      const workspace = await client.query<{ id: string }>(
+        `INSERT INTO os.workspaces (name) VALUES ('display-name-chars') RETURNING id`,
+      );
+      const workspaceId = workspace.rows[0]!.id;
+      let n = 0;
+      async function insert(slug: string, displayName: string) {
+        n += 1;
+        const tokenHash = n.toString(16).padStart(2, "0").repeat(32).slice(0, 64);
+        return client.query(
+          `INSERT INTO os.mcp_identities (workspace_id, name, display_name, token_hash, scopes)
+           VALUES ($1, $2, $3, $4, '["cerevex.read"]'::jsonb)`,
+          [workspaceId, slug, displayName, tokenHash],
+        );
+      }
+
+      const banned = [
+        ["ban-zwsp", "a\u200Bb"],
+        ["ban-rlo", "a\u202Eb"],
+        ["ban-shy", "a\u00ADb"],
+        ["ban-bom", "a\uFEFFb"],
+        ["ban-wj", "a\u2060b"],
+        ["ban-tag", `a${String.fromCodePoint(0xe0001)}b`],
+      ] as const;
+      for (const [slug, displayName] of banned) {
+        await expect(insert(slug, displayName), slug).rejects.toThrow(/mcp_identities_display_name_check/);
+      }
+
+      const accepted = [
+        ["ok-cafe", "Café"],
+        ["ok-emoji", "😀"],
+        ["ok-cjk", "漢字"],
+        ["ok-mark", "e\u0301"],
+      ] as const;
+      for (const [slug, displayName] of accepted) {
+        await insert(slug, displayName);
+      }
+      const stored = await client.query<{ name: string; display_name: string }>(
+        `SELECT name, display_name FROM os.mcp_identities WHERE workspace_id = $1 AND name LIKE 'ok-%' ORDER BY name`,
+        [workspaceId],
+      );
+      expect(stored.rows).toEqual([
+        { name: "ok-cafe", display_name: "Café" },
+        { name: "ok-cjk", display_name: "漢字" },
+        { name: "ok-emoji", display_name: "😀" },
+        { name: "ok-mark", display_name: "e\u0301" },
+      ]);
     } finally {
       await client.end();
     }

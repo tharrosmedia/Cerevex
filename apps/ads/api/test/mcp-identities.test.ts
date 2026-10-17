@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hash } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import { closeDb, getDb } from "@tharros/ads-shared/db";
 import { auditLog, clients, mcpIdentities, memberships, users, workspaces } from "@tharros/ads-shared/schema";
+import { MCP_DISPLAY_NAME_MESSAGE } from "@cerevex/contracts";
 import { hashMcpToken } from "../src/mcp-token";
 import { assertMcpPrincipalConfigured } from "../src/mcp-principal";
 import { app, ensureScopedUser, json, login } from "./helpers";
@@ -125,14 +126,14 @@ describe("mcp identity admin", () => {
       const res = await app.request("/mcp/identities", {
         method: "POST",
         headers,
-        body: JSON.stringify({ name, scopes: ["cerevex.read"], clientIds: [] }),
+        body: JSON.stringify({ displayName: name, scopes: ["cerevex.read"], clientIds: [] }),
       });
       expect(res.status).toBe(403);
     }
     const mcpCaller = await app.request("/mcp/identities", {
       method: "POST",
       headers: { "x-cerevex-mcp-key": MCP_KEY, "content-type": "application/json" },
-      body: JSON.stringify({ name, scopes: ["cerevex.read"], clientIds: [] }),
+      body: JSON.stringify({ displayName: name, scopes: ["cerevex.read"], clientIds: [] }),
     });
     expect(mcpCaller.status).toBe(401);
     const missing = await app.request("/mcp/identities");
@@ -141,14 +142,14 @@ describe("mcp identity admin", () => {
     const badScope = await app.request("/mcp/identities", {
       method: "POST",
       headers: owner(true),
-      body: JSON.stringify({ name, scopes: ["cerevex.apply"], clientIds: [] }),
+      body: JSON.stringify({ displayName: name, scopes: ["cerevex.apply"], clientIds: [] }),
     });
     expect(badScope.status).toBe(400);
 
     const otherTenant = await app.request("/mcp/identities", {
       method: "POST",
       headers: owner(true),
-      body: JSON.stringify({ name, scopes: ["cerevex.read"], clientIds: [otherClientId] }),
+      body: JSON.stringify({ displayName: name, scopes: ["cerevex.read"], clientIds: [otherClientId] }),
     });
     expect(otherTenant.status).toBe(400);
 
@@ -156,7 +157,7 @@ describe("mcp identity admin", () => {
       method: "POST",
       headers: owner(true),
       body: JSON.stringify({
-        name,
+        displayName: name,
         scopes: ["cerevex.recs.submit", "cerevex.read"],
         clientIds: [clientId],
       }),
@@ -165,7 +166,9 @@ describe("mcp identity admin", () => {
     const body = await json(created);
     const token = String(body.token ?? "");
     expect(token.startsWith("cxm_")).toBe(true);
-    const identity = body.identity as { id: string; scopes: string[]; clientIds: string[] };
+    const identity = body.identity as { id: string; name: string; displayName: string; scopes: string[]; clientIds: string[] };
+    expect(identity.name).toBe(name);
+    expect(identity.displayName).toBe(name);
     expect(identity.scopes).toEqual(["cerevex.read", "cerevex.recs.submit"]);
     expect(identity.clientIds).toEqual([clientId]);
     expect(JSON.stringify(body)).not.toContain("tokenHash");
@@ -194,7 +197,7 @@ describe("mcp identity admin", () => {
     const duplicate = await app.request("/mcp/identities", {
       method: "POST",
       headers: owner(true),
-      body: JSON.stringify({ name, scopes: ["cerevex.read"], clientIds: [] }),
+      body: JSON.stringify({ displayName: name, scopes: ["cerevex.read"], clientIds: [] }),
     });
     expect(duplicate.status).toBe(409);
 
@@ -249,6 +252,7 @@ describe("mcp identity admin", () => {
       getDb().insert(mcpIdentities).values({
         workspaceId,
         name: "raw-token-rejected",
+        displayName: "raw-token-rejected",
         tokenHash: token,
         scopes: ["cerevex.read"],
       }),
@@ -342,6 +346,7 @@ describe("mcp identity admin", () => {
       .values({
         workspaceId: otherWorkspaceId,
         name: "foreign-agent",
+        displayName: "foreign-agent",
         tokenHash: hashMcpToken(token),
         scopes: ["cerevex.read"],
       })
@@ -363,7 +368,7 @@ describe("mcp identity admin", () => {
     const created = await app.request("/mcp/identities", {
       method: "POST",
       headers: owner(true),
-      body: JSON.stringify({ name, scopes: ["cerevex.read"], clientIds: [clientId] }),
+      body: JSON.stringify({ displayName: name, scopes: ["cerevex.read"], clientIds: [clientId] }),
     });
     expect(created.status).toBe(200);
     const identity = (await json(created)).identity as { id: string };
@@ -377,6 +382,188 @@ describe("mcp identity admin", () => {
     const body = (await json(listed)) as { identities: Array<{ id: string; clientIds: string[] }> };
     expect(body.identities.find((row) => row.id === identity.id)?.clientIds).toEqual([clientId]);
     await getDb().delete(mcpIdentities).where(eq(mcpIdentities.id, identity.id));
+  });
+
+  it("accepts a free-form display name and keeps the slug, token, and scopes stable", async () => {
+    async function post(displayName: unknown, extra: Record<string, unknown> = {}) {
+      return app.request("/mcp/identities", {
+        method: "POST",
+        headers: owner(true),
+        body: JSON.stringify({ displayName, scopes: ["cerevex.read"], clientIds: [], ...extra }),
+      });
+    }
+
+    const rejected = [
+      "",
+      "   ",
+      "A".repeat(65),
+      "é".repeat(65),
+      "Grok\nBot",
+      "Grok\tBot",
+      "Grok\u0000Bot",
+      "Grok\u007fBot",
+      "Grok\u0085Bot",
+      "Grok\u009fBot",
+      "Grok\u200B_Bot",
+      "\u202Etob",
+    ];
+    for (const displayName of rejected) {
+      const res = await post(displayName);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: MCP_DISPLAY_NAME_MESSAGE });
+    }
+    const forcedSlug = await post("Grok_Bot", { name: "picked-slug" });
+    expect(forcedSlug.status).toBe(400);
+
+    const slugOf = (base: string) => new RegExp(`^${base}(?:-\\d+)?$`);
+    const one = await post("A");
+    expect(one.status).toBe(200);
+    const oneBody = (await json(one)).identity as { displayName: string; name: string };
+    expect(oneBody.displayName).toBe("A");
+    expect(oneBody.name).toMatch(slugOf("agent"));
+
+    const max = "B".repeat(64);
+    const sixtyFour = await post(max);
+    expect(sixtyFour.status).toBe(200);
+    const sixtyFourBody = (await json(sixtyFour)).identity as { displayName: string; name: string };
+    expect(sixtyFourBody.displayName).toBe(max);
+    expect(sixtyFourBody.name).toMatch(/^b+(?:-\d+)?$/);
+
+    for (const [displayName, slug] of [
+      ["Agent #1", "agent-1"],
+      ["José", "jos"],
+      ["O'Brien", "o-brien"],
+      ["CQ 😀 bot", "cq-bot"],
+      [`CQ${"é".repeat(62)}`, "cq"],
+    ] as const) {
+      const res = await post(displayName);
+      expect(res.status, displayName).toBe(200);
+      const row = (await json(res)).identity as { displayName: string; name: string };
+      expect(row.displayName).toBe(displayName);
+      expect(row.name).toMatch(slugOf(slug));
+    }
+
+    const stamp = `q${Date.now().toString(36)}${randomBytes(2).toString("hex")}`;
+    const before = await app.request("/mcp/connector", { headers: owner() });
+    const killSwitch = (await json(before)).killSwitch;
+    const created = await post(`  ${stamp}_Bot  `);
+    expect(created.status).toBe(200);
+    const body = await json(created);
+    const token = String(body.token ?? "");
+    const identity = body.identity as { id: string; name: string; displayName: string; scopes: string[] };
+    expect(identity.displayName).toBe(`${stamp}_Bot`);
+    expect(identity.name).toBe(`${stamp}-bot`);
+    expect(identity.scopes).toEqual(["cerevex.read"]);
+    expect(token.startsWith("cxm_")).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("tokenHash");
+    const after = await app.request("/mcp/connector", { headers: owner() });
+    expect((await json(after)).killSwitch).toBe(killSwitch);
+
+    const stored = await getDb().select().from(mcpIdentities).where(eq(mcpIdentities.id, identity.id));
+    expect(stored[0]?.name).toBe(`${stamp}-bot`);
+    expect(stored[0]?.displayName).toBe(`${stamp}_Bot`);
+    expect(stored[0]?.tokenHash).toBe(hashMcpToken(token));
+    expect(stored[0]?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(stored[0])).not.toContain(token);
+
+    const verified = await app.request("/internal/mcp/verify", {
+      method: "POST",
+      headers: { "x-cerevex-mcp-key": MCP_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ tokenHash: hashMcpToken(token) }),
+    });
+    expect(await json(verified)).toEqual({
+      ok: true,
+      identity: { id: identity.id, name: `${stamp}-bot`, scopes: ["cerevex.read"] },
+    });
+    const wrong = await app.request("/internal/mcp/verify", {
+      method: "POST",
+      headers: { "x-cerevex-mcp-key": MCP_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ tokenHash: hashMcpToken("cxm_not-the-token") }),
+    });
+    expect(await json(wrong)).toEqual({ ok: false });
+
+    for (const displayName of [`${stamp}_bot`, `${stamp.toUpperCase()}_BOT`, ` ${stamp}_Bot `]) {
+      const duplicate = await post(displayName);
+      expect(duplicate.status).toBe(409);
+    }
+    const spaced = await post(`${stamp} Bot`);
+    expect(spaced.status).toBe(200);
+    const spacedBody = await json(spaced);
+    expect(spacedBody.identity).toMatchObject({ displayName: `${stamp} Bot`, name: `${stamp}-bot-2` });
+    const spacedToken = String(spacedBody.token ?? "");
+    expect(hashMcpToken(spacedToken)).not.toBe(hashMcpToken(token));
+
+    const [other] = await getDb()
+      .insert(mcpIdentities)
+      .values({
+        workspaceId: otherWorkspaceId,
+        name: `${stamp}-bot`,
+        displayName: `${stamp}_Bot`,
+        tokenHash: createHash("sha256").update(`other-${stamp}`).digest("hex"),
+        scopes: ["cerevex.read"],
+      })
+      .returning({ id: mcpIdentities.id });
+    expect(other?.id).toBeTruthy();
+    if (other) await getDb().delete(mcpIdentities).where(eq(mcpIdentities.id, other.id));
+
+    const legacyToken = `cxm_${stamp}${randomBytes(8).toString("hex")}`;
+    const legacyName = `leg${stamp}`.slice(0, 40);
+    const [legacy] = await getDb()
+      .insert(mcpIdentities)
+      .values({
+        workspaceId,
+        name: legacyName,
+        displayName: legacyName,
+        tokenHash: hashMcpToken(legacyToken),
+        scopes: ["cerevex.read", "cerevex.recs.submit"],
+      })
+      .returning({ id: mcpIdentities.id });
+    if (!legacy) throw new Error("legacy identity missing");
+    const legacyVerify = await app.request("/internal/mcp/verify", {
+      method: "POST",
+      headers: { "x-cerevex-mcp-key": MCP_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ tokenHash: hashMcpToken(legacyToken) }),
+    });
+    expect(await json(legacyVerify)).toEqual({
+      ok: true,
+      identity: { id: legacy.id, name: legacyName, scopes: ["cerevex.read", "cerevex.recs.submit"] },
+    });
+    const listed = await app.request("/mcp/identities", { headers: owner() });
+    const list = (await json(listed)) as { identities: Array<{ id: string; name: string; displayName: string }> };
+    expect(list.identities.find((row) => row.id === legacy.id)).toMatchObject({
+      name: legacyName,
+      displayName: legacyName,
+    });
+
+    const granted = await app.request(`/mcp/identities/${identity.id}/grants`, {
+      method: "PUT",
+      headers: owner(true),
+      body: JSON.stringify({ clientIds: [clientId] }),
+    });
+    expect(granted.status).toBe(200);
+    expect((await json(granted)).identity).toMatchObject({
+      name: `${stamp}-bot`,
+      displayName: `${stamp}_Bot`,
+      clientIds: [clientId],
+    });
+    const revoked = await app.request(`/mcp/identities/${identity.id}/revoke`, { method: "POST", headers: owner() });
+    expect(revoked.status).toBe(200);
+    expect((await json(revoked)).identity).toMatchObject({ name: `${stamp}-bot`, displayName: `${stamp}_Bot` });
+    const rename = await app.request(`/mcp/identities/${identity.id}`, {
+      method: "PUT",
+      headers: owner(true),
+      body: JSON.stringify({ displayName: "Renamed Bot" }),
+    });
+    expect(rename.status).toBe(404);
+    const afterWrite = await getDb().select().from(mcpIdentities).where(eq(mcpIdentities.id, identity.id));
+    expect(afterWrite[0]?.name).toBe(`${stamp}-bot`);
+    expect(afterWrite[0]?.displayName).toBe(`${stamp}_Bot`);
+    const still = await app.request("/internal/mcp/verify", {
+      method: "POST",
+      headers: { "x-cerevex-mcp-key": MCP_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ tokenHash: hashMcpToken(token) }),
+    });
+    expect(await json(still)).toEqual({ ok: false });
   });
 
   it("refuses the MCP routes when the MCP key is a copy of the Brain key", async () => {
